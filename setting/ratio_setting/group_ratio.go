@@ -5,6 +5,8 @@ import (
 	"errors"
 	"strings"
 	"sync"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/setting/config"
@@ -220,6 +222,9 @@ func CheckGroupTypes(jsonStr string) error {
 		name := strings.TrimSpace(typeInfo.Name)
 		if name == "" {
 			return common.NewMessage("Group type name must not be empty: {{type}}", map[string]any{"type": typeID})
+		}
+		if utf8.RuneCountInString(name) > 64 || strings.ContainsFunc(typeInfo.Name, unicode.IsControl) {
+			return common.NewMessage("Group type names must contain at most 64 characters and no control characters.")
 		}
 		nameKey := strings.ToLower(name)
 		if _, ok := names[nameKey]; ok {

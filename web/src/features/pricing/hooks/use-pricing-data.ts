@@ -21,18 +21,53 @@ import { useMemo } from 'react'
 
 import { useStatus } from '@/hooks/use-status'
 import { requireServerSuccess } from '@/lib/server-error-message'
+import { useAuthStore } from '@/stores/auth-store'
 
 import { getPricing } from '../api'
+import type { PricingGroup, PricingGroupType } from '../types'
 
 export function usePricingData(enabled = true) {
   const { status } = useStatus()
+  const userID = useAuthStore((state) => state.auth.user?.id)
+  const userGroup = useAuthStore((state) => state.auth.user?.group)
 
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ['pricing'],
+    queryKey: ['pricing', userID ?? 'anonymous', userGroup ?? ''],
     queryFn: async () => requireServerSuccess(await getPricing()),
-    staleTime: 5 * 60 * 1000,
+    staleTime: 60 * 1000,
+    refetchInterval: 60 * 1000,
     enabled,
   })
+
+  const hasGroupCatalog =
+    Array.isArray(data?.groups) && Array.isArray(data?.group_types)
+  const groupTypes = useMemo<PricingGroupType[]>(
+    () =>
+      [...(data?.group_types ?? [])].sort(
+        (a, b) =>
+          a.order - b.order ||
+          a.name.localeCompare(b.name) ||
+          a.id.localeCompare(b.id)
+      ),
+    [data?.group_types]
+  )
+  const groups = useMemo<PricingGroup[]>(() => {
+    if (data?.groups) return data.groups
+    return Object.entries(data?.usable_group ?? {})
+      .filter(([name]) => name !== 'auto' && name !== '')
+      .map(([name, description]) => ({
+        name,
+        type_id: null,
+        ratio: data?.group_ratio[name] ?? Number.NaN,
+        description:
+          typeof description === 'string' ? description : description.desc,
+        model_count: (data?.data ?? []).filter(
+          (model) =>
+            model.enable_groups.includes(name) ||
+            model.enable_groups.includes('all')
+        ).length,
+      }))
+  }, [data])
 
   // Ensure rates never reach zero to prevent division errors
   const priceRate = useMemo(
@@ -56,19 +91,30 @@ export function usePricingData(enabled = true) {
       return {
         ...model,
         key: model.model_name,
+        enable_groups: model.enable_groups.includes('all')
+          ? groups.map((group) => group.name)
+          : model.enable_groups,
         vendor_name: vendor?.name,
         vendor_icon: vendor?.icon,
         vendor_description: vendor?.description,
         group_ratio: data.group_ratio,
+        group_types: groupTypes.filter((groupType) =>
+          model.group_type_ids?.includes(groupType.id)
+        ),
       }
     })
-  }, [data])
+  }, [data, groupTypes, groups])
 
   return {
     models,
     vendors: data?.vendors ?? [],
     groupRatio: data?.group_ratio ?? {},
     usableGroup: data?.usable_group ?? {},
+    groupTypes,
+    groups,
+    hasGroupCatalog,
+    catalogReady: Boolean(data),
+    groupCatalogVersion: data?.group_catalog_version,
     endpointMap: data?.supported_endpoint ?? {},
     autoGroups: data?.auto_groups ?? [],
     isLoading,

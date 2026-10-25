@@ -30,15 +30,22 @@ import {
   Sparkles,
   Timer,
 } from 'lucide-react'
-import { useMemo } from 'react'
+import { useMemo, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { CopyButton } from '@/components/copy-button'
 import { StaticDataTable } from '@/components/data-table'
 import { sideDrawerContentClassName } from '@/components/drawer-layout'
+import { ErrorState } from '@/components/error-state'
 import { GroupBadge } from '@/components/group-badge'
 import { PublicLayout } from '@/components/layout'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible'
 import {
   Sheet,
   SheetContent,
@@ -78,7 +85,18 @@ import {
   type DynamicPriceEntry,
 } from '../lib/dynamic-price'
 import { parseTags } from '../lib/filters'
-import { getAvailableGroups, isTokenBasedModel } from '../lib/model-helpers'
+import {
+  getCategoryGroupNames,
+  scopePricingModel,
+  categoryValue,
+  UNCLASSIFIED_CATEGORY,
+  normalizePricingSelection,
+} from '../lib/group-categories'
+import {
+  getAvailableGroups,
+  getDisplayGroupRatio,
+  isTokenBasedModel,
+} from '../lib/model-helpers'
 import { withPluginPricing } from '../lib/plugin-pricing'
 import { formatFixedPrice, formatGroupPrice } from '../lib/price'
 import {
@@ -97,6 +115,8 @@ import {
 import type {
   ModelCapability,
   PriceType,
+  PricingGroup,
+  PricingUsableGroups,
   PricingModel,
   TokenUnit,
 } from '../types'
@@ -662,12 +682,20 @@ function PriceSection(props: {
   usdExchangeRate: number
   tokenUnit: TokenUnit
   showRechargePrice: boolean
+  groupRatioMultiplier?: number
+  selectedGroup?: string
 }) {
   const { t, i18n } = useTranslation()
+  let title = t('Base Price')
+  if (props.groupRatioMultiplier !== undefined) {
+    title = props.selectedGroup
+      ? t('Selected group price')
+      : t('Starting price')
+  }
   const isTokenBased = isTokenBasedModel(props.model)
   const tokenUnitLabel = props.tokenUnit === 'K' ? '1K' : '1M'
   const baseGroupKey = '_base'
-  const baseGroupRatioMap = { [baseGroupKey]: 1 }
+  const baseGroupRatioMap = { [baseGroupKey]: props.groupRatioMultiplier ?? 1 }
   const currency = useSystemConfigStore((state) => state.config.currency)
   const billingTime = useBillingTime(props.model.billing_expr)
   const dynamicSummary = useMemo(
@@ -678,7 +706,7 @@ function PriceSection(props: {
         showRechargePrice: props.showRechargePrice,
         priceRate: props.priceRate,
         usdExchangeRate: props.usdExchangeRate,
-        groupRatioMultiplier: 1,
+        groupRatioMultiplier: props.groupRatioMultiplier ?? 1,
       }),
     // Currency is read indirectly by the price formatter.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -688,6 +716,7 @@ function PriceSection(props: {
       props.showRechargePrice,
       props.priceRate,
       props.usdExchangeRate,
+      props.groupRatioMultiplier,
       billingTime,
       currency,
     ]
@@ -735,7 +764,7 @@ function PriceSection(props: {
     if (dynamicSummary.isSpecialExpression) {
       return (
         <section>
-          <SectionTitle>{t('Base Price')}</SectionTitle>
+          <SectionTitle>{title}</SectionTitle>
           <div className='rounded-lg border border-amber-200/70 bg-amber-50/70 p-3 dark:border-amber-500/20 dark:bg-amber-500/10'>
             <div className='text-sm font-medium text-amber-800 dark:text-amber-200'>
               {t('Special billing expression')}
@@ -763,7 +792,7 @@ function PriceSection(props: {
 
     return (
       <section>
-        <SectionTitle>{t('Base Price')}</SectionTitle>
+        <SectionTitle>{title}</SectionTitle>
         {dynamicSummary.providerCount && (
           <p className='text-muted-foreground mb-2 text-xs'>
             {t('{{count}} providers', { count: dynamicSummary.providerCount })}
@@ -852,7 +881,7 @@ function PriceSection(props: {
   if (isUnconfiguredTaskUsageModel(props.model)) {
     return (
       <section>
-        <SectionTitle>{t('Base Price')}</SectionTitle>
+        <SectionTitle>{title}</SectionTitle>
         <UnconfiguredTaskPricingNotice model={props.model} />
       </section>
     )
@@ -861,7 +890,7 @@ function PriceSection(props: {
   if (!isTokenBased) {
     return (
       <section>
-        <SectionTitle>{t('Base Price')}</SectionTitle>
+        <SectionTitle>{title}</SectionTitle>
         <div className='flex items-baseline justify-between'>
           <span className='text-muted-foreground text-sm'>
             {t('Per request')}
@@ -902,7 +931,7 @@ function PriceSection(props: {
 
   return (
     <section>
-      <SectionTitle>{t('Base Price')}</SectionTitle>
+      <SectionTitle>{title}</SectionTitle>
       <div className='grid grid-cols-2 gap-2'>
         {primaryPriceTypes.map((item) => (
           <div key={item.type} className='bg-muted/20 rounded-lg border p-3'>
@@ -1008,24 +1037,117 @@ function getDynamicFormattedPricesByTier(
 type GroupPricingSectionProps = {
   model: PricingModel
   groupRatio: Record<string, number>
-  usableGroup: Record<string, { desc: string; ratio: number }>
+  usableGroup: PricingUsableGroups
   autoGroups: string[]
   priceRate: number
   usdExchangeRate: number
   tokenUnit: TokenUnit
   showRechargePrice?: boolean
+  categoryGroups?: string[]
+  selectedGroup?: string
+  groupCatalog?: PricingGroup[]
+  onGroupChange?: (group: string) => void
 }
 
 function GroupPricingSection(props: GroupPricingSectionProps) {
   const { t } = useTranslation()
-  const variants = props.model.billing_plugin_variants
+  const groups = getAvailableGroups(props.model, props.usableGroup)
+  const otherGroups = props.categoryGroups
+    ? groups.filter((group) => !props.categoryGroups?.includes(group))
+    : []
+  return (
+    <div className='space-y-3'>
+      <AutoGroupChain model={props.model} autoGroups={props.autoGroups} />
+      <GroupPricingProviderTabs {...props} />
+      {otherGroups.length > 0 && (
+        <Collapsible>
+          <CollapsibleTrigger render={<Button variant='outline' size='sm' />}>
+            {t('Other categories with this model')}
+          </CollapsibleTrigger>
+          <CollapsibleContent className='mt-3'>
+            <GroupPricingProviderTabs {...props} categoryGroups={otherGroups} />
+          </CollapsibleContent>
+        </Collapsible>
+      )}
+    </div>
+  )
+}
+
+function GroupPricingLabel(
+  props: GroupPricingSectionProps & { group: string }
+) {
+  const { t } = useTranslation()
+  const group = props.groupCatalog?.find((item) => item.name === props.group)
+  const legacyDescription = props.usableGroup[props.group]
+  const description =
+    group?.description ??
+    (typeof legacyDescription === 'string'
+      ? legacyDescription
+      : legacyDescription?.desc)
+  return (
+    <div className='min-w-0 space-y-1'>
+      <div className='flex flex-wrap items-center gap-2'>
+        <GroupBadge group={props.group} size='sm' />
+        {group?.type_name && <Badge variant='outline'>{group.type_name}</Badge>}
+        {props.selectedGroup === props.group && (
+          <Badge variant='secondary'>{t('Current selection')}</Badge>
+        )}
+        {props.onGroupChange && (
+          <Button
+            variant='ghost'
+            size='sm'
+            disabled={props.selectedGroup === props.group}
+            onClick={() => props.onGroupChange?.(props.group)}
+            aria-label={t('Use group {{group}}', { group: props.group })}
+          >
+            {t('Select')}
+          </Button>
+        )}
+      </div>
+      {description && (
+        <p className='text-muted-foreground text-xs break-words whitespace-pre-wrap'>
+          {description}
+        </p>
+      )}
+      {props.model.group_endpoint_types && (
+        <p className='text-muted-foreground text-xs break-words whitespace-normal'>
+          {t('Endpoints')}:{' '}
+          {[
+            ...(props.model.group_endpoint_types[props.group] ?? []),
+            ...(props.model.group_endpoint_types.all ?? []),
+          ].join(', ') || t('Not configured')}
+        </p>
+      )}
+    </div>
+  )
+}
+
+function GroupPricingProviderTabs(props: GroupPricingSectionProps) {
+  const { t } = useTranslation()
+  const scopedModel = scopePricingModel(props.model, props.categoryGroups)
+  const variants = scopedModel.billing_plugin_variants
   if (!variants?.length) {
-    return <ProviderGroupPricingSection {...props} />
+    return <ProviderGroupPricingSection {...props} model={scopedModel} />
   }
+  const unboundGroups = props.model.group_plugin_keys
+    ? getAvailableGroups(scopedModel, props.usableGroup).filter(
+        (group) =>
+          !variants.some(
+            (variant) =>
+              props.model.group_plugin_keys?.[group]?.includes(
+                variant.plugin_key
+              ) ||
+              props.model.group_plugin_keys?.all?.includes(variant.plugin_key)
+          )
+      )
+    : []
   return (
     <section>
       <SectionTitle>{t('Pricing by Group')}</SectionTitle>
-      <Tabs key={props.model.model_name} defaultValue={variants[0].plugin_key}>
+      <Tabs
+        key={`${props.model.model_name}:${variants.map((variant) => variant.plugin_key).join(',')}`}
+        defaultValue={variants[0].plugin_key}
+      >
         <TabsList
           aria-label={t('Provider')}
           className='max-w-full flex-wrap justify-start group-data-horizontal/tabs:h-auto'
@@ -1056,6 +1178,19 @@ function GroupPricingSection(props: GroupPricingSectionProps) {
               <ProviderGroupPricingSection
                 {...props}
                 model={withPluginPricing(props.model, variant)}
+                categoryGroups={
+                  props.model.group_plugin_keys
+                    ? getAvailableGroups(scopedModel, props.usableGroup).filter(
+                        (group) =>
+                          props.model.group_plugin_keys?.[group]?.includes(
+                            variant.plugin_key
+                          ) ||
+                          props.model.group_plugin_keys?.all?.includes(
+                            variant.plugin_key
+                          )
+                      )
+                    : props.categoryGroups
+                }
                 hideTitle
               />
             ) : (
@@ -1066,6 +1201,14 @@ function GroupPricingSection(props: GroupPricingSectionProps) {
           </TabsContent>
         ))}
       </Tabs>
+      {unboundGroups.length > 0 && (
+        <ProviderGroupPricingSection
+          {...props}
+          model={scopePricingModel(props.model, unboundGroups)}
+          categoryGroups={unboundGroups}
+          hideTitle
+        />
+      )}
     </section>
   )
 }
@@ -1076,10 +1219,30 @@ function ProviderGroupPricingSection(
   const { t, i18n } = useTranslation()
   const showRechargePrice = props.showRechargePrice ?? false
 
-  const availableGroups = useMemo(
-    () => getAvailableGroups(props.model, props.usableGroup || {}),
-    [props.model, props.usableGroup]
-  )
+  const availableGroups = useMemo(() => {
+    const available = getAvailableGroups(props.model, props.usableGroup || {})
+    const order = new Map(
+      props.groupCatalog?.map((group, index) => [group.name, index])
+    )
+    const groups = [...available].sort(
+      (a, b) => (order.get(a) ?? 0) - (order.get(b) ?? 0)
+    )
+    if (!props.categoryGroups) return groups
+    return groups.filter((group) => props.categoryGroups?.includes(group))
+  }, [props.categoryGroups, props.model, props.usableGroup, props.groupCatalog])
+
+  const orderedGroups = useMemo(() => {
+    if (
+      !props.selectedGroup ||
+      !availableGroups.includes(props.selectedGroup)
+    ) {
+      return availableGroups
+    }
+    return [
+      props.selectedGroup,
+      ...availableGroups.filter((group) => group !== props.selectedGroup),
+    ]
+  }, [availableGroups, props.selectedGroup])
 
   const isTokenBased = isTokenBasedModel(props.model)
   const tokenUnitLabel = props.tokenUnit === 'K' ? '1K' : '1M'
@@ -1113,7 +1276,6 @@ function ProviderGroupPricingSection(
         {!props.hideTitle && (
           <SectionTitle>{t('Pricing by Group')}</SectionTitle>
         )}
-        <AutoGroupChain model={props.model} autoGroups={props.autoGroups} />
         <p className='text-muted-foreground text-sm'>
           {t(
             'This model is not available in any group, or no group pricing information is configured.'
@@ -1145,7 +1307,11 @@ function ProviderGroupPricingSection(
           {!props.hideTitle && (
             <SectionTitle>{t('Pricing by Group')}</SectionTitle>
           )}
-          <AutoGroupChain model={props.model} autoGroups={props.autoGroups} />
+          <div className='mb-3 space-y-2'>
+            {orderedGroups.map((group) => (
+              <GroupPricingLabel key={group} {...props} group={group} />
+            ))}
+          </div>
           <div className='rounded-lg border border-amber-200/70 bg-amber-50/70 p-3 dark:border-amber-500/20 dark:bg-amber-500/10'>
             <div className='text-sm font-medium text-amber-800 dark:text-amber-200'>
               {t('Special billing expression')}
@@ -1185,8 +1351,8 @@ function ProviderGroupPricingSection(
       usageSchema: props.model.billing_usage_schema,
     })
     const formattedPricesByGroup = new Map(
-      availableGroups.map((group) => {
-        const ratio = props.groupRatio[group] || 1
+      orderedGroups.map((group) => {
+        const ratio = props.groupRatio[group] ?? Number.NaN
         return [
           group,
           getDynamicFormattedPricesByTier(dynamicTiers, {
@@ -1206,10 +1372,9 @@ function ProviderGroupPricingSection(
         {!props.hideTitle && (
           <SectionTitle>{t('Pricing by Group')}</SectionTitle>
         )}
-        <AutoGroupChain model={props.model} autoGroups={props.autoGroups} />
         <div className='space-y-3'>
-          {availableGroups.map((group) => {
-            const ratio = props.groupRatio[group] || 1
+          {orderedGroups.map((group) => {
+            const ratio = props.groupRatio[group] ?? Number.NaN
             const formattedPricesByTier =
               formattedPricesByGroup.get(group) ??
               new Map<DynamicPricingTier, Map<string, string>>()
@@ -1217,7 +1382,7 @@ function ProviderGroupPricingSection(
             return (
               <div key={group} className='overflow-hidden rounded-lg border'>
                 <div className='bg-muted/20 flex items-center justify-between gap-3 border-b px-3 py-2'>
-                  <GroupBadge group={group} size='sm' />
+                  <GroupPricingLabel {...props} group={group} />
                   <span className='text-muted-foreground font-mono text-xs'>
                     {ratio}x
                   </span>
@@ -1365,7 +1530,6 @@ function ProviderGroupPricingSection(
         {!props.hideTitle && (
           <SectionTitle>{t('Pricing by Group')}</SectionTitle>
         )}
-        <AutoGroupChain model={props.model} autoGroups={props.autoGroups} />
         <UnconfiguredTaskPricingNotice model={props.model} />
       </section>
     )
@@ -1395,12 +1559,11 @@ function ProviderGroupPricingSection(
   return (
     <section>
       {!props.hideTitle && <SectionTitle>{t('Pricing by Group')}</SectionTitle>}
-      <AutoGroupChain model={props.model} autoGroups={props.autoGroups} />
       <StaticDataTable
         className='-mx-4 rounded-none border-0 sm:mx-0'
         tableClassName='text-sm'
         headerRowClassName='hover:bg-transparent'
-        data={availableGroups}
+        data={orderedGroups}
         getRowKey={(group) => group}
         columns={[
           {
@@ -1408,14 +1571,17 @@ function ProviderGroupPricingSection(
             header: t('Group'),
             className: thClass,
             cellClassName: 'py-2.5',
-            cell: (group) => <GroupBadge group={group} size='sm' />,
+            cell: (group) => <GroupPricingLabel {...props} group={group} />,
           },
           {
             id: 'ratio',
             header: t('Ratio'),
             className: thClass,
             cellClassName: 'text-muted-foreground py-2.5 font-mono',
-            cell: (group) => `${props.groupRatio[group] || 1}x`,
+            cell: (group) =>
+              props.groupRatio[group] === undefined
+                ? '-'
+                : `${props.groupRatio[group]}x`,
           },
           ...(isTokenBased
             ? [
@@ -1478,36 +1644,76 @@ const TAB_META: Record<
 export interface ModelDetailsContentProps {
   model: PricingModel
   groupRatio: Record<string, number>
-  usableGroup: Record<string, { desc: string; ratio: number }>
+  usableGroup: PricingUsableGroups
   endpointMap: Record<string, { path?: string; method?: string }>
   autoGroups: string[]
   priceRate: number
   usdExchangeRate: number
   tokenUnit: TokenUnit
   showRechargePrice?: boolean
+  selectedCategoryName?: string
+  selectedCategoryGroups?: string[]
+  selectedGroup?: string
+  groupCatalog?: PricingGroup[]
+  onGroupChange?: (group: string) => void
 }
 
 export function ModelDetailsContent(props: ModelDetailsContentProps) {
   const { t } = useTranslation()
   const showRechargePrice = props.showRechargePrice ?? false
+  const scopeGroups = props.selectedGroup
+    ? [props.selectedGroup]
+    : props.selectedCategoryGroups
+  const scopedModel = scopePricingModel(props.model, scopeGroups)
+  const selectedDescription = props.groupCatalog?.find(
+    (group) => group.name === props.selectedGroup
+  )?.description
+  const groupRatioMultiplier = getDisplayGroupRatio(
+    { ...props.model, group_ratio: props.groupRatio },
+    props.selectedGroup,
+    props.selectedCategoryGroups
+  )
 
   const isDynamic =
-    props.model.billing_mode === 'tiered_expr' &&
-    Boolean(props.model.billing_expr)
+    scopedModel.billing_mode === 'tiered_expr' &&
+    Boolean(scopedModel.billing_expr)
 
-  const simpleTaskPricing = hasSimpleTaskPricing(props.model)
+  const simpleTaskPricing = hasSimpleTaskPricing(scopedModel)
   const taskTiers = getTaskPricingDisplayTiers(
-    props.model.billing_expr,
-    props.model.billing_usage_schema
+    scopedModel.billing_expr,
+    scopedModel.billing_usage_schema
   )
   const showBasePrices =
-    !props.model.billing_usage_schema ||
+    !scopedModel.billing_usage_schema ||
     simpleTaskPricing ||
     taskTiers.length === 0
 
   return (
     <div className='@container/details space-y-4'>
-      <ModelHeader model={props.model} />
+      <ModelHeader model={scopedModel} />
+
+      {(props.selectedCategoryName || props.selectedGroup) && (
+        <div className='text-muted-foreground flex flex-wrap gap-x-4 gap-y-1 text-xs'>
+          {props.selectedCategoryName && (
+            <span className='min-w-0 break-all'>
+              {t('Category')}: {props.selectedCategoryName}
+            </span>
+          )}
+          {props.selectedGroup && (
+            <span className='min-w-0 break-all'>
+              {t('Group')}: {props.selectedGroup}
+            </span>
+          )}
+        </div>
+      )}
+      {selectedDescription && (
+        <p
+          role='note'
+          className='text-muted-foreground text-sm break-words whitespace-pre-wrap'
+        >
+          {selectedDescription}
+        </p>
+      )}
 
       <Tabs defaultValue='overview' className='gap-4'>
         <TabsList className='bg-muted/60 grid w-full grid-cols-3 gap-1 rounded-lg p-1 group-data-horizontal/tabs:h-auto'>
@@ -1527,35 +1733,48 @@ export function ModelDetailsContent(props: ModelDetailsContentProps) {
         </TabsList>
 
         <TabsContent value='overview' className='space-y-6 outline-none'>
-          <OverviewSummaryGrid model={props.model} />
+          <OverviewSummaryGrid model={scopedModel} />
 
           <section className='bg-card/60 space-y-5 rounded-xl border p-4 shadow-sm'>
             <SectionTitle>{t('Pricing')}</SectionTitle>
             {showBasePrices && (
               <PriceSection
-                model={props.model}
+                model={scopeGroups === undefined ? props.model : scopedModel}
                 priceRate={props.priceRate}
                 usdExchangeRate={props.usdExchangeRate}
                 tokenUnit={props.tokenUnit}
                 showRechargePrice={showRechargePrice}
+                groupRatioMultiplier={
+                  scopeGroups === undefined ? undefined : groupRatioMultiplier
+                }
+                selectedGroup={props.selectedGroup}
               />
             )}
             {isDynamic && !simpleTaskPricing && (
-              <DynamicPricingBreakdown
-                billingExpr={props.model.billing_expr}
-                usageSchema={props.model.billing_usage_schema}
-                taskPriceOptions={{
-                  showRechargePrice,
-                  priceRate: props.priceRate,
-                  usdExchangeRate: props.usdExchangeRate,
-                }}
-              />
+              <div className='space-y-2'>
+                <p className='text-muted-foreground text-xs'>
+                  {t('Base Price')}
+                </p>
+                <DynamicPricingBreakdown
+                  billingExpr={scopedModel.billing_expr}
+                  usageSchema={scopedModel.billing_usage_schema}
+                  taskPriceOptions={{
+                    showRechargePrice,
+                    priceRate: props.priceRate,
+                    usdExchangeRate: props.usdExchangeRate,
+                  }}
+                />
+              </div>
             )}
             <GroupPricingSection
               model={props.model}
               groupRatio={props.groupRatio}
               usableGroup={props.usableGroup}
               autoGroups={props.autoGroups}
+              categoryGroups={props.selectedCategoryGroups}
+              selectedGroup={props.selectedGroup}
+              groupCatalog={props.groupCatalog}
+              onGroupChange={props.onGroupChange}
               priceRate={props.priceRate}
               usdExchangeRate={props.usdExchangeRate}
               tokenUnit={props.tokenUnit}
@@ -1563,16 +1782,25 @@ export function ModelDetailsContent(props: ModelDetailsContentProps) {
             />
           </section>
 
-          <ModelBackendDetailsSection model={props.model} />
+          <ModelBackendDetailsSection model={scopedModel} />
         </TabsContent>
 
         <TabsContent value='performance' className='outline-none'>
+          <p className='text-muted-foreground mb-3 text-xs'>
+            {t('All-group statistics')}
+          </p>
           <ModelDetailsPerformance model={props.model} />
         </TabsContent>
 
         <TabsContent value='api' className='outline-none'>
           <ModelDetailsApi
-            model={props.model}
+            key={JSON.stringify([
+              props.model.model_name,
+              props.selectedGroup,
+              props.selectedCategoryGroups,
+              scopedModel.supported_endpoint_types,
+            ])}
+            model={scopedModel}
             endpointMap={props.endpointMap}
           />
         </TabsContent>
@@ -1588,11 +1816,12 @@ export function ModelDetailsContent(props: ModelDetailsContentProps) {
 export interface ModelDetailsDrawerProps extends ModelDetailsContentProps {
   open: boolean
   onOpenChange: (open: boolean) => void
+  onOpenPage?: () => void
 }
 
 export function ModelDetailsDrawer(props: ModelDetailsDrawerProps) {
   const { t } = useTranslation()
-  const { open, onOpenChange, ...contentProps } = props
+  const { open, onOpenChange, onOpenPage, ...contentProps } = props
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -1607,6 +1836,17 @@ export function ModelDetailsDrawer(props: ModelDetailsDrawerProps) {
           <SheetDescription>{t('Model details')}</SheetDescription>
         </SheetHeader>
         <div className='flex-1 overflow-y-auto px-4 pt-11 pb-5 sm:px-6 sm:pt-12 sm:pb-6'>
+          {onOpenPage && (
+            <Button
+              variant='outline'
+              size='sm'
+              onClick={onOpenPage}
+              className='mb-3'
+            >
+              <Maximize2 aria-hidden='true' className='size-3.5' />
+              {t('Open model page')}
+            </Button>
+          )}
           <ModelDetailsContent {...contentProps} />
         </div>
       </SheetContent>
@@ -1624,6 +1864,12 @@ export function ModelDetails() {
     models,
     groupRatio,
     usableGroup,
+    groupTypes,
+    groups,
+    hasGroupCatalog,
+    catalogReady,
+    error,
+    refetch,
     endpointMap,
     autoGroups,
     isLoading,
@@ -1639,8 +1885,64 @@ export function ModelDetails() {
     return models.find((m) => m.model_name === modelId) || null
   }, [models, modelId])
 
+  const selection = useMemo(
+    () =>
+      normalizePricingSelection(search, groupTypes, groups, hasGroupCatalog),
+    [search, groupTypes, groups, hasGroupCatalog]
+  )
+  useEffect(() => {
+    if (
+      !catalogReady ||
+      (selection.category === search.category &&
+        selection.group === search.group &&
+        selection.unclassified === search.unclassified)
+    ) {
+      return
+    }
+    void navigate({
+      to: '/pricing/$modelId',
+      params: { modelId },
+      replace: true,
+      search: { ...search, ...selection },
+    })
+  }, [catalogReady, selection, search, navigate, modelId])
+  const selectedCategory = selection.category
+    ? categoryValue(selection.category)
+    : UNCLASSIFIED_CATEGORY
+
+  const selectedCategoryName = useMemo(
+    () =>
+      selection.unclassified
+        ? t('Unclassified')
+        : groupTypes.find((groupType) => groupType.id === selection.category)
+            ?.name,
+    [groupTypes, selection.category, selection.unclassified, t]
+  )
+  const selectedCategoryGroups = useMemo(
+    () =>
+      selection.category || selection.unclassified
+        ? getCategoryGroupNames(selectedCategory, groups)
+        : undefined,
+    [groups, selection.category, selection.unclassified, selectedCategory]
+  )
+
   const handleBack = () => {
-    navigate({ to: '/pricing', search })
+    void navigate({ to: '/pricing', search: { ...search, ...selection } })
+  }
+
+  const handleGroupChange = (group: string) => {
+    const assigned = groups.find((item) => item.name === group)
+    void navigate({
+      to: '/pricing/$modelId',
+      params: { modelId },
+      search: {
+        ...search,
+        group,
+        category: assigned?.type_id ?? undefined,
+        unclassified:
+          (hasGroupCatalog && assigned?.type_id === null) || undefined,
+      },
+    })
   }
 
   if (isLoading) {
@@ -1664,6 +1966,18 @@ export function ModelDetails() {
             ))}
           </div>
         </div>
+      </PublicLayout>
+    )
+  }
+
+  if (error && !catalogReady) {
+    return (
+      <PublicLayout>
+        <ErrorState
+          onRetry={() => {
+            void refetch()
+          }}
+        />
       </PublicLayout>
     )
   }
@@ -1704,6 +2018,11 @@ export function ModelDetails() {
           groupRatio={groupRatio || {}}
           usableGroup={usableGroup || {}}
           autoGroups={autoGroups || []}
+          selectedCategoryName={selectedCategoryName}
+          selectedCategoryGroups={selectedCategoryGroups}
+          selectedGroup={selection.group}
+          groupCatalog={groups}
+          onGroupChange={handleGroupChange}
           priceRate={priceRate ?? 1}
           usdExchangeRate={usdExchangeRate ?? 1}
           tokenUnit={tokenUnit}

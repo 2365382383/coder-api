@@ -108,6 +108,25 @@ export function usePricingColumns(
 
     // Vendor column
     {
+      id: 'group_types',
+      header: t('Category'),
+      cell: ({ row }) => (
+        <BadgeListCell
+          items={(row.original.group_types ?? []).map((type) => (
+            <StatusBadge
+              key={type.id}
+              label={type.name}
+              autoColor={type.id}
+              size='sm'
+              copyable={false}
+            />
+          ))}
+        />
+      ),
+      size: 130,
+      enableSorting: false,
+    },
+    {
       accessorKey: 'vendor_name',
       header: t('Vendor'),
       cell: ({ row }) => {

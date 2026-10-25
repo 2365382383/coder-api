@@ -59,6 +59,20 @@ const STATUS_RELATED_KEYS = new Set([
   'QuotaRemindThreshold',
 ])
 
+const PRICING_RELATED_KEYS = new Set([
+  'GroupRatio',
+  'TopupGroupRatio',
+  'UserUsableGroups',
+  'GroupDescriptions',
+  'GroupSpecialUsableGroup',
+  'group_ratio_setting.group_descriptions',
+  'group_ratio_setting.group_special_usable_group',
+  'group_ratio_setting.group_ratio',
+  'group_ratio_setting.group_group_ratio',
+  'GroupGroupRatio',
+  'AutoGroups',
+])
+
 export function useUpdateOption() {
   const queryClient = useQueryClient()
 
@@ -78,6 +92,10 @@ export function useUpdateOption() {
           } catch {
             /* empty */
           }
+        }
+
+        if (PRICING_RELATED_KEYS.has(variables.key)) {
+          queryClient.invalidateQueries({ queryKey: ['pricing'] })
         }
 
         toast.success(i18next.t('Setting updated successfully'))
@@ -100,6 +118,7 @@ export function useUpdateGroupTypeOptions() {
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['system-options'] })
       await queryClient.invalidateQueries({ queryKey: ['user-groups'] })
+      await queryClient.invalidateQueries({ queryKey: ['pricing'] })
       toast.success(i18next.t('Setting updated successfully'))
     },
     onError: (error: Error) => {

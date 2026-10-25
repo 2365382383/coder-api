@@ -21,6 +21,8 @@ import { memo, useMemo, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { CopyButton } from '@/components/copy-button'
+import { BadgeListCell } from '@/components/data-table'
+import { StatusBadge } from '@/components/status-badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card'
 import { getLobeIcon } from '@/lib/lobe-icon'
@@ -37,6 +39,7 @@ import {
   isUnconfiguredTaskUsageModel,
 } from '../lib/dynamic-price'
 import { parseTags } from '../lib/filters'
+import { scopePricingModel } from '../lib/group-categories'
 import { isTokenBasedModel } from '../lib/model-helpers'
 import { formatPrice, formatRequestPrice } from '../lib/price'
 import { taskPriceLabel, taskUsageUnitLabel } from '../lib/task-price-display'
@@ -52,25 +55,36 @@ export interface ModelCardProps {
   tokenUnit?: TokenUnit
   showRechargePrice?: boolean
   selectedGroup?: string
+  selectedCategoryGroups?: string[]
   perf?: ModelPerfBadgeData
 }
 
 export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
   const { t, i18n } = useTranslation()
+  const model = useMemo(
+    () =>
+      scopePricingModel(
+        props.model,
+        props.selectedGroup && props.selectedGroup !== 'all'
+          ? [props.selectedGroup]
+          : props.selectedCategoryGroups
+      ),
+    [props.model, props.selectedGroup, props.selectedCategoryGroups]
+  )
   const tokenUnit = props.tokenUnit ?? DEFAULT_TOKEN_UNIT
   const priceRate = props.priceRate ?? 1
   const usdExchangeRate = props.usdExchangeRate ?? 1
   const showRechargePrice = props.showRechargePrice ?? false
-  const isTokenBased = isTokenBasedModel(props.model)
+  const isTokenBased = isTokenBasedModel(model)
   const tokenUnitLabel = tokenUnit === 'K' ? '1K' : '1M'
-  const tags = parseTags(props.model.tags)
-  const groups = props.model.enable_groups || []
-  const endpoints = props.model.supported_endpoint_types || []
-  const modelIconKey = props.model.icon || props.model.vendor_icon
+  const tags = parseTags(model.tags)
+  const groups = model.enable_groups || []
+  const endpoints = model.supported_endpoint_types || []
+  const modelIconKey = model.icon || model.vendor_icon
   const modelIcon = modelIconKey ? getLobeIcon(modelIconKey, 28) : null
-  const initial = props.model.model_name?.charAt(0).toUpperCase() || '?'
-  const isUnconfiguredTaskUsage = isUnconfiguredTaskUsageModel(props.model)
-  const billingTime = useBillingTime(props.model.billing_expr)
+  const initial = model.model_name?.charAt(0).toUpperCase() || '?'
+  const isUnconfiguredTaskUsage = isUnconfiguredTaskUsageModel(model)
+  const billingTime = useBillingTime(model.billing_expr)
   const currency = useSystemConfigStore((state) => state.config.currency)
   const dynamicPriceOptions = useMemo(
     () => ({
@@ -80,13 +94,15 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
       priceRate,
       usdExchangeRate,
       groupRatioMultiplier: getDynamicDisplayGroupRatio(
-        props.model,
-        props.selectedGroup
+        model,
+        props.selectedGroup,
+        props.selectedCategoryGroups
       ),
     }),
     [
-      props.model,
+      model,
       props.selectedGroup,
+      props.selectedCategoryGroups,
       billingTime,
       tokenUnit,
       showRechargePrice,
@@ -95,16 +111,16 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
     ]
   )
   const dynamicSummary = useMemo(
-    () => getDynamicPricingSummary(props.model, dynamicPriceOptions),
+    () => getDynamicPricingSummary(model, dynamicPriceOptions),
     // Currency is read indirectly by the price formatter.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [props.model, dynamicPriceOptions, currency]
+    [model, dynamicPriceOptions, currency]
   )
   const cardExamplePrice = useMemo(
-    () => getCardExamplePrice(props.model, dynamicPriceOptions),
+    () => getCardExamplePrice(model, dynamicPriceOptions),
     // Currency is read indirectly by the price formatter.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [props.model, dynamicPriceOptions, currency]
+    [model, dynamicPriceOptions, currency]
   )
   let priceSummary: ReactNode
   if (dynamicSummary) {
@@ -222,7 +238,7 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
     const prices: { type: PriceType; label: string }[] = [
       { type: 'input', label: t('Input') },
       { type: 'output', label: t('Output') },
-      ...(props.model.cache_ratio != null
+      ...(model.cache_ratio != null
         ? [{ type: 'cache' as const, label: t('Cached') }]
         : []),
     ]
@@ -231,13 +247,15 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
         <span className='text-muted-foreground text-xs'>{price.label}</span>
         <span className='font-mono text-sm font-semibold tabular-nums'>
           {formatPrice(
-            props.model,
+            model,
             price.type,
             tokenUnit,
             showRechargePrice,
             priceRate,
             usdExchangeRate,
-            props.selectedGroup
+            props.selectedGroup,
+            true,
+            props.selectedCategoryGroups
           )}
           <span className='text-muted-foreground text-xs font-normal'>
             {' '}
@@ -251,11 +269,13 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
       <div className='col-span-full flex min-w-0 flex-col gap-1'>
         <span className='font-mono text-sm font-semibold tabular-nums'>
           {formatRequestPrice(
-            props.model,
+            model,
             showRechargePrice,
             priceRate,
             usdExchangeRate,
-            props.selectedGroup
+            props.selectedGroup,
+            true,
+            props.selectedCategoryGroups
           )}
           <span className='text-muted-foreground text-xs font-normal'>
             {' '}
@@ -282,21 +302,21 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
         <div className='min-w-0 flex-1'>
           <h3
             className='line-clamp-2 font-mono text-[15px] leading-snug font-semibold [overflow-wrap:anywhere]'
-            title={props.model.model_name}
+            title={model.model_name}
           >
-            {props.model.model_name}
+            {model.model_name}
           </h3>
-          {props.model.vendor_name && (
+          {model.vendor_name && (
             <p
               className='text-muted-foreground mt-1 truncate text-xs'
-              title={props.model.vendor_name}
+              title={model.vendor_name}
             >
-              {props.model.vendor_name}
+              {model.vendor_name}
             </p>
           )}
         </div>
         <CopyButton
-          value={props.model.model_name}
+          value={model.model_name}
           tooltip={t('Copy model name')}
           className='size-7'
           iconClassName='size-3.5'
@@ -305,7 +325,7 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
       <CardContent className='flex flex-1 flex-col gap-3'>
         <div className='flex min-w-0 flex-col gap-1.5'>
           <p className='text-muted-foreground line-clamp-2 text-[13px] leading-5 break-words'>
-            {props.model.description || t('No description available.')}
+            {model.description || t('No description available.')}
           </p>
           {tags.length > 0 && (
             <div
@@ -324,13 +344,33 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
               )}
             </div>
           )}
+          {Boolean(model.group_types?.length) && (
+            <div role='group' aria-label={t('Category')} className='pl-1.5'>
+              <BadgeListCell
+                items={(model.group_types ?? []).map((type) => (
+                  <StatusBadge
+                    key={type.id}
+                    label={type.name}
+                    autoColor={type.id}
+                    size='sm'
+                    copyable={false}
+                  />
+                ))}
+              />
+            </div>
+          )}
         </div>
         <div
           role='group'
           aria-label={t('Pricing')}
           className='mt-auto flex min-w-0 flex-col gap-1.5'
         >
-          <ModelBillingModeBadge model={props.model} appearance='caption' />
+          <ModelBillingModeBadge model={model} appearance='caption' />
+          <span className='text-muted-foreground text-xs'>
+            {props.selectedGroup && props.selectedGroup !== 'all'
+              ? t('Selected group price')
+              : t('Starting price')}
+          </span>
           {dynamicSummary?.providerCount && (
             <span className='text-muted-foreground text-xs break-words'>
               {t('{{count}} providers', {
@@ -394,7 +434,13 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
           </dl>
         )}
       </CardContent>
-      <CardFooter className='mt-auto border-0 bg-transparent pt-0'>
+      <CardFooter className='mt-auto flex-col items-stretch gap-1 border-0 bg-transparent pt-0'>
+        {(props.selectedCategoryGroups ||
+          (props.selectedGroup && props.selectedGroup !== 'all')) && (
+          <span className='text-muted-foreground text-xs'>
+            {t('All-group statistics')}
+          </span>
+        )}
         <ModelPerfBadge
           perf={props.perf}
           className='border-border/60 border-t pt-2'
@@ -402,7 +448,7 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
           <Button
             variant='ghost'
             size='sm'
-            onClick={() => props.onClick(props.model.model_name || '')}
+            onClick={() => props.onClick(model.model_name || '')}
           >
             {t('Details')}
             <ChevronRight aria-hidden className='size-3.5' />

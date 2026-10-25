@@ -1,8 +1,10 @@
 package service
 
 import (
+	"strings"
 	"testing"
 
+	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/config"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
@@ -85,6 +87,8 @@ func TestGroupTypeOptionsLoadFromConfig(t *testing.T) {
 func TestCheckGroupTypeSettings(t *testing.T) {
 	require.NoError(t, ratio_setting.CheckGroupTypes(`{"vendor":{"name":"Vendor","order":1}}`))
 	require.Error(t, ratio_setting.CheckGroupTypes(`{"vendor":{"name":""}}`))
+	require.Error(t, ratio_setting.CheckGroupTypes(`{"vendor":{"name":"bad\u0000name"}}`))
+	require.Error(t, ratio_setting.CheckGroupTypes(`{"vendor":{"name":"`+strings.Repeat("x", 65)+`"}}`))
 	require.Error(t, ratio_setting.CheckGroupTypes(`{"a":{"name":"Same"},"b":{"name":"same"}}`))
 	require.Error(t, ratio_setting.CheckGroupTypes(`{"__auto__":{"name":"Automatic routing"}}`))
 	require.Error(t, ratio_setting.CheckGroupTypes(`null`))
@@ -103,4 +107,63 @@ func TestCheckGroupTypeSettings(t *testing.T) {
 	require.NoError(t, ratio_setting.CheckGroupTypeOptions(groupTypes, `{"AUTO":"vendor"}`, map[string]float64{"AUTO": 1}), "ordinary group names remain case sensitive")
 	require.Error(t, ratio_setting.CheckGroupTypeOptions(groupTypes, `{"default":"missing"}`, map[string]float64{"default": 1}))
 	require.Error(t, ratio_setting.CheckGroupTypeOptions(groupTypes, `{"retired":"vendor"}`, map[string]float64{"default": 1}))
+}
+
+func TestBuildPricingGroupCatalogUsesDynamicTypesAndDeduplicatesModels(t *testing.T) {
+	alpha := GroupTypeOption{ID: "alpha", Name: "Alpha", Icon: "Alpha", Order: 2}
+	beta := GroupTypeOption{ID: "beta", Name: "Beta", Icon: "Beta", Order: 1}
+	options := UserGroupOptions{
+		Types: []GroupTypeOption{alpha, beta},
+		Groups: map[string]UserGroupOption{
+			"alpha-group": {
+				Ratio: 2.0, Desc: "Alpha access", Type: &alpha,
+			},
+			"beta-group": {
+				Ratio: 0.5, Desc: "Beta access", Type: &beta,
+			},
+			"unclassified": {Ratio: 1.0, Desc: "Legacy access"},
+			"auto":         {Ratio: "auto", Desc: "Automatic routing"},
+		},
+	}
+	pricing := []model.Pricing{
+		{ModelName: "shared-model", EnableGroup: []string{"alpha-group", "beta-group"}},
+		{ModelName: "legacy-model", EnableGroup: []string{"unclassified"}},
+		{ModelName: "all-model", EnableGroup: []string{"all"}},
+	}
+
+	catalog, modelTypeIDs, err := BuildPricingGroupCatalog(pricing, options)
+	require.NoError(t, err)
+
+	require.NotEmpty(t, catalog.Version)
+	require.Equal(t, []string{"beta", "alpha"}, []string{catalog.Types[0].ID, catalog.Types[1].ID})
+	assert.Equal(t, 1, catalog.Types[0].GroupCount)
+	assert.Equal(t, 2, catalog.Types[0].ModelCount)
+	assert.Equal(t, 1, catalog.Types[1].GroupCount)
+	assert.Equal(t, 2, catalog.Types[1].ModelCount)
+	assert.ElementsMatch(t, []string{"beta", "alpha"}, modelTypeIDs["shared-model"])
+	assert.ElementsMatch(t, []string{"beta", "alpha"}, modelTypeIDs["all-model"])
+	assert.Empty(t, modelTypeIDs["legacy-model"])
+
+	require.Len(t, catalog.Groups, 3)
+	assert.Equal(t, []string{"beta-group", "alpha-group", "unclassified"}, []string{
+		catalog.Groups[0].Name,
+		catalog.Groups[1].Name,
+		catalog.Groups[2].Name,
+	})
+	assert.Nil(t, catalog.Groups[2].TypeID)
+	assert.Equal(t, 2, catalog.Groups[0].ModelCount)
+	assert.Equal(t, 2, catalog.Groups[1].ModelCount)
+	assert.Equal(t, 2, catalog.Groups[2].ModelCount)
+
+	again, _, err := BuildPricingGroupCatalog([]model.Pricing{pricing[2], pricing[1], pricing[0]}, options)
+	require.NoError(t, err)
+	assert.Equal(t, catalog.Version, again.Version, "input ordering must not change the directory version")
+	options.Groups["unclassified"] = UserGroupOption{Ratio: 0.0, Desc: "Free access"}
+	updated, _, err := BuildPricingGroupCatalog(pricing, options)
+	require.NoError(t, err)
+	assert.NotEqual(t, catalog.Version, updated.Version)
+	assert.Equal(t, float64(0), updated.Groups[2].Ratio)
+	options.Groups["unclassified"] = UserGroupOption{Ratio: "unknown"}
+	_, _, err = BuildPricingGroupCatalog(pricing, options)
+	assert.Error(t, err, "invalid prices must not become free")
 }

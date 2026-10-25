@@ -178,6 +178,7 @@ describe('group type settings', () => {
         value: String(value),
       })),
     })
+    const invalidateQueries = vi.spyOn(client, 'invalidateQueries')
     const rendered = render(
       <QueryClientProvider client={client}>
         <SettingsFixture />
@@ -231,6 +232,11 @@ describe('group type settings', () => {
         screen.getByRole('button', { name: 'Save group settings' })
       )
       await waitFor(() => expect(put).toHaveBeenCalledTimes(2))
+      await waitFor(() =>
+        expect(invalidateQueries).toHaveBeenCalledWith({
+          queryKey: ['pricing'],
+        })
+      )
       expect(put.mock.calls[1]).toEqual(put.mock.calls[0])
     } finally {
       rendered.unmount()

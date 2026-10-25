@@ -29,30 +29,34 @@ type PricingPluginVariant struct {
 }
 
 type Pricing struct {
-	BillingPluginVariants  []PricingPluginVariant               `json:"billing_plugin_variants,omitempty"`
-	ModelName              string                               `json:"model_name"`
-	Description            string                               `json:"description,omitempty"`
-	Icon                   string                               `json:"icon,omitempty"`
-	Tags                   string                               `json:"tags,omitempty"`
-	VendorID               int                                  `json:"vendor_id,omitempty"`
-	QuotaType              int                                  `json:"quota_type"`
-	ModelRatio             float64                              `json:"model_ratio"`
-	ModelPrice             float64                              `json:"model_price"`
-	OwnerBy                string                               `json:"owner_by"`
-	CompletionRatio        float64                              `json:"completion_ratio"`
-	CacheRatio             *float64                             `json:"cache_ratio,omitempty"`
-	CreateCacheRatio       *float64                             `json:"create_cache_ratio,omitempty"`
-	ImageRatio             *float64                             `json:"image_ratio,omitempty"`
-	AudioRatio             *float64                             `json:"audio_ratio,omitempty"`
-	AudioCompletionRatio   *float64                             `json:"audio_completion_ratio,omitempty"`
-	EnableGroup            []string                             `json:"enable_groups"`
-	SupportedEndpointTypes []constant.EndpointType              `json:"supported_endpoint_types"`
-	ImageCapabilities      *imagedto.ImageModelCapabilities     `json:"image_capabilities,omitempty"`
-	BillingMode            string                               `json:"billing_mode,omitempty"`
-	BillingExpr            string                               `json:"billing_expr,omitempty"`
-	BillingUsageSchema     map[string]jsplugin.UsageFieldSchema `json:"billing_usage_schema,omitempty"`
-	BillingUsageExamples   []jsplugin.UsageExample              `json:"billing_usage_examples,omitempty"`
-	PricingVersion         string                               `json:"pricing_version,omitempty"`
+	BillingPluginVariants  []PricingPluginVariant                      `json:"billing_plugin_variants,omitempty"`
+	ModelName              string                                      `json:"model_name"`
+	Description            string                                      `json:"description,omitempty"`
+	Icon                   string                                      `json:"icon,omitempty"`
+	Tags                   string                                      `json:"tags,omitempty"`
+	VendorID               int                                         `json:"vendor_id,omitempty"`
+	QuotaType              int                                         `json:"quota_type"`
+	ModelRatio             float64                                     `json:"model_ratio"`
+	ModelPrice             float64                                     `json:"model_price"`
+	OwnerBy                string                                      `json:"owner_by"`
+	CompletionRatio        float64                                     `json:"completion_ratio"`
+	CacheRatio             *float64                                    `json:"cache_ratio,omitempty"`
+	CreateCacheRatio       *float64                                    `json:"create_cache_ratio,omitempty"`
+	ImageRatio             *float64                                    `json:"image_ratio,omitempty"`
+	AudioRatio             *float64                                    `json:"audio_ratio,omitempty"`
+	AudioCompletionRatio   *float64                                    `json:"audio_completion_ratio,omitempty"`
+	EnableGroup            []string                                    `json:"enable_groups"`
+	GroupTypeIDs           []string                                    `json:"group_type_ids,omitempty"`
+	GroupPluginKeys        map[string][]string                         `json:"group_plugin_keys,omitempty"`
+	GroupEndpointTypes     map[string][]constant.EndpointType          `json:"group_endpoint_types,omitempty"`
+	GroupImageCapabilities map[string]*imagedto.ImageModelCapabilities `json:"group_image_capabilities,omitempty"`
+	SupportedEndpointTypes []constant.EndpointType                     `json:"supported_endpoint_types"`
+	ImageCapabilities      *imagedto.ImageModelCapabilities            `json:"image_capabilities,omitempty"`
+	BillingMode            string                                      `json:"billing_mode,omitempty"`
+	BillingExpr            string                                      `json:"billing_expr,omitempty"`
+	BillingUsageSchema     map[string]jsplugin.UsageFieldSchema        `json:"billing_usage_schema,omitempty"`
+	BillingUsageExamples   []jsplugin.UsageExample                     `json:"billing_usage_examples,omitempty"`
+	PricingVersion         string                                      `json:"pricing_version,omitempty"`
 }
 
 type PricingVendor struct {
@@ -284,6 +288,9 @@ func updatePricing() {
 		unsupported bool
 	}
 	imageCapabilities := make(map[string]imageAggregate)
+	groupEndpoints := make(map[string]map[string][]constant.EndpointType)
+	groupPlugins := make(map[string]map[string][]string)
+	groupImages := make(map[string]map[string]imageAggregate)
 	advancedCustomConfigs := loadPricingAdvancedCustomConfigs(enableAbilities)
 	pluginGeneration := jsplugin.DefaultRegistry.Generation()
 
@@ -292,6 +299,37 @@ func updatePricing() {
 		modelAbilities[ability.Model] = append(modelAbilities[ability.Model], ability)
 		endpoints := modelSupportEndpointsStr[ability.Model]
 		channelTypes := ResolveAbilityEndpointTypes(ability, pluginGeneration, advancedCustomConfigs[ability.ChannelId])
+		if groupPlugins[ability.Model] == nil {
+			groupPlugins[ability.Model] = make(map[string][]string)
+		}
+		keys := groupPlugins[ability.Model][ability.Group]
+		if keys == nil {
+			keys = make([]string, 0)
+		}
+		if upstream, _, mappingErr := common.ResolveModelMapping(ability.Model, ability.ChannelModelMapping); mappingErr == nil && !(ability.ChannelType == constant.ChannelTypeAdvancedCustom && advancedCustomConfigs[ability.ChannelId] != nil) {
+			_, eligible := resolvePricingPluginBindings(ability, upstream, pluginGeneration)
+			for key, allowed := range eligible {
+				if allowed && !slices.Contains(keys, key) {
+					keys = append(keys, key)
+				}
+			}
+		}
+		slices.Sort(keys)
+		groupPlugins[ability.Model][ability.Group] = keys
+		if groupEndpoints[ability.Model] == nil {
+			groupEndpoints[ability.Model] = make(map[string][]constant.EndpointType)
+		}
+		groupTypes := groupEndpoints[ability.Model][ability.Group]
+		if groupTypes == nil {
+			groupTypes = make([]constant.EndpointType, 0)
+		}
+		for _, endpoint := range channelTypes {
+			if !slices.Contains(groupTypes, endpoint) {
+				groupTypes = append(groupTypes, endpoint)
+			}
+		}
+		slices.Sort(groupTypes)
+		groupEndpoints[ability.Model][ability.Group] = groupTypes
 		for _, channelType := range channelTypes {
 			if !common.StringsContains(endpoints, string(channelType)) {
 				endpoints = append(endpoints, string(channelType))
@@ -299,16 +337,30 @@ func updatePricing() {
 		}
 		modelSupportEndpointsStr[ability.Model] = endpoints
 		if slices.Contains(channelTypes, constant.EndpointTypeImageGeneration) {
+			if groupImages[ability.Model] == nil {
+				groupImages[ability.Model] = make(map[string]imageAggregate)
+			}
+			groupImage := groupImages[ability.Model][ability.Group]
 			current := imageCapabilities[ability.Model]
 			capability, ok := common.ResolveChannelImageCapability(ability.ChannelType, ability.Model, ability.ChannelModelMapping)
 			if !ok {
 				current.unsupported = true
+				groupImage.unsupported = true
 			} else if current.initialized {
 				current.value = imagecapability.Intersect(current.value, capability)
 			} else {
 				current.value = capability
 				current.initialized = true
 			}
+			if ok {
+				if groupImage.initialized {
+					groupImage.value = imagecapability.Intersect(groupImage.value, capability)
+				} else {
+					groupImage.value = capability
+					groupImage.initialized = true
+				}
+			}
+			groupImages[ability.Model][ability.Group] = groupImage
 			imageCapabilities[ability.Model] = current
 		}
 	}
@@ -379,6 +431,15 @@ func updatePricing() {
 			ModelName:              model,
 			EnableGroup:            groups.Items(),
 			SupportedEndpointTypes: modelSupportEndpointTypes[model],
+			GroupEndpointTypes:     groupEndpoints[model],
+			GroupPluginKeys:        groupPlugins[model],
+			GroupImageCapabilities: make(map[string]*imagedto.ImageModelCapabilities),
+		}
+		for groupName, aggregate := range groupImages[model] {
+			if aggregate.initialized && !aggregate.unsupported {
+				converted := imagedto.ImageCapabilitiesFrom(aggregate.value)
+				pricing.GroupImageCapabilities[groupName] = &converted
+			}
 		}
 		if capability := imageCapabilities[model]; capability.initialized && !capability.unsupported {
 			converted := imagedto.ImageCapabilitiesFrom(capability.value)

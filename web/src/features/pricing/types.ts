@@ -29,6 +29,31 @@ export type PricingVendor = {
   description?: string
 }
 
+export type PricingGroupType = {
+  id: string
+  name: string
+  icon?: string
+  order: number
+  group_count: number
+  model_count: number
+}
+
+export type PricingGroup = {
+  name: string
+  type_id: string | null
+  type_name?: string
+  type_icon?: string
+  type_order?: number
+  ratio: number
+  description: string
+  model_count: number
+}
+
+export type PricingUsableGroups = Record<
+  string,
+  string | { desc: string; ratio?: number }
+>
+
 export type BillingUsageUnit = 'second' | 'count' | 'token' | 'credit'
 
 export type BillingUsageFieldSchema = {
@@ -48,6 +73,8 @@ export type BillingUsageExample = {
 }
 
 export type BillingPluginVariant = {
+  /** Display-only multiplier for groups actually bound to this provider. */
+  display_group_ratio?: number
   plugin_key: string
   plugin_name: string
   icon?: string
@@ -77,6 +104,11 @@ export type PricingModel = {
   audio_ratio?: number | null
   audio_completion_ratio?: number | null
   enable_groups: string[]
+  group_type_ids?: string[]
+  group_types?: PricingGroupType[]
+  group_endpoint_types?: Record<string, string[]>
+  group_plugin_keys?: Record<string, string[]>
+  group_image_capabilities?: Record<string, ImageModelCapabilities>
   tags?: string
   supported_endpoint_types?: string[]
   image_capabilities?: ImageModelCapabilities
@@ -130,9 +162,12 @@ export type PricingData = {
   data: PricingModel[]
   vendors: PricingVendor[]
   group_ratio: Record<string, number>
-  usable_group: Record<string, { desc: string; ratio: number }>
-  supported_endpoint: Record<string, string>
+  usable_group: PricingUsableGroups
+  supported_endpoint: Record<string, { path?: string; method?: string }>
   auto_groups: string[]
+  group_catalog_version?: string
+  group_types?: PricingGroupType[]
+  groups?: PricingGroup[]
 }
 
 export type TokenUnit = 'M' | 'K'

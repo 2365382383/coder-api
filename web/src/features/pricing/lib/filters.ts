@@ -24,14 +24,19 @@ import {
   ENDPOINT_TYPES,
   type SortOption,
 } from '../constants'
-import type { PricingModel } from '../types'
+import type { PricingGroup, PricingModel } from '../types'
 import {
   getCardExamplePrice,
   getDynamicPricingSummary,
   hasTaskUsageSchema,
   isUnconfiguredTaskUsageModel,
 } from './dynamic-price'
-import { isTokenBasedModel } from './model-helpers'
+import {
+  getCategoryGroupNames,
+  modelBelongsToCategory,
+  scopePricingModel,
+} from './group-categories'
+import { getDisplayGroupRatio, isTokenBasedModel } from './model-helpers'
 import { calculateTokenPrice } from './price'
 
 // ----------------------------------------------------------------------------
@@ -43,17 +48,41 @@ import { calculateTokenPrice } from './price'
  */
 export function filterBySearch(
   models: PricingModel[],
-  query: string
+  query: string,
+  groups: PricingGroup[] = []
 ): PricingModel[] {
   if (!query) return models
 
   const lowerQuery = query.toLowerCase()
+  const groupByName = new Map(groups.map((group) => [group.name, group]))
   return models.filter(
     (m) =>
       m.model_name?.toLowerCase().includes(lowerQuery) ||
       m.description?.toLowerCase().includes(lowerQuery) ||
       m.tags?.toLowerCase().includes(lowerQuery) ||
-      m.vendor_name?.toLowerCase().includes(lowerQuery)
+      m.vendor_name?.toLowerCase().includes(lowerQuery) ||
+      m.supported_endpoint_types?.some((endpoint) =>
+        endpoint.toLowerCase().includes(lowerQuery)
+      ) ||
+      (m.enable_groups ?? []).some((groupName) => {
+        const group = groupByName.get(groupName)
+        return (
+          groupName.toLowerCase().includes(lowerQuery) ||
+          group?.description.toLowerCase().includes(lowerQuery) === true ||
+          group?.type_name?.toLowerCase().includes(lowerQuery) === true
+        )
+      })
+  )
+}
+
+export function filterByCategory(
+  models: PricingModel[],
+  category: string,
+  groups: PricingGroup[] = []
+): PricingModel[] {
+  if (category === FILTER_ALL) return models
+  return models.filter((model) =>
+    modelBelongsToCategory(model, category, groups)
   )
 }
 
@@ -76,7 +105,9 @@ export function filterByGroup(
   group: string
 ): PricingModel[] {
   if (group === FILTER_ALL) return models
-  return models.filter((m) => m.enable_groups?.includes(group))
+  return models.filter(
+    (m) => m.enable_groups?.includes(group) || m.enable_groups?.includes('all')
+  )
 }
 
 /**
@@ -133,31 +164,46 @@ const PRICE_SORTS: Partial<
  */
 function getSortPrice(
   model: PricingModel,
-  kind: SortPriceKind
+  kind: SortPriceKind,
+  categoryGroups?: string[],
+  selectedGroup?: string
 ): number | undefined {
+  const ratio = getDisplayGroupRatio(model, selectedGroup, categoryGroups)
+  if (!Number.isFinite(ratio)) return undefined
   if (kind === 'request') {
     const example = getCardExamplePrice(model, { tokenUnit: 'M' })
-    if (example) return example.total
+    if (example) return example.effectiveTotal ?? example.total * ratio
   }
-  const summary = getDynamicPricingSummary(model, { tokenUnit: 'M' })
+  const summary = getDynamicPricingSummary(model, {
+    tokenUnit: 'M',
+    groupRatioMultiplier: ratio,
+  })
   if (kind === 'request') {
     if (summary) {
-      return summary.entries.find(
+      const value = summary.entries.find(
         (entry) => entry.field === 'fixedPrice' || entry.field === 'modelPrice'
       )?.value
+      return value === undefined || !Number.isFinite(value)
+        ? undefined
+        : value * (summary.groupRatiosApplied ? 1 : ratio)
     }
-    return isTokenBasedModel(model) ? undefined : model.model_price
+    return isTokenBasedModel(model) || model.model_price === undefined
+      ? undefined
+      : model.model_price * ratio
   }
   if (summary) {
     const field = kind === 'input' ? 'inputPrice' : 'outputPrice'
-    return summary.entries.find(
+    const value = summary.entries.find(
       (entry) => entry.field === field && entry.unit === 'token'
     )?.value
+    return value === undefined || !Number.isFinite(value)
+      ? undefined
+      : value * (summary.groupRatiosApplied ? 1 : ratio)
   }
   if (!isTokenBasedModel(model) || isUnconfiguredTaskUsageModel(model)) {
     return undefined
   }
-  return calculateTokenPrice(model, kind, 1)
+  return calculateTokenPrice(model, kind, ratio)
 }
 
 /**
@@ -165,7 +211,9 @@ function getSortPrice(
  */
 export function sortModels(
   models: PricingModel[],
-  sortBy: string
+  sortBy: string,
+  categoryGroups?: string[],
+  selectedGroup?: string
 ): PricingModel[] {
   const sorted = [...models]
 
@@ -173,7 +221,10 @@ export function sortModels(
   if (priceSort) {
     // Extracting the price parses the billing expression, so compute once
     const price = new Map(
-      sorted.map((m) => [m, getSortPrice(m, priceSort.kind)])
+      sorted.map((m) => [
+        m,
+        getSortPrice(m, priceSort.kind, categoryGroups, selectedGroup),
+      ])
     )
     // Models without this kind of price stay last in both directions
     sorted.sort((a, b) => {
@@ -205,21 +256,32 @@ export function filterAndSortModels(
   models: PricingModel[],
   filters: {
     search: string
+    category?: string
     vendor: string
     group: string
     quotaType: string
     endpointType: string
     tag: string
     sortBy: string
-  }
+  },
+  groups: PricingGroup[] = []
 ): PricingModel[] {
-  let result = filterBySearch(models, filters.search)
+  const category = filters.category ?? FILTER_ALL
+  const categoryGroups =
+    category === FILTER_ALL
+      ? undefined
+      : getCategoryGroupNames(category, groups)
+  const scopeGroups =
+    filters.group === FILTER_ALL ? categoryGroups : [filters.group]
+  let result = filterByCategory(models, category, groups)
+  result = result.map((model) => scopePricingModel(model, scopeGroups))
+  result = filterBySearch(result, filters.search, groups)
   result = filterByVendor(result, filters.vendor)
   result = filterByGroup(result, filters.group)
   result = filterByQuotaType(result, filters.quotaType)
   result = filterByEndpointType(result, filters.endpointType)
   result = filterByTag(result, filters.tag)
-  result = sortModels(result, filters.sortBy)
+  result = sortModels(result, filters.sortBy, categoryGroups, filters.group)
 
   return result
 }

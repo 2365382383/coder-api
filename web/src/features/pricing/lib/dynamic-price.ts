@@ -80,11 +80,13 @@ export type CardExamplePrice = {
   label: string
   total: number
   formatted: string
+  effectiveTotal?: number
 }
 
 export type DynamicPricingTier = ParsedTier | ParsedTaskTier
 
 export type DynamicPricingSummary = {
+  groupRatiosApplied?: boolean
   tiers: DynamicPricingTier[]
   tier: DynamicPricingTier | null
   tierCount: number
@@ -183,9 +185,10 @@ export function getTaskPricingUnit(
 
 export function getDynamicDisplayGroupRatio(
   model: PricingModel,
-  selectedGroup?: string
+  selectedGroup?: string,
+  categoryGroups?: string[]
 ): number {
-  return getDisplayGroupRatio(model, selectedGroup)
+  return getDisplayGroupRatio(model, selectedGroup, categoryGroups)
 }
 
 function applyRechargeRate(
@@ -203,6 +206,7 @@ export function formatDynamicUnitPrice(
   options: DynamicPriceOptions
 ): string {
   const groupRatio = options.groupRatioMultiplier ?? 1
+  if (!Number.isFinite(groupRatio)) return '-'
   const priceRate = options.priceRate ?? 1
   const usdExchangeRate = options.usdExchangeRate ?? 1
   const priceUSD =
@@ -228,6 +232,7 @@ export function formatTaskUsageUnitPrice(
   options: DynamicPriceOptions
 ): string {
   const groupRatio = options.groupRatioMultiplier ?? 1
+  if (!Number.isFinite(groupRatio)) return '-'
   const priceRate = options.priceRate ?? 1
   const usdExchangeRate = options.usdExchangeRate ?? 1
   const priceUSD = valuePerUnit * groupRatio
@@ -389,12 +394,34 @@ export function getDynamicPricingSummary(
 ): DynamicPricingSummary | null {
   const variants = model.billing_plugin_variants
   if (variants?.length) {
+    const groupRatiosApplied = variants.some(
+      (variant) => variant.display_group_ratio !== undefined
+    )
+    const displayOptions = groupRatiosApplied
+      ? { ...options, groupRatioMultiplier: 1 }
+      : options
     const summaries = variants.flatMap((variant) => {
+      const ratio =
+        variant.display_group_ratio ?? options.groupRatioMultiplier ?? 1
       const summary = getDynamicPricingSummary(
         withPluginPricing(model, variant),
-        options
+        { ...options, groupRatioMultiplier: ratio }
       )
-      return summary ? [summary] : []
+      if (!summary) return []
+      if (!groupRatiosApplied) return [summary]
+      return [
+        {
+          ...summary,
+          entries: summary.entries.map((entry) => ({
+            ...entry,
+            value: entry.value * ratio,
+            minValue:
+              entry.minValue === undefined ? undefined : entry.minValue * ratio,
+            maxValue:
+              entry.maxValue === undefined ? undefined : entry.maxValue * ratio,
+          })),
+        },
+      ]
     })
     const perCallEntries: DynamicPriceEntry[] = []
     if (
@@ -402,14 +429,22 @@ export function getDynamicPricingSummary(
       typeof model.model_price === 'number' &&
       variants.some((variant) => variant.billing_mode === 'ratio')
     ) {
+      const ratios = variants
+        .filter((variant) => variant.billing_mode === 'ratio')
+        .map(
+          (variant) =>
+            variant.display_group_ratio ?? options.groupRatioMultiplier ?? 1
+        )
+      const amount =
+        model.model_price * (groupRatiosApplied ? Math.min(...ratios) : 1)
       perCallEntries.push({
         key: 'modelPrice',
         field: 'modelPrice',
         label: 'Price per request',
         shortLabel: 'Per-call',
         labelKind: 'i18n',
-        value: model.model_price,
-        formatted: formatTaskUsageUnitPrice(model.model_price, options),
+        value: amount,
+        formatted: formatTaskUsageUnitPrice(amount, displayOptions),
         unit: 'request',
       })
     }
@@ -440,17 +475,19 @@ export function getDynamicPricingSummary(
         })
       }
     }
-    const entries = [...ranges.values()].map(({ entry, min, max }) => ({
-      ...entry,
-      value: min,
-      minValue: min,
-      maxValue: max,
-      formatted: formatTaskUsageUnitPrice(min, options),
-      formattedRange:
-        min === max
-          ? undefined
-          : `${formatTaskUsageUnitPrice(min, options)} – ${formatTaskUsageUnitPrice(max, options)}`,
-    }))
+    const entries = [...ranges.values()]
+      .filter(({ min, max }) => Number.isFinite(min) && Number.isFinite(max))
+      .map(({ entry, min, max }) => ({
+        ...entry,
+        value: min,
+        minValue: min,
+        maxValue: max,
+        formatted: formatTaskUsageUnitPrice(min, displayOptions),
+        formattedRange:
+          min === max
+            ? undefined
+            : `${formatTaskUsageUnitPrice(min, displayOptions)} – ${formatTaskUsageUnitPrice(max, displayOptions)}`,
+      }))
     const primaryKeys = new Set(
       summaries.flatMap((summary) =>
         summary.primaryEntries
@@ -486,10 +523,14 @@ export function getDynamicPricingSummary(
       ),
       isTaskUsage: true,
       providerCount: variants.length >= 2 ? variants.length : undefined,
-      hasUnconfiguredProviders: variants.some((variant) =>
-        variant.billing_mode === 'ratio'
-          ? isUnconfiguredTaskUsageModel(withPluginPricing(model, variant))
-          : !variant.billing_expr
+      ...(groupRatiosApplied ? { groupRatiosApplied: true } : {}),
+      hasUnconfiguredProviders: variants.some(
+        (variant) =>
+          (variant.display_group_ratio !== undefined &&
+            !Number.isFinite(variant.display_group_ratio)) ||
+          (variant.billing_mode === 'ratio'
+            ? isUnconfiguredTaskUsageModel(withPluginPricing(model, variant))
+            : !variant.billing_expr)
       ),
     }
   }
@@ -598,6 +639,25 @@ export function getCardExamplePrice(
   options: DynamicPriceOptions
 ): CardExamplePrice | null {
   if (model.billing_plugin_variants?.length) {
+    if (
+      model.billing_plugin_variants.some(
+        (variant) => variant.display_group_ratio !== undefined
+      )
+    ) {
+      const examples = model.billing_plugin_variants.flatMap((variant) => {
+        const ratio =
+          variant.display_group_ratio ?? options.groupRatioMultiplier ?? 1
+        const example = getCardExamplePrice(withPluginPricing(model, variant), {
+          ...options,
+          groupRatioMultiplier: ratio,
+        })
+        return example && Number.isFinite(ratio)
+          ? [{ ...example, effectiveTotal: example.total * ratio }]
+          : []
+      })
+      examples.sort((a, b) => a.effectiveTotal - b.effectiveTotal)
+      return examples[0] ?? null
+    }
     const variant = model.billing_plugin_variants.find(
       (provider) => provider.billing_expr
     )

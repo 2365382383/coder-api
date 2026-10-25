@@ -248,6 +248,8 @@ export const protocols = {
 	assert.Equal(t, []constant.EndpointType{constant.EndpointTypeOpenAIVideo}, models["public-video"].SupportedEndpointTypes)
 	assert.Nil(t, models["public-video"].ImageCapabilities)
 	assert.Equal(t, []constant.EndpointType{constant.EndpointTypeOpenAIResponse}, models["probe-text"].SupportedEndpointTypes)
+	assert.Equal(t, []string{pluginKey}, models["public-image"].GroupPluginKeys["default"])
+	assert.Empty(t, models["unclaimed-model"].GroupPluginKeys["default"])
 	assert.Empty(t, models["unclaimed-model"].SupportedEndpointTypes)
 	assert.Equal(t, common.EndpointInfo{Path: "/v1/videos", Method: "POST"}, GetSupportedEndpointMap()[string(constant.EndpointTypeOpenAIVideo)])
 	assert.NotContains(t, GetSupportedEndpointMap(), "openai_video")

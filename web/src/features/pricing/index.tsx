@@ -16,9 +16,11 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { useNavigate, useSearch } from '@tanstack/react-router'
 import { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { ErrorState } from '@/components/error-state'
 import { PublicLayout } from '@/components/layout'
 import { PageTransition } from '@/components/page-transition'
 
@@ -28,16 +30,27 @@ import {
   SearchBar,
   PricingTable,
   PricingSidebar,
+  PricingCategoryNav,
   PricingToolbar,
   ModelCardGrid,
   ModelDetailsDrawer,
 } from './components'
+import { PricingGroupSelect } from './components/pricing-group-select'
 import { EXCLUDED_GROUPS, VIEW_MODES } from './constants'
 import { useFilters } from './hooks/use-filters'
 import { usePricingData } from './hooks/use-pricing-data'
+import { filterByCategory } from './lib/filters'
+import {
+  ALL_CATEGORIES,
+  UNCLASSIFIED_CATEGORY,
+  categoryTypeID,
+  getCategoryGroupNames,
+} from './lib/group-categories'
 
 export function Pricing() {
   const { t } = useTranslation()
+  const navigate = useNavigate({ from: '/pricing/' })
+  const routeSearch = useSearch({ from: '/pricing/' })
   const [selectedModelName, setSelectedModelName] = useState<string | null>(
     null
   )
@@ -47,9 +60,15 @@ export function Pricing() {
     vendors,
     groupRatio,
     usableGroup,
+    groupTypes,
+    groups,
+    hasGroupCatalog,
+    catalogReady,
     endpointMap,
     autoGroups,
     isLoading,
+    error,
+    refetch,
     priceRate,
     usdExchangeRate,
   } = usePricingData()
@@ -62,11 +81,13 @@ export function Pricing() {
     quotaTypeFilter,
     endpointTypeFilter,
     tagFilter,
+    categoryFilter,
     tokenUnit,
     viewMode,
     showRechargePrice,
     setSearchInput,
     setSortBy,
+    setCategoryFilter,
     setVendorFilter,
     setGroupFilter,
     setQuotaTypeFilter,
@@ -81,7 +102,9 @@ export function Pricing() {
     availableTags,
     clearFilters,
     clearSearch,
-  } = useFilters(models || [])
+    clearAll,
+    filtersAdjusted,
+  } = useFilters(models, groupTypes, groups, catalogReady, hasGroupCatalog)
 
   const handleModelClick = useCallback((modelName: string) => {
     setSelectedModelName(modelName)
@@ -97,18 +120,48 @@ export function Pricing() {
     [models, selectedModelName]
   )
 
+  const availableGroupCatalog = useMemo(() => {
+    const names = new Set(getCategoryGroupNames(categoryFilter, groups))
+    return groups.filter(
+      (group) => names.has(group.name) && !EXCLUDED_GROUPS.includes(group.name)
+    )
+  }, [categoryFilter, groups])
   const availableGroups = useMemo(
-    () =>
-      Object.keys(usableGroup || {}).filter(
-        (g) => !EXCLUDED_GROUPS.includes(g)
-      ),
-    [usableGroup]
+    () => availableGroupCatalog.map((group) => group.name),
+    [availableGroupCatalog]
   )
 
-  const handleClearAll = useCallback(() => {
-    clearFilters()
-    clearSearch()
-  }, [clearFilters, clearSearch])
+  const availableGroupRatios = useMemo(() => {
+    if (groups.length > 0) {
+      return Object.fromEntries(
+        groups.map((group) => [group.name, group.ratio])
+      )
+    }
+    return groupRatio
+  }, [groupRatio, groups])
+
+  const selectedCategoryGroups = useMemo(
+    () =>
+      categoryFilter === ALL_CATEGORIES
+        ? undefined
+        : getCategoryGroupNames(categoryFilter, groups),
+    [categoryFilter, groups]
+  )
+
+  const selectedCategoryName = useMemo(
+    () =>
+      categoryFilter === UNCLASSIFIED_CATEGORY
+        ? t('Unclassified')
+        : groupTypes.find(
+            (groupType) => groupType.id === categoryTypeID(categoryFilter)
+          )?.name,
+    [categoryFilter, groupTypes, t]
+  )
+
+  const unclassifiedCount =
+    hasGroupCatalog && groups.some((group) => group.type_id === null)
+      ? filterByCategory(models, UNCLASSIFIED_CATEGORY, groups).length
+      : undefined
 
   const renderPricingContent = () => {
     if (filteredModels.length === 0) {
@@ -116,7 +169,7 @@ export function Pricing() {
         <EmptyState
           searchQuery={searchInput}
           hasActiveFilters={hasActiveFilters}
-          onClearFilters={handleClearAll}
+          onClearFilters={clearAll}
         />
       )
     }
@@ -131,6 +184,7 @@ export function Pricing() {
           tokenUnit={tokenUnit}
           showRechargePrice={showRechargePrice}
           selectedGroup={groupFilter}
+          selectedCategoryGroups={selectedCategoryGroups}
         />
       )
     }
@@ -143,6 +197,7 @@ export function Pricing() {
         tokenUnit={tokenUnit}
         showRechargePrice={showRechargePrice}
         selectedGroup={groupFilter}
+        selectedCategoryGroups={selectedCategoryGroups}
         onModelClick={handleModelClick}
       />
     )
@@ -154,6 +209,18 @@ export function Pricing() {
         <div className='mx-auto w-full max-w-[1800px] px-3 pt-16 pb-8 sm:px-6 sm:pt-20 sm:pb-10 xl:px-8'>
           <LoadingSkeleton viewMode={viewMode} />
         </div>
+      </PublicLayout>
+    )
+  }
+
+  if (error && !catalogReady) {
+    return (
+      <PublicLayout>
+        <ErrorState
+          onRetry={() => {
+            void refetch()
+          }}
+        />
       </PublicLayout>
     )
   }
@@ -202,6 +269,33 @@ export function Pricing() {
             />
           </header>
 
+          <div className='mx-auto mb-4 w-full max-w-[1800px] space-y-3'>
+            <PricingCategoryNav
+              types={groupTypes}
+              selectedCategory={categoryFilter}
+              modelCount={models?.length || 0}
+              unclassifiedCount={unclassifiedCount}
+              onCategoryChange={setCategoryFilter}
+            />
+            <PricingGroupSelect
+              groups={availableGroupCatalog}
+              value={groupFilter}
+              onChange={setGroupFilter}
+            />
+            {filtersAdjusted && (
+              <p role='status' className='text-muted-foreground text-sm'>
+                {t(
+                  'Some filters were updated because the group catalog changed.'
+                )}
+              </p>
+            )}
+            {selectedCategoryName && (
+              <p className='text-muted-foreground text-sm break-words'>
+                {t('Category')}: {selectedCategoryName}
+              </p>
+            )}
+          </div>
+
           <div className='grid gap-4 xl:grid-cols-[280px_minmax(0,1fr)]'>
             <PricingSidebar
               quotaTypeFilter={quotaTypeFilter}
@@ -216,7 +310,8 @@ export function Pricing() {
               onTagChange={setTagFilter}
               vendors={vendors || []}
               groups={availableGroups}
-              groupRatios={groupRatio}
+              groupRatios={availableGroupRatios}
+              hideGroupFilter
               tags={availableTags}
               models={models || []}
               hasActiveFilters={hasActiveFilters}
@@ -248,7 +343,8 @@ export function Pricing() {
                 onTagChange={setTagFilter}
                 vendors={vendors || []}
                 groups={availableGroups}
-                groupRatios={groupRatio}
+                groupRatios={availableGroupRatios}
+                hideGroupFilter
                 tags={availableTags}
                 models={models || []}
                 hasActiveFilters={hasActiveFilters}
@@ -263,6 +359,13 @@ export function Pricing() {
           {selectedModel && (
             <ModelDetailsDrawer
               open={Boolean(selectedModel)}
+              onOpenPage={() => {
+                void navigate({
+                  to: '/pricing/$modelId',
+                  params: { modelId: selectedModel.model_name },
+                  search: routeSearch,
+                })
+              }}
               onOpenChange={(open) => {
                 if (!open) setSelectedModelName(null)
               }}
@@ -276,6 +379,11 @@ export function Pricing() {
                 >) || {}
               }
               autoGroups={autoGroups || []}
+              selectedCategoryName={selectedCategoryName}
+              selectedCategoryGroups={selectedCategoryGroups}
+              selectedGroup={groupFilter === 'all' ? undefined : groupFilter}
+              groupCatalog={groups}
+              onGroupChange={setGroupFilter}
               priceRate={priceRate ?? 1}
               usdExchangeRate={usdExchangeRate ?? 1}
               tokenUnit={tokenUnit}

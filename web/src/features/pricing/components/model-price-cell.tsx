@@ -30,6 +30,7 @@ import {
   getDynamicPricingSummary,
   isUnconfiguredTaskUsageModel,
 } from '../lib/dynamic-price'
+import { scopePricingModel } from '../lib/group-categories'
 import { isTokenBasedModel } from '../lib/model-helpers'
 import { formatPrice, formatRequestPrice } from '../lib/price'
 import { taskUsageUnitLabel } from '../lib/task-price-display'
@@ -41,6 +42,7 @@ export type ModelPriceCellOptions = {
   usdExchangeRate?: number
   showRechargePrice?: boolean
   selectedGroup?: string
+  selectedCategoryGroups?: string[]
 }
 
 export function ModelPriceCell(props: {
@@ -53,12 +55,22 @@ export function ModelPriceCell(props: {
   const currencyLabel =
     currency.quotaDisplayType === 'TOKENS' ? 'USD' : getCurrencyLabel()
   const options = props.options ?? {}
+  const model = useMemo(
+    () =>
+      scopePricingModel(
+        props.model,
+        options.selectedGroup && options.selectedGroup !== 'all'
+          ? [options.selectedGroup]
+          : options.selectedCategoryGroups
+      ),
+    [props.model, options.selectedGroup, options.selectedCategoryGroups]
+  )
   const tokenUnit = options.tokenUnit ?? DEFAULT_TOKEN_UNIT
   const tokenUnitLabel = tokenUnit === 'K' ? '1K' : '1M'
-  const billingTime = useBillingTime(props.model.billing_expr)
+  const billingTime = useBillingTime(model.billing_expr)
   const dynamic = useMemo(
     () =>
-      getDynamicPricingSummary(props.model, {
+      getDynamicPricingSummary(model, {
         priceRate: options.priceRate,
         usdExchangeRate: options.usdExchangeRate,
         showRechargePrice: options.showRechargePrice,
@@ -66,19 +78,21 @@ export function ModelPriceCell(props: {
         tokenUnit,
         showCurrencySymbol: false,
         groupRatioMultiplier: getDynamicDisplayGroupRatio(
-          props.model,
-          options.selectedGroup
+          model,
+          options.selectedGroup,
+          options.selectedCategoryGroups
         ),
       }),
     // Currency is read indirectly by the price formatter.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
-      props.model,
+      model,
       tokenUnit,
       options.priceRate,
       options.usdExchangeRate,
       options.showRechargePrice,
       options.selectedGroup,
+      options.selectedCategoryGroups,
       billingTime,
       currency,
     ]
@@ -168,19 +182,15 @@ export function ModelPriceCell(props: {
       caption += ` · ${t('{{count}} tiers', { count: dynamic.tierCount })}`
     }
   } else {
-    if (isUnconfiguredTaskUsageModel(props.model)) {
+    if (isUnconfiguredTaskUsageModel(model)) {
       return (
         <span className='text-muted-foreground text-sm'>
           {t('Not configured')}
         </span>
       )
     }
-    const tokenBased = isTokenBasedModel(props.model)
-    if (
-      !Number.isFinite(
-        tokenBased ? props.model.model_ratio : props.model.model_price
-      )
-    ) {
+    const tokenBased = isTokenBasedModel(model)
+    if (!Number.isFinite(tokenBased ? model.model_ratio : model.model_price)) {
       return (
         <span className='text-muted-foreground text-sm'>
           {t('Unset price')}
@@ -192,27 +202,29 @@ export function ModelPriceCell(props: {
         {
           label: t('Input'),
           value: formatPrice(
-            props.model,
+            model,
             'input',
             tokenUnit,
             options.showRechargePrice,
             options.priceRate,
             options.usdExchangeRate,
             options.selectedGroup,
-            false
+            false,
+            options.selectedCategoryGroups
           ),
         },
         {
           label: t('Output'),
           value: formatPrice(
-            props.model,
+            model,
             'output',
             tokenUnit,
             options.showRechargePrice,
             options.priceRate,
             options.usdExchangeRate,
             options.selectedGroup,
-            false
+            false,
+            options.selectedCategoryGroups
           ),
         },
       ]
@@ -221,12 +233,13 @@ export function ModelPriceCell(props: {
         {
           label: t('Per-request'),
           value: formatRequestPrice(
-            props.model,
+            model,
             options.showRechargePrice,
             options.priceRate,
             options.usdExchangeRate,
             options.selectedGroup,
-            false
+            false,
+            options.selectedCategoryGroups
           ),
         },
       ]

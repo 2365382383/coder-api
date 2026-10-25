@@ -75,6 +75,7 @@ export interface PricingSidebarProps {
   hasActiveFilters: boolean
   onClearFilters: () => void
   className?: string
+  hideGroupFilter?: boolean
 }
 
 function formatGroupRatio(ratio: number | undefined): string | undefined {
@@ -293,12 +294,14 @@ export const PricingSidebar = memo(function PricingSidebar(
       )}
 
       <div className='space-y-1'>
-        <FilterSection
-          title={t('Groups')}
-          value={props.groupFilter}
-          options={groupOptions}
-          onChange={props.onGroupChange}
-        />
+        {!props.hideGroupFilter && (
+          <FilterSection
+            title={t('Groups')}
+            value={props.groupFilter}
+            options={groupOptions}
+            onChange={props.onGroupChange}
+          />
+        )}
         <FilterSection
           title={t('All Vendors')}
           value={props.vendorFilter}

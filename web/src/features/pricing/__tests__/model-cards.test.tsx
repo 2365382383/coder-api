@@ -88,6 +88,39 @@ afterEach(() => {
 })
 
 describe('model cards', () => {
+  it('quotes only the provider bound to the selected group, including after switching', () => {
+    const model = pricingModel({
+      group_plugin_keys: { default: ['a'], premium: ['b'] },
+      billing_mode: 'tiered_expr',
+      billing_expr: 'tier("a", u("seconds") * 9)',
+      billing_usage_schema: { seconds: { type: 'number', unit: 'second' } },
+      billing_plugin_variants: [
+        {
+          plugin_key: 'a',
+          plugin_name: 'A',
+          billing_mode: 'tiered_expr',
+          billing_expr: 'tier("a", u("seconds") * 9)',
+          billing_usage_schema: { seconds: { type: 'number', unit: 'second' } },
+        },
+        {
+          plugin_key: 'b',
+          plugin_name: 'B',
+          billing_mode: 'tiered_expr',
+          billing_expr: 'tier("b", u("seconds") * 1)',
+          billing_usage_schema: { seconds: { type: 'number', unit: 'second' } },
+        },
+      ],
+    })
+    const view = render(
+      <ModelCard model={model} onClick={vi.fn()} selectedGroup='default' />
+    )
+    expect(screen.getByText('$9')).toBeVisible()
+    view.rerender(
+      <ModelCard model={model} onClick={vi.fn()} selectedGroup='premium' />
+    )
+    expect(screen.getByText('$3')).toBeVisible()
+    expect(screen.queryByText('$9')).not.toBeInTheDocument()
+  })
   it('shows separate generic and image cache prices including a free image cache', () => {
     render(
       <CachedPriceCell

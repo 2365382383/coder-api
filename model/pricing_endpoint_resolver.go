@@ -32,20 +32,20 @@ func getPricingEndpointTypesForAbility(ability AbilityWithChannel, advancedCusto
 	return ResolveAbilityEndpointTypes(ability, jsplugin.DefaultRegistry.Generation(), advancedCustomConfigs[ability.ChannelId])
 }
 
-func resolvePluginEndpointTypes(ability AbilityWithChannel, upstreamModel string, generation *jsplugin.RoutingGeneration) ([]constant.EndpointType, bool) {
+func resolvePricingPluginBindings(ability AbilityWithChannel, upstreamModel string, generation *jsplugin.RoutingGeneration) (string, map[string]bool) {
 	if generation == nil {
-		return nil, false
+		return "", nil
 	}
 	declared, ok := generation.CanonicalModel(ability.Model)
 	if !ok {
 		declared, ok = generation.CanonicalModel(upstreamModel)
 	}
 	if !ok {
-		return nil, false
+		return "", nil
 	}
 	settings := dto.ChannelSettings{}
 	if ability.ChannelSetting != "" && common.UnmarshalJsonStr(ability.ChannelSetting, &settings) != nil {
-		return nil, false
+		return "", nil
 	}
 	bindings := settings.TaskPluginBindings()
 	eligible := make(map[string]bool)
@@ -58,6 +58,14 @@ func resolvePluginEndpointTypes(ability AbilityWithChannel, upstreamModel string
 		default:
 			eligible[plugin.Meta.Key] = slices.Contains(plugin.Meta.ChannelTypes, ability.ChannelType)
 		}
+	}
+	return declared, eligible
+}
+
+func resolvePluginEndpointTypes(ability AbilityWithChannel, upstreamModel string, generation *jsplugin.RoutingGeneration) ([]constant.EndpointType, bool) {
+	declared, eligible := resolvePricingPluginBindings(ability, upstreamModel, generation)
+	if declared == "" {
+		return nil, false
 	}
 	endpoints := make([]constant.EndpointType, 0, 3)
 	bound := false

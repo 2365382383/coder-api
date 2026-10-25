@@ -28,6 +28,7 @@ import {
   getDynamicPricingSummary,
   isUnconfiguredTaskUsageModel,
 } from '../lib/dynamic-price'
+import { scopePricingModel } from '../lib/group-categories'
 import { isTokenBasedModel } from '../lib/model-helpers'
 import { formatPrice, stripTrailingZeros } from '../lib/price'
 import type { PricingModel } from '../types'
@@ -44,11 +45,21 @@ export function CachedPriceCell(props: {
     usdExchangeRate = 1,
     showRechargePrice = false,
     selectedGroup,
+    selectedCategoryGroups,
   } = props.options
 
   const tokenUnitLabel = tokenUnit === 'K' ? '1K' : '1M'
 
-  const model = props.model
+  const model = useMemo(
+    () =>
+      scopePricingModel(
+        props.model,
+        selectedGroup && selectedGroup !== 'all'
+          ? [selectedGroup]
+          : selectedCategoryGroups
+      ),
+    [props.model, selectedGroup, selectedCategoryGroups]
+  )
   const currency = useSystemConfigStore((state) => state.config.currency)
   const billingTime = useBillingTime(model.billing_expr)
   const dynamicSummary = useMemo(
@@ -59,7 +70,11 @@ export function CachedPriceCell(props: {
         showRechargePrice,
         priceRate,
         usdExchangeRate,
-        groupRatioMultiplier: getDynamicDisplayGroupRatio(model, selectedGroup),
+        groupRatioMultiplier: getDynamicDisplayGroupRatio(
+          model,
+          selectedGroup,
+          selectedCategoryGroups
+        ),
       }),
     // Currency is read indirectly by the price formatter.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -70,6 +85,7 @@ export function CachedPriceCell(props: {
       priceRate,
       usdExchangeRate,
       selectedGroup,
+      selectedCategoryGroups,
       billingTime,
       currency,
     ]
@@ -136,7 +152,9 @@ export function CachedPriceCell(props: {
       showRechargePrice,
       priceRate,
       usdExchangeRate,
-      selectedGroup
+      selectedGroup,
+      true,
+      selectedCategoryGroups
     )
   )
 

@@ -29,13 +29,18 @@ import { Label } from '@/components/ui/label'
 import { getLobeIcon } from '@/lib/lobe-icon'
 import { cn } from '@/lib/utils'
 
-import { createGroupTypeId, type GroupTypeDefinition } from './group-type'
+import {
+  createGroupTypeId,
+  isValidGroupTypeName,
+  type GroupTypeDefinition,
+} from './group-type'
 
 type GroupTypeManagerDialogProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
   types: GroupTypeDefinition[]
   groupCounts: Record<string, number>
+  modelCounts?: Record<string, number>
   onApply: (types: GroupTypeDefinition[], removedTypeIDs: string[]) => void
 }
 
@@ -74,7 +79,9 @@ export function GroupTypeManagerDialog(props: GroupTypeManagerDialogProps) {
   }, [draft])
 
   const hasInvalidName = draft.some(
-    (type) => !type.name.trim() || duplicateNames.has(normalizedName(type.name))
+    (type) =>
+      !isValidGroupTypeName(type.name) ||
+      duplicateNames.has(normalizedName(type.name))
   )
 
   const updateType = (id: string, patch: Partial<GroupTypeDefinition>) => {
@@ -149,7 +156,7 @@ export function GroupTypeManagerDialog(props: GroupTypeManagerDialogProps) {
         onOpenChange={props.onOpenChange}
         title={t('Group types')}
         description={t(
-          'Create the categories shown before groups when users create API keys.'
+          'Create categories for Model Square and API key group selection.'
         )}
         contentHeight='min(70vh, 620px)'
         contentClassName='sm:max-w-4xl'
@@ -244,7 +251,7 @@ export function GroupTypeManagerDialog(props: GroupTypeManagerDialogProps) {
                     value={selectedType.name}
                     maxLength={64}
                     aria-invalid={
-                      !selectedType.name.trim() ||
+                      !isValidGroupTypeName(selectedType.name) ||
                       duplicateNames.has(normalizedName(selectedType.name))
                     }
                     onChange={(event) =>
@@ -256,6 +263,14 @@ export function GroupTypeManagerDialog(props: GroupTypeManagerDialogProps) {
                       {t('Please enter a name')}
                     </p>
                   )}
+                  {selectedType.name.trim() &&
+                    !isValidGroupTypeName(selectedType.name) && (
+                      <p className='text-destructive text-xs'>
+                        {t(
+                          'Group type names must contain at most 64 characters and no control characters.'
+                        )}
+                      </p>
+                    )}
                   {duplicateNames.has(normalizedName(selectedType.name)) && (
                     <p className='text-destructive text-xs'>
                       {t('Group type names must be unique.')}
@@ -317,6 +332,14 @@ export function GroupTypeManagerDialog(props: GroupTypeManagerDialogProps) {
                     count: selectedTypeGroupCount,
                   })}
                 </p>
+                {props.modelCounts && (
+                  <p className='text-muted-foreground text-xs'>
+                    {t('{{groups}} group(s), {{models}} visible model(s)', {
+                      groups: selectedTypeGroupCount,
+                      models: props.modelCounts[selectedType.id] ?? 0,
+                    })}
+                  </p>
+                )}
               </div>
             )}
           </div>
@@ -329,9 +352,23 @@ export function GroupTypeManagerDialog(props: GroupTypeManagerDialogProps) {
           if (!open) setPendingDelete(null)
         }}
         title={t('Delete group type')}
-        desc={t(
-          'Groups using this type will become unclassified. User-selectable groups among them will no longer appear when creating API keys.'
-        )}
+        desc={
+          <div className='space-y-2'>
+            <p>
+              {t(
+                'Groups using this type will become unclassified. User-selectable groups among them will no longer appear when creating API keys.'
+              )}
+            </p>
+            {pendingDelete && props.modelCounts && (
+              <p>
+                {t('{{groups}} group(s), {{models}} visible model(s)', {
+                  groups: props.groupCounts[pendingDelete.id] ?? 0,
+                  models: props.modelCounts[pendingDelete.id] ?? 0,
+                })}
+              </p>
+            )}
+          </div>
+        }
         confirmText={t('Delete')}
         destructive
         handleConfirm={() => {

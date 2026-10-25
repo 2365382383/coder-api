@@ -36,6 +36,7 @@ import {
   type ModelPricingConfig,
 } from '@/features/model-pricing/api'
 import { pricingOptions } from '@/features/model-pricing/pricing'
+import { usePricingData } from '@/features/pricing/hooks/use-pricing-data'
 import { AUTO_GROUP_TYPE_ID } from '@/lib/group-types'
 import { handleServerError } from '@/lib/handle-server-error'
 
@@ -52,6 +53,7 @@ import {
   parseGroupTypeMap,
   parseGroupTypes,
   serializeGroupTypeMap,
+  isValidGroupTypeName,
 } from './group-type'
 import { ModelRatioForm } from './model-ratio-form'
 import { ToolPriceSettings } from './tool-price-settings'
@@ -174,7 +176,12 @@ const createGroupSchema = (t: Translate) =>
           }
           if (Array.isArray(value)) return false
           const type = value as Record<string, unknown>
-          if (typeof type.name !== 'string' || !type.name.trim()) return false
+          if (
+            typeof type.name !== 'string' ||
+            !isValidGroupTypeName(type.name)
+          ) {
+            return false
+          }
           if (type.icon !== undefined && typeof type.icon !== 'string') {
             return false
           }
@@ -240,6 +247,7 @@ export function RatioSettingsCard({
   const { t } = useTranslation()
   const updateOption = useUpdateOption()
   const updateGroupTypeOptions = useUpdateGroupTypeOptions()
+  const groupCatalog = usePricingData(visibleTabs.includes('groups'))
   const [confirmOpen, setConfirmOpen] = useState(false)
 
   const pricingQuery = useModelPricing()
@@ -647,6 +655,9 @@ export function RatioSettingsCard({
           form={groupForm}
           onSave={saveGroupRatios}
           isSaving={groupForm.formState.isSubmitting}
+          catalogModels={
+            groupCatalog.catalogReady ? groupCatalog.models : undefined
+          }
         />
       )
     }

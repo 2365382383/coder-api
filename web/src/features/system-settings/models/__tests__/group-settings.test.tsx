@@ -30,6 +30,8 @@ import { useForm } from 'react-hook-form'
 import { describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 
+import type { PricingModel } from '@/features/pricing/types'
+
 import { SettingsPageProvider } from '../../components/settings-page-context'
 import { positiveIntegerSchema } from '../../utils/numeric-field'
 import { GroupRatioForm } from '../group-ratio-form'
@@ -66,6 +68,7 @@ function Fixture(props: {
   onSave?: (values: typeof defaults) => Promise<void>
   initial?: Partial<typeof defaults>
   isSaving?: boolean
+  catalogModels?: PricingModel[]
 }) {
   const [actions, setActions] = useState<HTMLDivElement | null>(null)
   const form = useForm({
@@ -79,6 +82,7 @@ function Fixture(props: {
         form={form}
         onSave={props.onSave ?? (async () => {})}
         isSaving={props.isSaving ?? false}
+        catalogModels={props.catalogModels}
       />
     </SettingsPageProvider>
   )
@@ -373,6 +377,30 @@ describe('group settings workspace', () => {
 })
 
 describe('group type management', () => {
+  it('previews the distinct models affected by an unsaved type assignment', () => {
+    render(
+      <Fixture
+        initial={{
+          GroupTypes: '{"custom":{"name":"Custom category","order":0}}',
+          GroupTypeMap: '{"default":"custom","vip":"custom"}',
+        }}
+        catalogModels={[
+          {
+            id: 1,
+            model_name: 'shared',
+            quota_type: 0,
+            model_ratio: 1,
+            completion_ratio: 1,
+            enable_groups: ['default', 'vip'],
+          },
+        ]}
+      />
+    )
+    expect(screen.getByText('Model Square preview')).toBeVisible()
+    expect(
+      screen.getByText(/Custom category: 2 group\(s\), 1 visible model\(s\)/)
+    ).toBeVisible()
+  })
   function getGroupRow(name: string): HTMLElement {
     const row = screen.getByDisplayValue(name).closest('tr')
     if (!row) throw new Error(`Expected a row for group "${name}"`)

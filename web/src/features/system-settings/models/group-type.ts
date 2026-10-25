@@ -31,6 +31,14 @@ export type GroupTypeMap = Record<string, string>
 
 let groupTypeIdCounter = 0
 
+export function isValidGroupTypeName(name: string): boolean {
+  return (
+    Boolean(name.trim()) &&
+    [...name.trim()].length <= 64 &&
+    !/\p{Cc}/u.test(name)
+  )
+}
+
 function sortGroupTypes(types: GroupTypeDefinition[]): GroupTypeDefinition[] {
   return [...types].sort((a, b) => {
     if (a.order !== b.order) return a.order - b.order

@@ -28,11 +28,17 @@ import type { PricingModel } from '../types'
  */
 export function getAvailableGroups(
   model: PricingModel,
-  usableGroup: Record<string, { desc: string; ratio: number }>
+  usableGroup: Record<string, unknown>
 ): string[] {
   const modelEnableGroups = Array.isArray(model.enable_groups)
     ? model.enable_groups
     : []
+
+  if (modelEnableGroups.includes('all')) {
+    return Object.keys(usableGroup).filter(
+      (group) => !EXCLUDED_GROUPS.includes(group)
+    )
+  }
 
   return Object.keys(usableGroup)
     .filter((g) => !EXCLUDED_GROUPS.includes(g))
@@ -47,7 +53,9 @@ export function getConfiguredGroupRatio(
   group: string
 ): number {
   const ratio = groupRatio[group]
-  return typeof ratio === 'number' && Number.isFinite(ratio) ? ratio : 1
+  return typeof ratio === 'number' && Number.isFinite(ratio) && ratio >= 0
+    ? ratio
+    : Number.NaN
 }
 
 /**
@@ -59,39 +67,49 @@ export function getConfiguredGroupRatio(
  */
 export function getDisplayGroupRatio(
   model: PricingModel,
-  selectedGroup?: string
+  selectedGroup?: string,
+  categoryGroups?: string[]
 ): number {
   const modelEnableGroups = Array.isArray(model.enable_groups)
     ? model.enable_groups
     : []
   const groupRatio = model.group_ratio || {}
 
-  if (
-    selectedGroup &&
-    selectedGroup !== FILTER_ALL &&
-    modelEnableGroups.includes(selectedGroup)
-  ) {
-    return getConfiguredGroupRatio(groupRatio, selectedGroup)
+  let candidateGroups = modelEnableGroups.includes('all')
+    ? Object.keys(groupRatio).filter(
+        (group) => !EXCLUDED_GROUPS.includes(group)
+      )
+    : modelEnableGroups.filter((group) => !EXCLUDED_GROUPS.includes(group))
+  if (categoryGroups) {
+    candidateGroups = modelEnableGroups.includes('all')
+      ? categoryGroups
+      : categoryGroups.filter((group) => modelEnableGroups.includes(group))
   }
 
-  if (modelEnableGroups.length === 0) {
-    return 1
+  if (selectedGroup && selectedGroup !== FILTER_ALL) {
+    return candidateGroups.includes(selectedGroup)
+      ? getConfiguredGroupRatio(groupRatio, selectedGroup)
+      : Number.NaN
   }
+
+  // Older callers without a group-price payload render base prices.
+  if (model.group_ratio === undefined && categoryGroups === undefined) return 1
 
   let minRatio = Number.POSITIVE_INFINITY
 
-  for (const group of modelEnableGroups) {
+  for (const group of candidateGroups) {
     const ratio = groupRatio[group]
     if (
       typeof ratio === 'number' &&
       Number.isFinite(ratio) &&
+      ratio >= 0 &&
       ratio < minRatio
     ) {
       minRatio = ratio
     }
   }
 
-  return minRatio === Number.POSITIVE_INFINITY ? 1 : minRatio
+  return minRatio === Number.POSITIVE_INFINITY ? Number.NaN : minRatio
 }
 
 /**

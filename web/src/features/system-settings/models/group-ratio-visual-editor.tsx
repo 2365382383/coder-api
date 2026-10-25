@@ -80,6 +80,7 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import type { PricingModel } from '@/features/pricing/types'
 import { toIntlLocale } from '@/i18n/languages'
 import { formatNumber } from '@/lib/format'
 import { getLobeIcon } from '@/lib/lobe-icon'
@@ -115,6 +116,7 @@ type GroupRatioVisualEditorProps = {
   groupSpecialUsableGroup: string
   groupTypes: string
   groupTypeMap: string
+  catalogModels?: PricingModel[]
   onChange: (field: string, value: string) => void
 }
 
@@ -330,6 +332,7 @@ export const GroupRatioVisualEditor = memo(function GroupRatioVisualEditor({
   groupSpecialUsableGroup,
   groupTypes,
   groupTypeMap,
+  catalogModels,
   onChange,
 }: GroupRatioVisualEditorProps) {
   const { t, i18n } = useTranslation()
@@ -425,6 +428,7 @@ export const GroupRatioVisualEditor = memo(function GroupRatioVisualEditor({
           topupGroupRatio={topupGroupRatio}
           groupTypes={groupTypes}
           groupTypeMap={groupTypeMap}
+          catalogModels={catalogModels}
           onChange={onChange}
           onShowDetail={setDetailGroup}
         />
@@ -532,6 +536,7 @@ type GroupPricingTableProps = {
   topupGroupRatio: string
   groupTypes: string
   groupTypeMap: string
+  catalogModels?: PricingModel[]
   onChange: (field: string, value: string) => void
   onShowDetail: (name: string) => void
 }
@@ -542,6 +547,7 @@ function GroupPricingTable({
   topupGroupRatio,
   groupTypes,
   groupTypeMap,
+  catalogModels,
   onChange,
   onShowDetail,
 }: GroupPricingTableProps) {
@@ -682,6 +688,26 @@ function GroupPricingTable({
     (row) => row.name !== 'auto' && row.selectable && !row.typeId
   ).length
   const typeModeActive = typeDefinitions.length > 0
+  const modelCounts = useMemo(() => {
+    if (!catalogModels) return undefined
+    const names = new Map<string, Set<string>>()
+    for (const row of rows) {
+      if (!row.typeId || !row.selectable || row.name === 'auto') continue
+      const models = names.get(row.typeId) ?? new Set<string>()
+      for (const model of catalogModels) {
+        if (
+          model.enable_groups.includes(row.name) ||
+          model.enable_groups.includes('all')
+        ) {
+          models.add(model.model_name)
+        }
+      }
+      names.set(row.typeId, models)
+    }
+    return Object.fromEntries(
+      [...names].map(([id, models]) => [id, models.size])
+    )
+  }, [catalogModels, rows])
 
   const duplicateNames = useMemo(() => {
     const counts = new Map<string, number>()
@@ -736,6 +762,27 @@ function GroupPricingTable({
       </CardHeader>
       <CardContent>
         <div className='flex min-w-0 flex-col gap-4'>
+          {modelCounts && typeDefinitions.length > 0 && (
+            <div className='bg-muted/30 rounded-lg border p-3'>
+              <p className='text-sm font-medium'>{t('Model Square preview')}</p>
+              <p className='text-muted-foreground mt-1 text-xs'>
+                {t(
+                  'Preview uses your visible model catalog and unsaved group assignments.'
+                )}
+              </p>
+              <ul className='mt-2 flex flex-wrap gap-x-5 gap-y-1 text-xs'>
+                {typeDefinitions.map((type) => (
+                  <li key={type.id}>
+                    {type.name}:{' '}
+                    {t('{{groups}} group(s), {{models}} visible model(s)', {
+                      groups: groupCounts[type.id] ?? 0,
+                      models: modelCounts[type.id] ?? 0,
+                    })}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           <InputGroup className='max-w-sm'>
             <InputGroupAddon>
               <Search aria-hidden='true' />
@@ -852,7 +899,7 @@ function GroupPricingTable({
                     placeholder={t('Select a group type')}
                     aria-label={t('Group type')}
                     showSelectedIcon
-                    className='w-44'
+                    className='w-full'
                   />
                 ),
               },
@@ -970,6 +1017,7 @@ function GroupPricingTable({
           onOpenChange={setTypeManagerOpen}
           types={typeDefinitions}
           groupCounts={groupCounts}
+          modelCounts={modelCounts}
           onApply={applyTypes}
         />
       </CardContent>

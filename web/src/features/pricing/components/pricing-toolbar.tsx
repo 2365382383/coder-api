@@ -78,6 +78,7 @@ export interface PricingToolbarProps {
   hasActiveFilters: boolean
   activeFilterCount: number
   onClearFilters: () => void
+  hideGroupFilter?: boolean
 }
 
 export function PricingToolbar(props: PricingToolbarProps) {
@@ -217,6 +218,7 @@ export function PricingToolbar(props: PricingToolbarProps) {
               vendors={props.vendors}
               groups={props.groups}
               groupRatios={props.groupRatios}
+              hideGroupFilter={props.hideGroupFilter}
               tags={props.tags}
               models={props.models}
               hasActiveFilters={props.hasActiveFilters}

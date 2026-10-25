@@ -149,13 +149,18 @@ export function formatPrice(
   priceRate = 1,
   usdExchangeRate = 1,
   selectedGroup?: string,
-  showCurrencySymbol = true
+  showCurrencySymbol = true,
+  categoryGroups?: string[]
 ): string {
   if (model.quota_type === QUOTA_TYPE_VALUES.REQUEST) {
     return '-'
   }
 
-  const displayGroupRatio = getDisplayGroupRatio(model, selectedGroup)
+  const displayGroupRatio = getDisplayGroupRatio(
+    model,
+    selectedGroup,
+    categoryGroups
+  )
 
   let priceInUSD = calculateTokenPrice(model, type, displayGroupRatio)
   priceInUSD = applyRechargeRate(
@@ -166,6 +171,7 @@ export function formatPrice(
   )
 
   const price = priceInUSD / TOKEN_UNIT_DIVISORS[tokenUnit]
+  if (!Number.isFinite(price)) return '-'
   return formatBillingCurrencyFromUSD(price, {
     showSymbol: showCurrencySymbol,
     digitsLarge: 4,
@@ -202,6 +208,7 @@ export function formatGroupPrice(
   )
 
   const price = priceInUSD / TOKEN_UNIT_DIVISORS[tokenUnit]
+  if (!Number.isFinite(price)) return '-'
   return formatBillingCurrencyFromUSD(price, {
     digitsLarge: 4,
     digitsSmall: 6,
@@ -223,9 +230,18 @@ export function formatFixedPrice(
   if (model.quota_type !== QUOTA_TYPE_VALUES.REQUEST) {
     return '-'
   }
+  const modelPrice = model.model_price
+  if (
+    typeof modelPrice !== 'number' ||
+    !Number.isFinite(modelPrice) ||
+    modelPrice < 0
+  ) {
+    return '-'
+  }
 
   const ratio = getConfiguredGroupRatio(groupRatio, group)
-  let priceInUSD = (model.model_price || 0) * ratio
+  if (!Number.isFinite(ratio)) return '-'
+  let priceInUSD = modelPrice * ratio
 
   priceInUSD = applyRechargeRate(
     priceInUSD,
@@ -250,15 +266,30 @@ export function formatRequestPrice(
   priceRate = 1,
   usdExchangeRate = 1,
   selectedGroup?: string,
-  showCurrencySymbol = true
+  showCurrencySymbol = true,
+  categoryGroups?: string[]
 ): string {
   if (model.quota_type !== QUOTA_TYPE_VALUES.REQUEST) {
     return '-'
   }
+  const modelPrice = model.model_price
+  if (
+    typeof modelPrice !== 'number' ||
+    !Number.isFinite(modelPrice) ||
+    modelPrice < 0
+  ) {
+    return '-'
+  }
 
-  const displayGroupRatio = getDisplayGroupRatio(model, selectedGroup)
+  const displayGroupRatio = getDisplayGroupRatio(
+    model,
+    selectedGroup,
+    categoryGroups
+  )
 
-  let priceInUSD = (model.model_price || 0) * displayGroupRatio
+  if (!Number.isFinite(displayGroupRatio)) return '-'
+
+  let priceInUSD = modelPrice * displayGroupRatio
 
   priceInUSD = applyRechargeRate(
     priceInUSD,

@@ -53,6 +53,7 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import { Switch } from '@/components/ui/switch'
+import type { PricingModel } from '@/features/pricing/types'
 
 import {
   SettingsForm,
@@ -84,12 +85,14 @@ type GroupRatioFormProps = {
   form: UseFormReturn<GroupFormValues>
   onSave: (values: GroupFormValues) => Promise<void>
   isSaving: boolean
+  catalogModels?: PricingModel[]
 }
 
 export const GroupRatioForm = memo(function GroupRatioForm({
   form,
   onSave,
   isSaving,
+  catalogModels,
 }: GroupRatioFormProps) {
   const { t } = useTranslation()
   const values = useWatch({ control: form.control })
@@ -235,6 +238,7 @@ export const GroupRatioForm = memo(function GroupRatioForm({
             groupSpecialUsableGroup={values.GroupSpecialUsableGroup ?? ''}
             groupTypes={values.GroupTypes ?? ''}
             groupTypeMap={values.GroupTypeMap ?? ''}
+            catalogModels={catalogModels}
             onChange={(field, value) =>
               handleFieldChange(field as keyof GroupFormValues, value)
             }
