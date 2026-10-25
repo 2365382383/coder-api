@@ -30,6 +30,34 @@ export type ApiKeyGroupTypeOption = GroupTypeInfo & {
   groups: ApiKeyGroupOption[]
 }
 
+function groupRatioValue(group: ApiKeyGroupOption): number | null {
+  const ratio = group.ratio
+  if (typeof ratio === 'number') {
+    return Number.isFinite(ratio) ? ratio : null
+  }
+  if (typeof ratio !== 'string' || !ratio.trim()) return null
+  const value = Number(ratio)
+  return Number.isFinite(value) ? value : null
+}
+
+export function sortGroupOptionsByRatioAscending(
+  groups: ApiKeyGroupOption[]
+): ApiKeyGroupOption[] {
+  return [...groups].sort((a, b) => {
+    if (a.value === 'auto' && b.value !== 'auto') return -1
+    if (b.value === 'auto' && a.value !== 'auto') return 1
+    const aRatio = groupRatioValue(a)
+    const bRatio = groupRatioValue(b)
+    if (aRatio === null && bRatio === null) {
+      return a.value.localeCompare(b.value)
+    }
+    if (aRatio === null) return 1
+    if (bRatio === null) return -1
+    if (aRatio !== bRatio) return aRatio - bRatio
+    return a.value.localeCompare(b.value)
+  })
+}
+
 export function buildGroupTypeOptions(
   configuredTypes: GroupTypeInfo[],
   groups: ApiKeyGroupOption[]

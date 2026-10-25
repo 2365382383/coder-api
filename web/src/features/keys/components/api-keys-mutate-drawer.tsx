@@ -97,6 +97,7 @@ import {
   AUTO_GROUP_TYPE_ID,
   buildGroupTypeOptions,
   pickDefaultGroupForType,
+  sortGroupOptionsByRatioAscending,
 } from '../lib/api-key-group-types'
 import type { ApiKey } from '../types'
 import {
@@ -177,13 +178,15 @@ export function ApiKeysMutateDrawer({
   const models = modelsData?.data || []
   const groups = useMemo<ApiKeyGroupOption[]>(
     () =>
-      Object.entries(groupsData?.data || {}).map(([key, info]) => ({
-        value: key,
-        label: key,
-        desc: info.desc ? translateServerText(t, info.desc) : key,
-        ratio: info.ratio,
-        type: info.type,
-      })),
+      sortGroupOptionsByRatioAscending(
+        Object.entries(groupsData?.data || {}).map(([key, info]) => ({
+          value: key,
+          label: key,
+          desc: info.desc ? translateServerText(t, info.desc) : key,
+          ratio: info.ratio,
+          type: info.type,
+        }))
+      ),
     [groupsData, t]
   )
   const configuredGroupTypes = useMemo(

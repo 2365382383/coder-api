@@ -582,3 +582,54 @@ describe('API keys mutate drawer legacy empty groups', () => {
     expect(updatedPayloads[0]?.group).toBe('')
   })
 })
+
+const RATIO_SORT_FIXTURE: DrawerFixture = {
+  defaultUseAutoGroup: false,
+  groups: {
+    'Claude-Max': { desc: 'Max', ratio: 1.4, type: TYPE_A },
+    'Claude-Kiro-特价': { desc: 'Kiro discount', ratio: 0.15, type: TYPE_A },
+    'Claude-Max-0注入-可蒸馏': {
+      desc: 'Max zero injection',
+      ratio: 2,
+      type: TYPE_A,
+    },
+    'Claude-Kiro': { desc: 'Kiro', ratio: 0.2, type: TYPE_A },
+    'Claude-Max-企业级': {
+      desc: 'Max enterprise',
+      ratio: 1.6,
+      type: TYPE_A,
+    },
+    auto: { desc: 'Automatic routing', ratio: 'auto' },
+  },
+  groupTypes: [TYPE_A],
+  autoGroups: ['Claude-Max', 'Claude-Kiro'],
+  maxAutoGroups: 3,
+}
+
+describe('API keys mutate drawer group ratio ordering', () => {
+  test('lists groups from the lowest ratio to the highest', async () => {
+    const createdPayloads: Array<Record<string, unknown>> = []
+    installApiFixtures(createdPayloads, RATIO_SORT_FIXTURE)
+    await renderCreateDrawer(RATIO_SORT_FIXTURE)
+
+    fireEvent.click(screen.getByRole('button', { name: /Type A/ }))
+    const groupTrigger = getControlByLabel('Group')
+    expect(groupTrigger.textContent).toContain('Claude-Kiro-特价')
+
+    fireEvent.click(groupTrigger)
+    const labels = [
+      ...document.querySelectorAll<HTMLElement>('[data-slot="command-item"]'),
+    ].map((item) =>
+      item
+        .querySelector<HTMLElement>('span.block.truncate.font-medium')
+        ?.textContent?.trim()
+    )
+    expect(labels).toEqual([
+      'Claude-Kiro-特价',
+      'Claude-Kiro',
+      'Claude-Max',
+      'Claude-Max-企业级',
+      'Claude-Max-0注入-可蒸馏',
+    ])
+  })
+})
