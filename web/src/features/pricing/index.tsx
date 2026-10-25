@@ -289,11 +289,6 @@ export function Pricing() {
                 )}
               </p>
             )}
-            {selectedCategoryName && (
-              <p className='text-muted-foreground text-sm break-words'>
-                {t('Category')}: {selectedCategoryName}
-              </p>
-            )}
           </div>
 
           <div className='grid gap-4 xl:grid-cols-[280px_minmax(0,1fr)]'>
