@@ -32,11 +32,8 @@ const (
 type Function struct {
 	Name        string
 	Description string
-	// Parameters is the schema as the client wrote it, nil when absent.
-	// Upstreams generate arguments in schema property order, so it is not
-	// re-encoded from a decoded map, which would sort the properties.
-	Parameters json.RawMessage
-	Strict     *bool
+	Parameters  any
+	Strict      *bool
 	// OpenAPISchema marks Parameters written in Gemini's OpenAPI schema
 	// subset (uppercase type names, nullable, propertyOrdering) rather than
 	// JSON Schema.

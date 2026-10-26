@@ -4,7 +4,6 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
-	"strings"
 	"sync"
 
 	"github.com/QuantumNous/new-api/common"
@@ -64,20 +63,6 @@ func (rl *RedisLimiter) Allow(ctx context.Context, key string, opts ...Option) (
 	).Int()
 
 	if err != nil {
-		if strings.HasPrefix(err.Error(), "NOSCRIPT ") {
-			result, err := rl.client.Eval(
-				ctx,
-				rateLimitScript,
-				[]string{key},
-				config.Requested,
-				config.Rate,
-				config.Capacity,
-			).Int()
-			if err != nil {
-				return false, fmt.Errorf("rate limit failed: %w", err)
-			}
-			return result == 1, nil
-		}
 		return false, fmt.Errorf("rate limit failed: %w", err)
 	}
 	return result == 1, nil

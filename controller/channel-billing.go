@@ -305,16 +305,9 @@ func getDeepSeekBalanceUSD(response DeepSeekUsageResponse, usdExchangeRate float
 		if balance < 0 {
 			return 0, errors.New("USD balance must be non-negative")
 		}
-		if balance > 0 {
-			return balance, nil
-		}
+		return balance, nil
 	}
 	if cnyBalance == nil {
-		// An empty USD wallet is a valid balance. Only report a missing
-		// currency when the response carried neither USD nor CNY.
-		if usdBalance != nil {
-			return 0, nil
-		}
 		return 0, errors.New("currency USD or CNY not found")
 	}
 	if math.IsNaN(usdExchangeRate) || math.IsInf(usdExchangeRate, 0) {

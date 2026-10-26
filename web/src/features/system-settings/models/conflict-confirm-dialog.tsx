@@ -28,8 +28,6 @@ export type ConflictItem = {
   model: string
   current: string
   newVal: string
-  adjustment?: string
-  siteVal?: string
 }
 type ConflictConfirmDialogProps = {
   open: boolean
@@ -39,7 +37,6 @@ type ConflictConfirmDialogProps = {
   isLoading?: boolean
   error?: string
   onReload?: () => void
-  exchangeRateSummary?: string
 }
 export function ConflictConfirmDialog(props: ConflictConfirmDialogProps) {
   const { t } = useTranslation()
@@ -56,11 +53,6 @@ export function ConflictConfirmDialog(props: ConflictConfirmDialogProps) {
       handleConfirm={props.onConfirm}
       disabled={Boolean(props.error)}
     >
-      {props.exchangeRateSummary && (
-        <p className='text-muted-foreground text-sm'>
-          {props.exchangeRateSummary}
-        </p>
-      )}
       {props.error && (
         <ErrorState
           description={props.error}
@@ -99,23 +91,11 @@ export function ConflictConfirmDialog(props: ConflictConfirmDialogProps) {
           },
           {
             id: 'new',
-            header: t('Final saved price'),
+            header: t('Change To'),
             cell: (conflict) => (
-              <div className='space-y-2'>
-                {conflict.adjustment && (
-                  <p className='text-muted-foreground text-xs'>
-                    {conflict.adjustment}
-                  </p>
-                )}
-                <pre className='text-sm whitespace-pre-wrap'>
-                  {conflict.newVal}
-                </pre>
-                {conflict.siteVal && (
-                  <pre className='text-muted-foreground text-xs whitespace-pre-wrap'>
-                    {conflict.siteVal}
-                  </pre>
-                )}
-              </div>
+              <pre className='text-sm whitespace-pre-wrap'>
+                {conflict.newVal}
+              </pre>
             ),
           },
         ]}

@@ -49,9 +49,7 @@ func convertChatResponseFormatToResponsesText(reqFormat *dto.ResponseFormat) jso
 	}
 
 	if reqFormat.Type == "json_schema" && len(reqFormat.JsonSchema) > 0 {
-		// Members stay raw JSON: the model fills the schema properties in
-		// their order, and a decoded map would sort them.
-		var chatSchema map[string]json.RawMessage
+		var chatSchema map[string]any
 		if err := kitutil.Unmarshal(reqFormat.JsonSchema, &chatSchema); err == nil {
 			for key, value := range chatSchema {
 				if key == "type" {
@@ -60,8 +58,7 @@ func convertChatResponseFormatToResponsesText(reqFormat *dto.ResponseFormat) jso
 				format[key] = value
 			}
 
-			var nested map[string]json.RawMessage
-			if err := kitutil.Unmarshal(chatSchema["json_schema"], &nested); err == nil && nested != nil {
+			if nested, ok := format["json_schema"].(map[string]any); ok {
 				for key, value := range nested {
 					if _, exists := format[key]; !exists {
 						format[key] = value

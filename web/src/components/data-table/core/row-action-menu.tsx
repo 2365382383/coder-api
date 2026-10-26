@@ -30,7 +30,6 @@ import { cn } from '@/lib/utils'
 type DataTableRowActionMenuProps = {
   children: React.ReactNode
   ariaLabel: string
-  trigger?: React.ReactElement
   contentClassName?: string
   modal?: boolean
   onOpenChange?: (open: boolean) => void
@@ -41,18 +40,16 @@ export function DataTableRowActionMenu(props: DataTableRowActionMenuProps) {
     <DropdownMenu modal={props.modal} onOpenChange={props.onOpenChange}>
       <DropdownMenuTrigger
         render={
-          props.trigger ?? (
-            <Button
-              variant='ghost'
-              size='icon'
-              className='data-popup-open:bg-muted'
-            >
-              <MoreHorizontal aria-hidden='true' />
-            </Button>
-          )
+          <Button
+            variant='ghost'
+            size='icon'
+            className='data-popup-open:bg-muted'
+            aria-label={props.ariaLabel}
+          />
         }
-        aria-label={props.ariaLabel}
-      />
+      >
+        <MoreHorizontal aria-hidden='true' />
+      </DropdownMenuTrigger>
       <DropdownMenuContent
         align='end'
         className={cn('w-48', props.contentClassName)}

@@ -2,7 +2,6 @@ package oairesponses
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -127,17 +126,13 @@ func responsesRequestFunctionDeclarations(raw []byte) ([]dto.FunctionRequest, er
 		return nil, nil
 	}
 
-	var tools []json.RawMessage
+	var tools []map[string]any
 	if err := kitutil.Unmarshal(raw, &tools); err != nil {
 		return nil, fmt.Errorf("invalid tools: %w", err)
 	}
 
 	functions := make([]dto.FunctionRequest, 0, len(tools))
-	for _, rawTool := range tools {
-		var tool map[string]any
-		if err := kitutil.Unmarshal(rawTool, &tool); err != nil {
-			return nil, fmt.Errorf("invalid tools: %w", err)
-		}
+	for _, tool := range tools {
 		if strings.TrimSpace(kitutil.Interface2String(tool["type"])) != "function" {
 			continue
 		}
@@ -148,7 +143,7 @@ func responsesRequestFunctionDeclarations(raw []byte) ([]dto.FunctionRequest, er
 		functions = append(functions, dto.FunctionRequest{
 			Name:        name,
 			Description: kitutil.Interface2String(tool["description"]),
-			Parameters:  kitutil.ObjectMember(rawTool, "parameters"),
+			Parameters:  tool["parameters"],
 		})
 	}
 	return functions, nil

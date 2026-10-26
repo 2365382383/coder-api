@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 
@@ -22,8 +21,6 @@ const (
 
 // PreConsumeBilling 根据用户计费偏好创建 BillingSession 并执行预扣费。
 // 会话存储在 relayInfo.Billing 上，供后续 Settle / Refund 使用。
-// 会话已存在时（任务重试换到另一个渠道）把预扣补到 preConsumedQuota，
-// 和首次预扣一样必须由余额覆盖。
 func PreConsumeBilling(c *gin.Context, preConsumedQuota int, relayInfo *relaycommon.RelayInfo) *types.NewAPIError {
 	if relayInfo != nil && relayInfo.QuotaClamp != nil {
 		return types.NewErrorWithStatusCode(
@@ -40,16 +37,6 @@ func PreConsumeBilling(c *gin.Context, preConsumedQuota int, relayInfo *relaycom
 			http.StatusBadRequest,
 			types.ErrOptionWithSkipRetry(),
 		)
-	}
-	if relayInfo != nil && relayInfo.Billing != nil {
-		if err := relayInfo.Billing.ReserveBeforeSubmit(preConsumedQuota); err != nil {
-			var apiErr *types.NewAPIError
-			if errors.As(err, &apiErr) {
-				return apiErr
-			}
-			return types.NewErrorWithStatusCode(err, types.ErrorCodeInsufficientUserQuota, http.StatusForbidden, types.ErrOptionWithSkipRetry())
-		}
-		return nil
 	}
 	session, apiErr := NewBillingSession(c, relayInfo, preConsumedQuota)
 	if apiErr != nil {

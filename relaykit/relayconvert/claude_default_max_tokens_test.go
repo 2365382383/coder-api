@@ -2,7 +2,6 @@ package relayconvert
 
 import (
 	"context"
-	"encoding/json"
 	"testing"
 
 	"github.com/QuantumNous/new-api/relaykit/dto"
@@ -164,7 +163,11 @@ func TestOpenAIChatRequestToClaudeMessagesOmitsEmptyTools(t *testing.T) {
 					Function: dto.FunctionRequest{
 						Name:        "get_weather",
 						Description: "Get weather by city",
-						Parameters:  json.RawMessage(`{"type":"object","properties":{"city":{"type":"string"}},"required":["city"]}`),
+						Parameters: map[string]any{
+							"type":       "object",
+							"properties": map[string]any{"city": map[string]any{"type": "string"}},
+							"required":   []any{"city"},
+						},
 					},
 				}},
 			},
