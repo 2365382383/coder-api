@@ -31,6 +31,10 @@
 - 2026-10-20 新增 P-37，记录 New API 原生公开文档阅读、同源导航、匿名发布内容接口及
   Tools 管理/草稿数据边界，来源提交为 `2980da538`。当前第 4 节有 30 项现行保护项；
   RC-42、RC-44 章节中的 28 项核对表仍是各自合并时的历史快照。
+- 2026-10-26 新增 P-38，记录 Responses 流断开后的共享 drain、终态 usage 结算、
+  `drain_result` 可观测性和本地估算为 1 时的临时 30--90 输出计费规则，来源提交为
+  `d90827ab6`、`0c0d1c8a0`、`697e4f7d8`。当前第 4 节有 31 项现行保护项；本项不把
+  其他协议路径中已有的 `completion_tokens=1` 误归入 Responses 临时规则。
 - 在第 8、9 节的历史审计时点，RC-40 尚未合并；当时“已吸收”仅指作者侧语义等价。
   当前合并前 `main` 已包含 RC-40 及后续维护提交，不能再把两侧历史差异重复计成功能。
 
@@ -746,6 +750,49 @@
   `web/src/components/ui/__tests__/markdown.test.tsx`。
 - 来源提交：`2980da538`。
 
+### P-38 Responses 流终态 usage、断流 drain 与临时估算计费
+
+- 必须保留：共享 `StreamScannerHandler` 检测到下游 client gone 后，停止向已断开的
+  客户端写入，但继续读取上游、解析协议事件、累计 usage、工具/图片用量并在同一请求
+  结算流程中完成 cleanup。所有共享 scanner 流式调用方适用，不按渠道类型、客户端类型
+  或端点设置白名单，也不设置进程内 drain 并发上限。
+- 必须保留：`CLIENT_GONE_DRAIN_TIMEOUT` 是单请求 drain 的绝对超时，默认 60 秒，值为
+  `0` 表示立即关闭上游；既有 `STREAMING_TIMEOUT` 仍表示流式空闲超时，`RELAY_TIMEOUT`
+  若更早触发仍可终止 HTTP 客户端。EOF、`[DONE]`、上游读取错误和超时必须保持明确的
+  终态优先级，不能遗留 scanner、data handler 或 ping goroutine。
+- 必须保留：`stream_status` 中的 `end_reason`、`response_status` 和 `drain_result`
+  相互独立；`drain_result` 只表示 drain 的传输结果（例如 `ended`、`timeout`、
+  `idle_timeout`、`scanner_error`、`handler_stop`、`disabled`），不代表一定取得权威
+  usage。下游写失败不能通过共享 `sr.Stop` 提前截断上游 usage 读取。
+- 必须保留：OpenAI Responses HTTP SSE 与 Responses WebSocket 共用
+  `ResponsesUsageAccumulator`。终态事件提供的 prompt/output/cache/tool/image usage 优先
+  保留；没有权威 output usage 时才按已累计输出文本使用 `tokenkit.Count` 本地估算，明确
+  失败流不再被旧的“失败即跳过所有估算”补丁改变原有估算路径。
+- 必须保留：临时运营规则只作用于本地 `tokenkit.Count` 结果恰好为 1 的 Responses
+  估算值，按 `RelayInfo.RequestId` 的 CRC32 稳定映射到 30--90；request ID 为空使用 30。
+  上游明确报告的 `output_tokens=1`、已有正值 usage、缓存字段、工具和图片计数不得被
+  改写。该值进入 `Usage`、`TotalTokens`、`PostTextConsumeQuota`、消费日志和性能统计，
+  不是只修改页面显示，也不会写入跨请求状态或影响下一个用户。
+- 必须保留：该临时 30--90 规则仅覆盖 Responses accumulator；`/v1/messages`、普通
+  `/v1/chat/completions` 及不走共享 scanner 的自定义 SSE/WebSocket 路径保持各自原有
+  行为。当前观察到的其他协议 `completion_tokens=1` 不能反向证明 Responses 规则失效。
+- 必须保留：本项不猜测修复缓存计费问题，不手工重复扣减 `cached_tokens`。只有在同一
+  request ID 的终态 SSE/转换 DTO/账务快照确认字段丢失层级后，才修改对应适配层；无
+  数据库迁移，不回写历史日志，不改变现有价格表达式。
+- 当前位置：`relay/helper/stream_scanner.go`、`relay/helper/common.go`、
+  `relay/common/stream_status.go`、`service/log_info_generate.go`、`common/init.go`、
+  `constant/env.go`、`.env.example`、`relay/channel/openai/relay_responses.go`、
+  `relay/responses_websocket.go`、`service/responses_usage.go`、`service/text_quota.go`。
+- 验证入口：`relay/helper/stream_scanner_test.go`、
+  `relay/channel/openai/relay_responses_billing_test.go`、`service/responses_usage_test.go`、
+  `controller/responses_websocket_test.go`、`service/text_quota_test.go`；至少覆盖
+  client gone 后终态/EOF/drain 超时/空闲超时/read error/handler stop、`0` 秒关闭、
+  终态优先、本地估算稳定范围以及真实上游 output=1 不改写。
+- 数据/配置：仅使用既有 `CLIENT_GONE_DRAIN_TIMEOUT` 环境变量和日志 `stream_status`；
+  不新增表或字段，不改变预扣/结算接口。临时估算是运营兜底，待上游终态 usage 对账
+  修复后删除 helper、测试和本保护项中的临时分支。
+- 来源提交：`d90827ab6`、`0c0d1c8a0`、`697e4f7d8`。
+
 ## 5. 提交映射完整性
 
 以下现行保护项映射用于机械核对。未来合并前，应从历史基线列出本地非合并提交并与本节
@@ -784,6 +831,7 @@
 | P-35 | `9b0238b83` |
 | P-36 | `0a758e1d7` |
 | P-37 | `2980da538` |
+| P-38 | `d90827ab6`, `0c0d1c8a0`, `697e4f7d8` |
 
 ### 已移出或剥离的历史映射（不计入现行保护项）
 
@@ -812,6 +860,14 @@ GitHub Actions 的 amd64、arm64 与 manifest 均成功。
 
 ## 7. 维护记录
 
+- 2026-10-26：补录 P-38，固化 Responses 异常流的最终实现设计。共享 scanner 在 client
+  gone 后按 `CLIENT_GONE_DRAIN_TIMEOUT` drain 上游并在同一请求流程完成 usage/工具/图片
+  结算；`drain_result` 只记录传输终态。Responses 本地 output token 估算恰好为 1 时，
+  按 request ID 稳定映射到 30--90 并进入实际 `Usage`/扣费链路；上游真实 output=1 不改写。
+  已撤回 `724e251e0` 的“明确失败后跳过估算”行为，保留 `697e4f7d8` 的临时规则。该项
+  不覆盖其他协议路径的 1-token 记录，也未修改缓存字段解析、价格表达式、数据库或历史
+  日志。根模块全量测试、定向 race、`go vet`、`go build`、RelayKit/TokenKit 独立测试、
+  diff/UTF-8 检查均通过；本条只登记保护契约，不代表再次部署或上游缓存问题已解决。
 - 2026-09-28：实施 P-32 钱包/Token int64 与持久任务账务根治；完成 SQL 权威额度、精度/checked 边界、
   持久预留/结算/退款、任务与 Midjourney 状态恢复、未知结果人工核查和旧路径兼容。最终审查补齐旧任务首次
   终态处理的资金分摊根快照，并阻止退款后重算重新修改资金；`go test ./...`、`go build ./...`、

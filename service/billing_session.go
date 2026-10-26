@@ -156,15 +156,24 @@ func (s *BillingSession) GetPreConsumedQuota() int {
 }
 
 func (s *BillingSession) Reserve(targetQuota int) error {
+	return s.reserve(targetQuota, false)
+}
+
+// ReserveBeforeSubmit 在发起上游请求前补扣，钱包余额必须覆盖差额。
+func (s *BillingSession) ReserveBeforeSubmit(targetQuota int) error {
+	return s.reserve(targetQuota, true)
+}
+
+func (s *BillingSession) reserve(targetQuota int, requireAvailableQuota bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	imageRequest := false
+	requireBalance := requireAvailableQuota
 	if s.relayInfo != nil {
-		_, imageRequest = s.relayInfo.Request.(*dto.ImageRequest)
-		imageRequest = imageRequest || s.relayInfo.ImageRequestCount > 0
+		_, imageRequest := s.relayInfo.Request.(*dto.ImageRequest)
+		requireBalance = requireBalance || imageRequest || s.relayInfo.ImageRequestCount > 0
 	}
-	if s.settled || s.refunded || s.trusted && !imageRequest || targetQuota <= s.preConsumedQuota {
+	if s.settled || s.refunded || s.trusted && !requireBalance || targetQuota <= s.preConsumedQuota {
 		return nil
 	}
 
@@ -179,7 +188,7 @@ func (s *BillingSession) Reserve(targetQuota int) error {
 		tokenDelta = 0
 	}
 	phase := fmt.Sprintf("reserve:%d", s.reserveCount+1)
-	if err := model.ApplyBillingAdjustment(s.relayInfo.RequestId, phase, walletDelta, subDelta, tokenDelta, imageRequest, false, 0, false); err != nil {
+	if err := model.ApplyBillingAdjustment(s.relayInfo.RequestId, phase, walletDelta, subDelta, tokenDelta, requireBalance, false, 0, false); err != nil {
 		if errors.Is(err, model.ErrBillingWalletInsufficient) {
 			return types.NewErrorWithStatusCode(err, types.ErrorCodeInsufficientUserQuota, http.StatusForbidden, types.ErrOptionWithSkipRetry(), types.ErrOptionWithNoRecordErrorLog())
 		}
@@ -193,7 +202,7 @@ func (s *BillingSession) Reserve(targetQuota int) error {
 	s.preConsumedQuota += delta
 	s.tokenConsumed += int(tokenDelta)
 	s.extraReserved += delta
-	if imageRequest {
+	if requireBalance {
 		s.trusted = false
 	}
 	s.syncRelayInfo()
