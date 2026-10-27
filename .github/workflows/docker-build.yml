@@ -110,7 +110,7 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          password: ${{ secrets.GHCR_TOKEN }}
 
       - name: Log in to Docker Hub
         if: ${{ steps.registry_flags.outputs.dockerhub_enabled == 'true' }}
@@ -229,7 +229,7 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          password: ${{ secrets.GHCR_TOKEN }}
 
       - name: Log in to Docker Hub
         if: ${{ needs.build_single_arch.outputs.dockerhub_enabled == 'true' }}
