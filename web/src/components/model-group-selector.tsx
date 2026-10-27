@@ -41,6 +41,12 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { cn } from '@/lib/utils'
 
@@ -627,30 +633,39 @@ export const ModelGroupSelector: React.FC<ModelGroupSelectorProps> = ({
     }
   }, [open, selectedGroup, selectedModel])
 
-  const renderTrigger = () => (
-    <Button
-      aria-expanded={open}
-      className={cn(
-        'h-8 max-w-[15rem] justify-start gap-2 border px-2.5 font-medium shadow-none',
-        'bg-background/80 hover:bg-accent/70 text-foreground',
-        'focus:!ring-0 focus:!outline-none',
-        className
-      )}
-      disabled={disabled}
-      role='combobox'
-      size='sm'
-      variant='outline'
-    >
-      <CpuIcon className='text-muted-foreground size-4 shrink-0' />
-      <span className='min-w-0 truncate text-xs'>
-        {currentModel?.label || t('Model')}
-      </span>
-      <span className='bg-muted text-muted-foreground hidden max-w-20 shrink-0 rounded px-1.5 py-0.5 text-[10px] sm:inline-flex'>
-        {currentGroup?.label || t('Group')}
-      </span>
-      <ChevronsUpDown className='text-muted-foreground ml-auto size-3.5 shrink-0 opacity-60' />
-    </Button>
-  )
+  const renderTrigger = () => {
+    const modelLabel = currentModel?.label || t('Model')
+    const groupLabel = currentGroup?.label || t('Group')
+
+    return (
+      <Button
+        aria-expanded={open}
+        className={cn(
+          'h-8 max-w-[22rem] justify-start gap-2 border px-2.5 font-medium shadow-none',
+          'bg-background/80 hover:bg-accent/70 text-foreground',
+          'focus:!ring-0 focus:!outline-none',
+          className
+        )}
+        disabled={disabled}
+        role='combobox'
+        size='sm'
+        title={`${modelLabel} · ${groupLabel}`}
+        variant='outline'
+      >
+        <CpuIcon className='text-muted-foreground size-4 shrink-0' />
+        <span className='min-w-0 flex-1 truncate text-xs' title={modelLabel}>
+          {modelLabel}
+        </span>
+        <span
+          className='bg-muted text-muted-foreground hidden max-w-20 shrink-0 truncate rounded px-1.5 py-0.5 text-[10px] sm:inline-flex'
+          title={groupLabel}
+        >
+          {groupLabel}
+        </span>
+        <ChevronsUpDown className='text-muted-foreground ml-auto size-3.5 shrink-0 opacity-60' />
+      </Button>
+    )
+  }
 
   const renderGroupList = () => (
     <div
@@ -684,11 +699,27 @@ export const ModelGroupSelector: React.FC<ModelGroupSelectorProps> = ({
               key={group.value}
               onClick={() => handleGroupChange(group.value)}
               ref={isSelected ? selectedGroupOptionRef : undefined}
+              title={group.label}
               type='button'
             >
-              <span className='min-w-0 truncate font-medium'>
-                {group.label}
-              </span>
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <span
+                      className='min-w-0 flex-1 truncate font-medium'
+                      title={group.label}
+                    />
+                  }
+                >
+                  {group.label}
+                </TooltipTrigger>
+                <TooltipContent
+                  className='max-w-sm break-all'
+                  side={isMobile ? 'top' : 'right'}
+                >
+                  {group.label}
+                </TooltipContent>
+              </Tooltip>
               <Check
                 className={cn(
                   'size-3.5 shrink-0',
@@ -743,18 +774,29 @@ export const ModelGroupSelector: React.FC<ModelGroupSelectorProps> = ({
                     ? selectedModelOptionRef
                     : undefined
                 }
+                title={model.label}
                 value={model.value}
               >
-                <span
-                  className={cn(
-                    'min-w-0 truncate',
-                    selectedModel === model.value
-                      ? modelGroupSelectorLayoutClasses.selectedModelText
-                      : modelGroupSelectorLayoutClasses.unselectedModelText
-                  )}
-                >
-                  {model.label}
-                </span>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <span
+                        className={cn(
+                          'min-w-0 flex-1 truncate',
+                          selectedModel === model.value
+                            ? modelGroupSelectorLayoutClasses.selectedModelText
+                            : modelGroupSelectorLayoutClasses.unselectedModelText
+                        )}
+                        title={model.label}
+                      />
+                    }
+                  >
+                    {model.label}
+                  </TooltipTrigger>
+                  <TooltipContent className='max-w-sm break-all' side='top'>
+                    {model.label}
+                  </TooltipContent>
+                </Tooltip>
                 <Check
                   className={cn(
                     'size-3.5 shrink-0',
@@ -770,23 +812,25 @@ export const ModelGroupSelector: React.FC<ModelGroupSelectorProps> = ({
   )
 
   const renderContent = () => (
-    <div
-      className={
-        isMobile
-          ? 'grid gap-3 p-2 md:grid-cols-[9.5rem_minmax(0,1fr)]'
-          : modelGroupSelectorLayoutClasses.desktopContent
-      }
-    >
-      {renderGroupList()}
+    <TooltipProvider delay={300}>
       <div
-        className={cn(
-          'min-w-0 overflow-hidden rounded-lg border',
-          !isMobile && modelGroupSelectorLayoutClasses.modelColumn
-        )}
+        className={
+          isMobile
+            ? 'grid gap-3 p-2 md:grid-cols-[12rem_minmax(0,1fr)]'
+            : modelGroupSelectorLayoutClasses.desktopContent
+        }
       >
-        {renderModelList()}
+        {renderGroupList()}
+        <div
+          className={cn(
+            'min-w-0 overflow-hidden rounded-lg border',
+            !isMobile && modelGroupSelectorLayoutClasses.modelColumn
+          )}
+        >
+          {renderModelList()}
+        </div>
       </div>
-    </div>
+    </TooltipProvider>
   )
 
   return isMobile ? (
@@ -807,7 +851,7 @@ export const ModelGroupSelector: React.FC<ModelGroupSelectorProps> = ({
       <PopoverContent
         align='end'
         className={cn(
-          'bg-popover z-50 w-[34rem] max-w-[calc(100vw-2rem)] rounded-xl border p-0 shadow-lg',
+          'bg-popover z-50 rounded-xl border p-0 shadow-lg',
           modelGroupSelectorLayoutClasses.desktopPanel
         )}
         collisionPadding={8}

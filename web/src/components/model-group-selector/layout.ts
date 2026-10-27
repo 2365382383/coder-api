@@ -17,9 +17,10 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 export const modelGroupSelectorLayoutClasses = {
-  desktopPanel: 'max-h-[min(50vh,28rem)] overflow-hidden',
+  desktopPanel:
+    'w-[42rem] max-w-[calc(100vw-2rem)] max-h-[min(50vh,28rem)] overflow-hidden',
   desktopContent:
-    'grid h-[min(50vh,28rem)] max-h-[min(50vh,28rem)] min-h-0 gap-3 p-2 md:grid-cols-[9.5rem_minmax(0,1fr)]',
+    'grid h-[min(50vh,28rem)] max-h-[min(50vh,28rem)] min-h-0 gap-3 p-2 md:grid-cols-[12rem_minmax(0,1fr)]',
   groupColumn: 'flex h-full min-h-0 min-w-0 flex-col overflow-hidden',
   groupScroll:
     'mt-2 grid min-h-0 flex-1 auto-rows-[2rem] content-start gap-1 overflow-y-auto pr-1',

@@ -24,6 +24,16 @@ import {
 } from '../layout'
 
 describe('model group selector layout', () => {
+  test('gives long labels enough desktop space without overflowing the viewport', () => {
+    expect(modelGroupSelectorLayoutClasses.desktopPanel).toContain('w-[42rem]')
+    expect(modelGroupSelectorLayoutClasses.desktopPanel).toContain(
+      'max-w-[calc(100vw-2rem)]'
+    )
+    expect(modelGroupSelectorLayoutClasses.desktopContent).toContain(
+      'md:grid-cols-[12rem_minmax(0,1fr)]'
+    )
+  })
+
   test('keeps group options at a fixed height and aligned to the top', () => {
     const groupScrollClasses =
       modelGroupSelectorLayoutClasses.groupScroll.split(' ')
