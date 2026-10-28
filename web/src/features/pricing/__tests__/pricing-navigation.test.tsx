@@ -134,6 +134,65 @@ async function openNavigation(path: string) {
 }
 
 describe('pricing URL selection', () => {
+  it('orders group options by ascending ratio', async () => {
+    const user = userEvent.setup()
+    render(
+      <PricingGroupSelect
+        groups={[
+          {
+            name: 'high',
+            type_id: null,
+            ratio: 3,
+            description: 'High group',
+            model_count: 1,
+          },
+          {
+            name: 'same-b',
+            type_id: null,
+            ratio: 1,
+            description: 'Same ratio B',
+            model_count: 1,
+          },
+          {
+            name: 'low',
+            type_id: null,
+            ratio: 0.2,
+            description: 'Low group',
+            model_count: 1,
+          },
+          {
+            name: 'same-a',
+            type_id: null,
+            ratio: 1,
+            description: 'Same ratio A',
+            model_count: 1,
+          },
+          {
+            name: 'unpriced',
+            type_id: null,
+            ratio: Number.NaN,
+            description: 'Unavailable ratio',
+            model_count: 1,
+          },
+        ]}
+        value='all'
+        onChange={() => {}}
+      />
+    )
+
+    await user.click(screen.getByRole('combobox', { name: 'Group' }))
+    expect(
+      (await screen.findAllByRole('option')).map((option) => option.textContent)
+    ).toEqual([
+      'All Groups',
+      'low · ×0.2Low group',
+      'same-a · ×1Same ratio A',
+      'same-b · ×1Same ratio B',
+      'high · ×3High group',
+      'unpricedUnavailable ratio',
+    ])
+  })
+
   it('clears category, group and search in one navigation', async () => {
     const router = await openNavigation(
       '/pricing/?category=lab-a&group=group-a&search=missing'

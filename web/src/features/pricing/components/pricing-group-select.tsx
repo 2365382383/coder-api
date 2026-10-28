@@ -16,12 +16,23 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Combobox } from '@/components/ui/combobox'
 import { toIntlLocale } from '@/i18n/languages'
 
 import type { PricingGroup } from '../types'
+
+function sortGroupsByRatio(groups: PricingGroup[]): PricingGroup[] {
+  return [...groups].sort((a, b) => {
+    const aValid = Number.isFinite(a.ratio)
+    const bValid = Number.isFinite(b.ratio)
+    if (aValid !== bValid) return aValid ? -1 : 1
+    if (aValid && a.ratio !== b.ratio) return a.ratio - b.ratio
+    return a.name.localeCompare(b.name)
+  })
+}
 
 export function PricingGroupSelect(props: {
   groups: PricingGroup[]
@@ -34,6 +45,10 @@ export function PricingGroupSelect(props: {
     maximumFractionDigits: 12,
   })
   const current = props.groups.find((group) => group.name === props.value)
+  const sortedGroups = useMemo(
+    () => sortGroupsByRatio(props.groups),
+    [props.groups]
+  )
 
   return (
     <div className='bg-card min-w-0 space-y-2 rounded-xl border p-3'>
@@ -50,7 +65,7 @@ export function PricingGroupSelect(props: {
           }}
           options={[
             { value: 'all', label: t('All Groups') },
-            ...props.groups.map((group) => ({
+            ...sortedGroups.map((group) => ({
               value: group.name,
               label: Number.isFinite(group.ratio)
                 ? `${group.name} · ×${ratioFormatter.format(group.ratio)}`
