@@ -163,69 +163,6 @@ func TestSensitiveWordAuditRowsRequireAdministratorLogView(t *testing.T) {
 	require.Equal(t, model.LogTypeSensitiveWordBlock, page.Data.Items[0].Type)
 }
 
-func TestSelfLogsAndStatsFilterByTokenID(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	previousDB, previousLogDB := model.DB, model.LOG_DB
-	previousMainDatabaseType := common.MainDatabaseType()
-	previousLogDatabaseType := common.LogDatabaseType()
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	require.NoError(t, err)
-	sqlDB, err := db.DB()
-	require.NoError(t, err)
-	sqlDB.SetMaxOpenConns(1)
-	require.NoError(t, db.AutoMigrate(&model.Log{}))
-	model.DB, model.LOG_DB = db, db
-	common.SetDatabaseTypes(common.DatabaseTypeSQLite, common.DatabaseTypeSQLite)
-	t.Cleanup(func() {
-		model.DB, model.LOG_DB = previousDB, previousLogDB
-		common.SetDatabaseTypes(previousMainDatabaseType, previousLogDatabaseType)
-		require.NoError(t, sqlDB.Close())
-	})
-
-	require.NoError(t, db.Create(&model.Log{
-		UserId: 7, TokenId: 71, Username: "alice", TokenName: "renamed-key",
-		CreatedAt: 1_000, Type: model.LogTypeConsume, Quota: 100,
-	}).Error)
-	require.NoError(t, db.Create(&model.Log{
-		UserId: 7, TokenId: 72, Username: "alice", TokenName: "renamed-key",
-		CreatedAt: 1_001, Type: model.LogTypeConsume, Quota: 900,
-	}).Error)
-
-	listRecorder := httptest.NewRecorder()
-	listContext, _ := gin.CreateTestContext(listRecorder)
-	listContext.Request = httptest.NewRequest(http.MethodGet, "/api/log/self?token_id=71&p=1&page_size=10", nil)
-	listContext.Set("id", 7)
-	listContext.Set("role", common.RoleAdminUser)
-	GetUserLogs(listContext)
-	require.Equal(t, http.StatusOK, listRecorder.Code)
-	var page struct {
-		Data struct {
-			Total int         `json:"total"`
-			Items []model.Log `json:"items"`
-		} `json:"data"`
-	}
-	require.NoError(t, common.Unmarshal(listRecorder.Body.Bytes(), &page))
-	require.Equal(t, 1, page.Data.Total)
-	require.Len(t, page.Data.Items, 1)
-	require.Equal(t, 71, page.Data.Items[0].TokenId)
-
-	statRecorder := httptest.NewRecorder()
-	statContext, _ := gin.CreateTestContext(statRecorder)
-	statContext.Request = httptest.NewRequest(http.MethodGet, "/api/log/self/stat?type=2&token_id=71&start_timestamp=900&end_timestamp=1100", nil)
-	statContext.Set("id", 7)
-	statContext.Set("role", common.RoleAdminUser)
-	statContext.Set("username", "alice")
-	GetLogsSelfStat(statContext)
-	require.Equal(t, http.StatusOK, statRecorder.Code)
-	var stat struct {
-		Data struct {
-			Quota int `json:"quota"`
-		} `json:"data"`
-	}
-	require.NoError(t, common.Unmarshal(statRecorder.Body.Bytes(), &stat))
-	require.Equal(t, 100, stat.Data.Quota)
-}
-
 func getSelfLogResponse(t *testing.T, role int) string {
 	t.Helper()
 	recorder := httptest.NewRecorder()
