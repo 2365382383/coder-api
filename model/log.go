@@ -501,6 +501,7 @@ type LogFilter struct {
 	EndTimestamp      int64
 	ModelName         string
 	Username          string
+	TokenID           int
 	TokenName         string
 	Channel           int
 	Group             string
@@ -518,6 +519,9 @@ func (f LogFilter) apply(tx *gorm.DB) (*gorm.DB, error) {
 	}
 	if tx, err = applyExplicitLogTextFilter(tx, "logs.username", f.Username); err != nil {
 		return nil, err
+	}
+	if f.TokenID > 0 {
+		tx = tx.Where("logs.token_id = ?", f.TokenID)
 	}
 	if f.TokenName != "" {
 		tx = tx.Where("logs.token_name = ?", f.TokenName)
@@ -725,7 +729,7 @@ type Stat struct {
 	Tpm   int `json:"tpm"`
 }
 
-func SumUsedQuota(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string, channel int, group string) (stat Stat, err error) {
+func SumUsedQuota(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string, tokenID int, channel int, group string) (stat Stat, err error) {
 	tx := LOG_DB.Table("logs").Select("COALESCE(sum(quota), 0) quota")
 
 	// 为rpm和tpm创建单独的查询
@@ -740,6 +744,10 @@ func SumUsedQuota(logType int, startTimestamp int64, endTimestamp int64, modelNa
 	if tokenName != "" {
 		tx = tx.Where("token_name = ?", tokenName)
 		rpmTpmQuery = rpmTpmQuery.Where("token_name = ?", tokenName)
+	}
+	if tokenID > 0 {
+		tx = tx.Where("token_id = ?", tokenID)
+		rpmTpmQuery = rpmTpmQuery.Where("token_id = ?", tokenID)
 	}
 	if startTimestamp != 0 {
 		tx = tx.Where("created_at >= ?", startTimestamp)

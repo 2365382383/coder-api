@@ -33,12 +33,16 @@ func TestSumUsedQuotaHonorsRequestedLogType(t *testing.T) {
 		UserId: 7, TokenId: 71, Username: "alice", TokenName: "daily-key",
 		CreatedAt: 1_001, Type: LogTypeRefund, Quota: 40,
 	}).Error)
+	require.NoError(t, db.Create(&Log{
+		UserId: 7, TokenId: 72, Username: "alice", TokenName: "daily-key",
+		CreatedAt: 1_002, Type: LogTypeConsume, Quota: 900,
+	}).Error)
 
-	consume, err := SumUsedQuota(LogTypeConsume, 900, 1_100, "", "alice", "daily-key", 0, "")
+	consume, err := SumUsedQuota(LogTypeConsume, 900, 1_100, "", "alice", "daily-key", 71, 0, "")
 	require.NoError(t, err)
 	require.Equal(t, 100, consume.Quota)
 
-	refund, err := SumUsedQuota(LogTypeRefund, 900, 1_100, "", "alice", "daily-key", 0, "")
+	refund, err := SumUsedQuota(LogTypeRefund, 900, 1_100, "", "alice", "daily-key", 71, 0, "")
 	require.NoError(t, err)
 	require.Equal(t, 40, refund.Quota)
 }
