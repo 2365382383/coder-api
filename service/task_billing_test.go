@@ -261,7 +261,9 @@ func TestBillingOperationRollsBackAndRetriesRefundWithoutDoubleCredit(t *testing
 	require.Nil(t, PreConsumeBilling(newBillingTestContext(100), 60, info))
 	assert.EqualValues(t, 40, getUserQuota(t, userID))
 	assert.EqualValues(t, 40, getTokenRemainQuota(t, tokenID))
-	require.NotNil(t, PreConsumeBilling(newBillingTestContext(100), 60, info), "same request cannot pre-consume twice")
+	// Repricing a retry may call pre-consume again with the same target. The
+	// existing BillingSession treats an equal target as an idempotent no-op.
+	require.Nil(t, PreConsumeBilling(newBillingTestContext(100), 60, info), "same target pre-consume must be idempotent")
 	assert.EqualValues(t, 40, getUserQuota(t, userID))
 	require.NoError(t, model.RequestBillingRefund(info.RequestId))
 

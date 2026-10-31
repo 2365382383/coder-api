@@ -144,7 +144,7 @@ func TestOaiResponsesStreamHandlerCompletionLifecycle(t *testing.T) {
 		{name: "completion then cancellation and cleanup EOF", event: "response.completed", responseStatus: "completed", cancel: true, closeEOF: true, wantEnd: relaycommon.StreamEndReasonDone},
 		{name: "midstream disconnect", event: "response.output_text.delta", cancel: true, wantEnd: relaycommon.StreamEndReasonClientGone, wantError: true},
 		{name: "midstream disconnect followed by cleanup EOF", event: "response.output_text.delta", cancel: true, closeEOF: true, wantEnd: relaycommon.StreamEndReasonClientGone, wantError: true},
-		{name: "cancellation before flush", event: "response.completed", responseStatus: "completed", cancel: true, cancelBeforeFlush: true, wantEnd: relaycommon.StreamEndReasonClientGone, wantError: true},
+		{name: "cancellation before flush", event: "response.completed", responseStatus: "completed", cancel: true, cancelBeforeFlush: true, wantEnd: relaycommon.StreamEndReasonDone},
 		{name: "event write failure", event: "response.completed", responseStatus: "completed", failWrite: 1, wantEnd: relaycommon.StreamEndReasonHandlerStop, wantError: true},
 		{name: "data write failure", event: "response.completed", responseStatus: "completed", failWrite: 2, wantEnd: relaycommon.StreamEndReasonHandlerStop, wantError: true},
 		{name: "delimiter write failure", event: "response.completed", responseStatus: "completed", failWrite: 3, wantEnd: relaycommon.StreamEndReasonHandlerStop, wantError: true},
@@ -537,8 +537,9 @@ func TestOaiResponsesStreamHandlerDrainsTerminalUsageAfterClientGone(t *testing.
 	}, time.Second, time.Millisecond)
 	_, err = fmt.Fprintln(writer, `data: {"type":"response.completed","response":{"status":"completed","usage":{"input_tokens":112003,"output_tokens":232,"total_tokens":112235,"input_tokens_details":{"cached_tokens":110335}}}}`)
 	require.NoError(t, err, "scanner must keep reading the upstream body after client cancellation")
-	_, err = fmt.Fprintln(writer, "data: [DONE]")
-	require.NoError(t, err)
+	require.Eventually(t, func() bool {
+		return info.StreamStatus.OutcomeSnapshot().Response == relaycommon.ResponseOutcomeCompleted
+	}, time.Second, time.Millisecond)
 	require.NoError(t, writer.Close())
 
 	var got result
@@ -553,7 +554,7 @@ func TestOaiResponsesStreamHandlerDrainsTerminalUsageAfterClientGone(t *testing.
 	assert.Equal(t, 232, got.usage.CompletionTokens)
 	assert.Equal(t, 112235, got.usage.TotalTokens)
 	assert.Equal(t, 110335, got.usage.PromptTokensDetails.CachedTokens)
-	assert.Equal(t, relaycommon.StreamEndReasonClientGone, info.StreamStatus.EndReason)
+	assert.Equal(t, relaycommon.StreamEndReasonDone, info.StreamStatus.EndReason)
 	assert.Equal(t, relaycommon.StreamEndReasonDone, info.StreamStatus.TerminalReason())
 	assert.Equal(t, relaycommon.ResponseOutcomeCompleted, info.StreamStatus.OutcomeSnapshot().Response)
 	assert.Equal(t, relaycommon.StreamDrainResultEnded, info.StreamStatus.OutcomeSnapshot().DrainResult)

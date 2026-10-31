@@ -823,7 +823,13 @@ func TestSweepTimedOutTasksAtTheDefaultDeadline(t *testing.T) {
 	assert.Equal(t, taskQuota, reloadedRunning.Quota)
 	assert.EqualValues(t, model.TaskStatusFailure, reloadedStuck.Status)
 	assert.Equal(t, "Task timed out", reloadedStuck.FailReason)
-	assert.Equal(t, initialQuota+taskQuota, getUserQuota(t, userID))
+	assert.Equal(t, taskQuota, reloadedStuck.Quota)
+	assert.True(t, reloadedStuck.BillingReviewPending)
+	assert.Equal(t, initialQuota, getUserQuota(t, userID), "unknown upstream outcome retains quota for billing review")
+	reviewTasks, err := model.ListBillingReviewTasks(10)
+	require.NoError(t, err)
+	require.Len(t, reviewTasks, 1)
+	assert.Equal(t, stuck.ID, reviewTasks[0].ID)
 }
 
 type scriptedPollingAdaptor struct {
