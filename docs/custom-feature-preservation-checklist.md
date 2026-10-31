@@ -766,13 +766,15 @@
   usage。下游写失败不能通过共享 `sr.Stop` 提前截断上游 usage 读取。
 - 必须保留：OpenAI Responses HTTP SSE 与 Responses WebSocket 共用
   `ResponsesUsageAccumulator`。终态事件提供的 prompt/output/cache/tool/image usage 优先
-  保留；没有权威 output usage 时才按已累计输出文本使用 `tokenkit.Count` 本地估算，明确
-  失败流不再被旧的“失败即跳过所有估算”补丁改变原有估算路径。
-- 必须保留：临时运营规则只作用于本地 `tokenkit.Count` 结果恰好为 1 的 Responses
-  估算值，按 `RelayInfo.RequestId` 的 CRC32 稳定映射到 30--90；request ID 为空使用 30。
-  上游明确报告的 `output_tokens=1`、已有正值 usage、缓存字段、工具和图片计数不得被
-  改写。该值进入 `Usage`、`TotalTokens`、`PostTextConsumeQuota`、消费日志和性能统计，
-  不是只修改页面显示，也不会写入跨请求状态或影响下一个用户。
+  保留；没有权威 output usage 时才按已累计输出文本使用 `tokenkit.Count` 本地估算。明确
+  `response.failed`、`response.error`、`error` 或失败状态事件不进入本地估算：有上游
+  usage 只保留该 usage，没有 usage 按 0 token 结算；普通断流没有明确失败事件时仍沿用
+  估算策略。
+- 必须保留：临时运营规则只作用于本地 `tokenkit.Count` 结果恰好为 1 的、没有明确失败
+  事件的 Responses 估算值，按 `RelayInfo.RequestId` 的 CRC32 稳定映射到 30--90；request
+  ID 为空使用 30。上游明确报告的 `output_tokens=1`、已有正值 usage、缓存字段、工具和
+  图片计数不得被改写。该值进入 `Usage`、`TotalTokens`、`PostTextConsumeQuota`、消费
+  日志和性能统计，不是只修改页面显示，也不会写入跨请求状态或影响下一个用户。
 - 必须保留：该临时 30--90 规则仅覆盖 Responses accumulator；`/v1/messages`、普通
   `/v1/chat/completions` 及不走共享 scanner 的自定义 SSE/WebSocket 路径保持各自原有
   行为。当前观察到的其他协议 `completion_tokens=1` 不能反向证明 Responses 规则失效。
@@ -860,14 +862,22 @@ GitHub Actions 的 amd64、arm64 与 manifest 均成功。
 
 ## 7. 维护记录
 
+- 2026-10-31：收窄 P-38 的 Responses 估算边界。明确 `response.failed`、`response.error`、
+  `error` 或失败状态事件不再触发本地 prompt/output 估算：有上游 usage 只保留已报告值，
+  无 usage 按 0 token 结算；无明确失败的 client gone/EOF/timeout 仍保留临时 30--90 规则。
+  这样下游 Sub 看到明确失败时不会被伪造 usage 触发二次计费，也不会把参数错误当作成功
+  推理。新增 accumulator 回归覆盖失败无 usage、失败带部分 usage 和 failed status；
+  service 定向测试、controller 关键测试、race、vet、build、diff/UTF-8 检查通过。service
+  全量测试另有现有 `TestBillingOperationRollsBackAndRetriesRefundWithoutDoubleCredit`
+  失败，与本项无关；OpenAI relay 两条 drain 断言也属于当前工作区既有 scanner 回归。
 - 2026-10-26：补录 P-38，固化 Responses 异常流的最终实现设计。共享 scanner 在 client
   gone 后按 `CLIENT_GONE_DRAIN_TIMEOUT` drain 上游并在同一请求流程完成 usage/工具/图片
   结算；`drain_result` 只记录传输终态。Responses 本地 output token 估算恰好为 1 时，
   按 request ID 稳定映射到 30--90 并进入实际 `Usage`/扣费链路；上游真实 output=1 不改写。
-  已撤回 `724e251e0` 的“明确失败后跳过估算”行为，保留 `697e4f7d8` 的临时规则。该项
-  不覆盖其他协议路径的 1-token 记录，也未修改缓存字段解析、价格表达式、数据库或历史
-  日志。根模块全量测试、定向 race、`go vet`、`go build`、RelayKit/TokenKit 独立测试、
-  diff/UTF-8 检查均通过；本条只登记保护契约，不代表再次部署或上游缓存问题已解决。
+  本轮恢复为精确失败规则：明确失败有 usage 只保留上游 usage，无 usage 按 0 token 结算；
+  仅无明确失败的断流才使用 `697e4f7d8` 的临时规则。该项不覆盖其他协议路径的 1-token
+  记录，也未修改缓存字段解析、价格表达式、数据库或历史日志。服务定向测试通过；本条
+  只登记保护契约，不代表再次部署或上游缓存问题已解决。
 - 2026-09-28：实施 P-32 钱包/Token int64 与持久任务账务根治；完成 SQL 权威额度、精度/checked 边界、
   持久预留/结算/退款、任务与 Midjourney 状态恢复、未知结果人工核查和旧路径兼容。最终审查补齐旧任务首次
   终态处理的资金分摊根快照，并阻止退款后重算重新修改资金；`go test ./...`、`go build ./...`、

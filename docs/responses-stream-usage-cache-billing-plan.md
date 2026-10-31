@@ -33,7 +33,7 @@
 ```
 
 1. 改造前 `relay/helper/stream_scanner.go` 的主循环在 `c.Request.Context().Done()` 设置 `client_gone` 后直接执行 `cleanup()`；后者关闭 `resp.Body`、停 scanner 并等待 worker。因此后续 `response.completed` 的原生 usage 不可达。这是问题 1 在 new-api 的明确机制，但第三方在何种账户/协议路径继续计费仍须逐路径确认。
-2. `relay/channel/openai/relay_responses.go` 将 SSE 解码成 `ResponsesStreamResponse` 并交给 `service/responses_usage.go`；只有终态事件内的 `response.usage` 才在这条原生路径上进入 `ApplyResponsesUsage`。丢失终态时 `Finish()` 用已观察到的输出文本与本地 prompt 估算补账；输出为 1 不能简单解释为“客户端收到了 1 token”。
+2. `relay/channel/openai/relay_responses.go` 将 SSE 解码成 `ResponsesStreamResponse` 并交给 `service/responses_usage.go`；终态或明确失败事件内的 `response.usage` 都会进入 `ApplyResponsesUsage`。丢失终态时 `Finish()` 用已观察到的输出文本与本地 prompt 估算补账；输出为 1 不能简单解释为“客户端收到了 1 token”。
 3. type 59 **没有独立的 Responses 用量适配器**：`relay/channel/sub2api/adaptor.go` 嵌入 newapi 适配器，最终调用相同的 `OaiResponsesStreamHandler`。因此“sub2api 渠道完全不经过 ResponsesUsageAccumulator”不成立。
 4. 标准 `response.usage.input_tokens_details.cached_tokens` 在 `relaykit/dto/openai_response.go` 有字段，经 `NormalizeResponsesUsage` 映射为 `PromptTokensDetails.CachedTokens`，被 `service/text_quota.go` 读取并提供给 `service/tiered_settle.go` 的 `cr`；源代码**不能支持**“该字段根本未实现”的定论。`cache_tokens=0` 需先判定线缆数据、终态、字段别名、`BillingUsage` 覆盖与实际生效的定价快照。
 5. `service/responses_usage.go` 目前通过“值是否为零”触发估算：如果确实收到 `response.usage`，但其中输入与输出**明确为 0**，后续 `a.started` 仍可导致本地 prompt 回填。需把“没有 usage”与“收到权威的全零 usage”分开；仅靠 drain 不一定能修复样本 B。
@@ -180,6 +180,6 @@
 
 经过生产日志对账，client gone 后仍有一部分请求在 drain 超时前拿不到上游终态 usage。为减少下游看到 `completion_tokens=1` 引起的争议，当前临时策略只处理本地 token 估算结果恰好为 1 的请求：按 `RelayInfo.RequestId` 的 CRC32 稳定映射到 30--90 个输出 token。request ID 为空时使用下限 30。
 
-该策略只作用于本地 `tokenkit.Count` 产生的估算值；上游明确报告的 `output_tokens=1` 保持 1，已有正值 usage、缓存字段、工具和图片计数均保持原有结算。明确失败流恢复原有本地估算路径，因此没有 usage 且输出片段估为 1 的失败流也会使用该临时范围。
+该策略只作用于本地 `tokenkit.Count` 产生的估算值；上游明确报告的 `output_tokens=1` 保持 1，已有正值 usage、缓存字段、工具和图片计数均保持原有结算。明确 `response.failed`、`response.error` 或失败状态的事件不进入本地估算：有上游 usage 就只保留该 usage，没有 usage 就按 0 token 结算。普通 client gone、EOF、超时等没有明确失败事件的流仍可使用该临时范围。
 
 这是临时的运营估值，不代表上游真实输出量。作者修复终态 usage 对账后，应删除 `temporaryEstimatedCompletion` 及对应测试和文档段落，再恢复只按权威 usage 或明确的正式估算策略结算。

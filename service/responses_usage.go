@@ -36,6 +36,7 @@ type ResponsesUsageAccumulator struct {
 	outputText     strings.Builder
 	imageCounter   relaycommon.ImageGenerationCallCounter
 	imageCommitted bool
+	failed         bool
 	started        bool
 	finished       bool
 }
@@ -54,11 +55,21 @@ func (a *ResponsesUsageAccumulator) Observe(event *dto.ResponsesStreamResponse, 
 		a.info.ObserveResponseModel(event.Response.Model)
 	}
 	a.started = true
+	failed := responsesEventFailed(event)
+	a.failed = a.failed || failed
 	ObserveResponsesOutcome(a.info, event)
+	if failed && event.Response != nil {
+		// Error envelopes and failed response statuses can carry usage even when
+		// they are not one of the normal terminal event types. Preserve those
+		// provider-reported facts before applying the no-estimation rule.
+		ApplyResponsesUsage(a.usage, event.Response.Usage)
+	}
 	switch event.Type {
 	case "response.completed", "response.done", "response.failed", "response.incomplete", "response.cancelled", "response.canceled":
 		if event.Response != nil {
-			ApplyResponsesUsage(a.usage, event.Response.Usage)
+			if !failed {
+				ApplyResponsesUsage(a.usage, event.Response.Usage)
+			}
 			if a.outputText.Len() == 0 {
 				// Some upstreams carry the output only on the terminal event.
 				a.outputText.WriteString(relayconvert.ExtractOutputTextFromResponses(event.Response))
@@ -111,6 +122,13 @@ func (a *ResponsesUsageAccumulator) Finish() *dto.Usage {
 		a.imageCounter.Commit(a.info)
 		a.imageCommitted = true
 	}
+	if a.failed {
+		// An explicit upstream failure is not evidence that the request reached
+		// billable inference. Keep only usage explicitly reported by the provider;
+		// in particular, do not estimate a prompt or completion from deltas.
+		a.usage.TotalTokens = a.usage.PromptTokens + a.usage.CompletionTokens
+		return a.usage
+	}
 	estimatedCompletion := false
 	if a.usage.CompletionTokens == 0 {
 		if output := a.outputText.String(); output != "" {
@@ -136,6 +154,18 @@ func (a *ResponsesUsageAccumulator) Finish() *dto.Usage {
 		a.usage.BillingUsage = dto.CloneBillingUsageWithEstimatedCompletion(a.usage.BillingUsage, a.usage.CompletionTokens)
 	}
 	return a.usage
+}
+
+func responsesEventFailed(event *dto.ResponsesStreamResponse) bool {
+	if event == nil {
+		return false
+	}
+	var responseStatus string
+	if event.Response != nil {
+		_ = common.Unmarshal(event.Response.Status, &responseStatus)
+	}
+	return event.Type == "error" || event.Type == "response.failed" ||
+		event.Type == "response.error" || responseStatus == "failed"
 }
 
 // ObserveResponsesOutcome records the protocol outcome of one Responses event

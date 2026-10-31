@@ -89,16 +89,19 @@ func TestResponsesUsageAccumulatorInterruptedTextFallback(t *testing.T) {
 				accumulator.Observe(&dto.ResponsesStreamResponse{Type: "response.failed", Response: &dto.OpenAIResponsesResponse{Usage: upstream}}, nil)
 			}
 			usage := accumulator.Finish()
-			wantCompletion := temporaryEstimatedCompletion(info.RequestId)
-			assert.GreaterOrEqual(t, usage.CompletionTokens, temporaryEstimatedCompletionMin)
-			assert.LessOrEqual(t, usage.CompletionTokens, temporaryEstimatedCompletionMax)
+			wantCompletion := 0
+			if !withUsage {
+				wantCompletion = temporaryEstimatedCompletion(info.RequestId)
+				assert.GreaterOrEqual(t, usage.CompletionTokens, temporaryEstimatedCompletionMin)
+				assert.LessOrEqual(t, usage.CompletionTokens, temporaryEstimatedCompletionMax)
+			}
 			assert.Equal(t, wantCompletion, usage.CompletionTokens)
 			if withUsage {
 				assert.Equal(t, 20, usage.PromptTokens)
 				assert.Equal(t, 20+wantCompletion, usage.TotalTokens)
 				require.NotNil(t, usage.BillingUsage)
 				assert.Equal(t, dto.BillingUsageSourceOAIResponses, usage.BillingUsage.Source)
-				assert.True(t, usage.BillingUsage.Estimated)
+				assert.False(t, usage.BillingUsage.Estimated)
 				canonical, ok := usage.BillingUsage.CanonicalUsage()
 				require.True(t, ok)
 				assert.Equal(t, 4, canonical.PromptTokensDetails.CachedTokens)
@@ -110,6 +113,26 @@ func TestResponsesUsageAccumulatorInterruptedTextFallback(t *testing.T) {
 			accumulator.Observe(&dto.ResponsesStreamResponse{Type: "response.output_text.delta", Delta: " late output"}, nil)
 			assert.Equal(t, usage, accumulator.Finish())
 			assert.Equal(t, wantCompletion, usage.CompletionTokens)
+		})
+	}
+}
+
+func TestResponsesUsageAccumulatorExplicitFailureSkipsEstimation(t *testing.T) {
+	for _, eventType := range []string{"error", "response.error", "response.failed", "response.done"} {
+		t.Run(eventType, func(t *testing.T) {
+			info := &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{UpstreamModelName: "gpt-4o"}}
+			info.SetEstimatePromptTokens(80505)
+			accumulator := NewResponsesUsageAccumulator(info)
+			accumulator.Observe(&dto.ResponsesStreamResponse{Type: "response.output_text.delta", Delta: "hello"}, nil)
+			response := &dto.OpenAIResponsesResponse{}
+			if eventType == "response.done" {
+				response.Status = []byte(`"failed"`)
+			}
+			accumulator.Observe(&dto.ResponsesStreamResponse{Type: eventType, Response: response}, nil)
+			usage := accumulator.Finish()
+			assert.Zero(t, usage.PromptTokens)
+			assert.Zero(t, usage.CompletionTokens)
+			assert.Zero(t, usage.TotalTokens)
 		})
 	}
 }
