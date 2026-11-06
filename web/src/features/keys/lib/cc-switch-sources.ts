@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 export type CCSwitchApp =
+  | 'agy'
   | 'claude'
   | 'claude-desktop'
   | 'codex'
@@ -26,6 +27,17 @@ export type CCSwitchApp =
   | 'opencode'
   | 'openclaw'
   | 'hermes'
+  | 'pi'
+  | 'mcode'
+  | 'kimi'
+  | 'dsh'
+  | 'omp'
+
+type CCSwitchApiFormat =
+  | 'anthropic'
+  | 'openai_chat'
+  | 'openai_responses'
+  | 'gemini_native'
 
 export type CCSwitchModelField = {
   key: string
@@ -39,7 +51,7 @@ export type CCSwitchSource = {
   defaultName: string
   endpointSuffix: '' | '/v1'
   modelFields: readonly CCSwitchModelField[]
-  apiFormat?: 'anthropic'
+  apiFormat?: CCSwitchApiFormat
 }
 
 const PRIMARY_MODEL_FIELD: CCSwitchModelField = {
@@ -88,6 +100,14 @@ export const CCSWITCH_SOURCES: readonly CCSwitchSource[] = [
     modelFields: SINGLE_MODEL_FIELDS,
   },
   {
+    appId: 'agy',
+    labelKey: 'Antigravity CLI',
+    defaultName: 'coder',
+    endpointSuffix: '',
+    modelFields: SINGLE_MODEL_FIELDS,
+    apiFormat: 'gemini_native',
+  },
+  {
     appId: 'grokbuild',
     labelKey: 'Grok Build',
     defaultName: 'coder',
@@ -114,6 +134,46 @@ export const CCSWITCH_SOURCES: readonly CCSwitchSource[] = [
     defaultName: 'coder',
     endpointSuffix: '/v1',
     modelFields: SINGLE_MODEL_FIELDS,
+  },
+  {
+    appId: 'pi',
+    labelKey: 'Pi',
+    defaultName: 'coder',
+    endpointSuffix: '/v1',
+    modelFields: SINGLE_MODEL_FIELDS,
+    apiFormat: 'openai_chat',
+  },
+  {
+    appId: 'mcode',
+    labelKey: 'MiniMax Code',
+    defaultName: 'coder',
+    endpointSuffix: '/v1',
+    modelFields: SINGLE_MODEL_FIELDS,
+    apiFormat: 'openai_chat',
+  },
+  {
+    appId: 'kimi',
+    labelKey: 'Kimi Code',
+    defaultName: 'coder',
+    endpointSuffix: '/v1',
+    modelFields: SINGLE_MODEL_FIELDS,
+    apiFormat: 'openai_chat',
+  },
+  {
+    appId: 'dsh',
+    labelKey: 'DeepSeek Harness',
+    defaultName: 'coder',
+    endpointSuffix: '/v1',
+    modelFields: SINGLE_MODEL_FIELDS,
+    apiFormat: 'openai_chat',
+  },
+  {
+    appId: 'omp',
+    labelKey: 'Oh My Pi',
+    defaultName: 'coder',
+    endpointSuffix: '/v1',
+    modelFields: SINGLE_MODEL_FIELDS,
+    apiFormat: 'openai_chat',
   },
 ] as const
 

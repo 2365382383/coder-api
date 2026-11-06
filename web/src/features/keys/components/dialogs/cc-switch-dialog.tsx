@@ -137,7 +137,7 @@ export function CCSwitchDialog(props: Props) {
       onOpenChange={props.onOpenChange}
       title={t('Import to CC Switch')}
       description={t('Use the latest version of CC Switch')}
-      contentClassName='sm:max-w-md'
+      contentClassName='sm:max-w-lg'
       contentHeight='auto'
       bodyClassName='space-y-4'
       footer={
@@ -157,7 +157,7 @@ export function CCSwitchDialog(props: Props) {
           <RadioGroup
             value={app}
             onValueChange={handleAppChange}
-            className='grid grid-cols-2 gap-2 sm:grid-cols-4'
+            className='grid grid-cols-2 gap-2 sm:grid-cols-3'
           >
             {CCSWITCH_SOURCES.map((source) => (
               <div

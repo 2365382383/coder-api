@@ -43,19 +43,25 @@ await i18n.use(initReactI18next).init({
     en: {
       translation: {
         Application: 'Application',
+        'Antigravity CLI': 'Antigravity CLI',
         Cancel: 'Cancel',
         'Claude Code': 'Claude Code',
         'Claude Desktop': 'Claude Desktop',
         Codex: 'Codex',
+        'DeepSeek Harness': 'DeepSeek Harness',
         'Grok Build': 'Grok Build',
         Gemini: 'Gemini',
         Hermes: 'Hermes',
         'Import to CC Switch': 'Import to CC Switch',
+        'Kimi Code': 'Kimi Code',
+        'MiniMax Code': 'MiniMax Code',
         Name: 'Name',
         'No models found': 'No models found',
         'Open CC Switch': 'Open CC Switch',
         OpenClaw: 'OpenClaw',
         OpenCode: 'OpenCode',
+        'Oh My Pi': 'Oh My Pi',
+        Pi: 'Pi',
         'Primary Model': 'Primary Model',
         'Select or enter model name': 'Select or enter model name',
         'Haiku Model': 'Haiku Model',
@@ -99,6 +105,29 @@ function renderDialog(
 }
 
 describe('CC Switch dialog', () => {
+  test('shows every CC Switch application supported by the current protocol', () => {
+    renderDialog()
+
+    for (const app of [
+      'Antigravity CLI',
+      'Claude Code',
+      'Claude Desktop',
+      'Codex',
+      'DeepSeek Harness',
+      'Gemini',
+      'Grok Build',
+      'Hermes',
+      'Kimi Code',
+      'MiniMax Code',
+      'Oh My Pi',
+      'OpenClaw',
+      'OpenCode',
+      'Pi',
+    ]) {
+      expect(screen.getByRole('radio', { name: app })).toBeInTheDocument()
+    }
+  })
+
   test.each(['Claude Code', 'Claude Desktop', 'Codex', 'Gemini'])(
     'opens %s models outside the clipping dialog and keeps the dialog open after selection',
     async (app) => {

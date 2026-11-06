@@ -37,10 +37,16 @@ describe('CC Switch source registry', () => {
       'claude-desktop',
       'codex',
       'gemini',
+      'agy',
       'grokbuild',
       'opencode',
       'openclaw',
       'hermes',
+      'pi',
+      'mcode',
+      'kimi',
+      'dsh',
+      'omp',
     ])
     expect(
       new Set(CCSWITCH_SOURCES.map((source) => source.defaultName))
@@ -124,9 +130,25 @@ describe('CC Switch source registry', () => {
       expect(params.get('endpoint')).toBe(expectedEndpoint)
       expect(params.get('homepage')).toBe('https://api.example.com')
       expect(params.get('model')).toBe('model-a')
-      expect(params.get('apiFormat')).toBe(
-        source.apiFormat === 'anthropic' ? 'anthropic' : null
-      )
+      expect(params.get('apiFormat')).toBe(source.apiFormat ?? null)
+    }
+  })
+
+  test('maps the remaining CC Switch apps to their native endpoints and formats', () => {
+    const expected = [
+      ['agy', '', 'gemini_native'],
+      ['pi', '/v1', 'openai_chat'],
+      ['mcode', '/v1', 'openai_chat'],
+      ['kimi', '/v1', 'openai_chat'],
+      ['dsh', '/v1', 'openai_chat'],
+      ['omp', '/v1', 'openai_chat'],
+    ] as const
+
+    for (const [appId, endpointSuffix, apiFormat] of expected) {
+      const source = sourceFor(appId)
+      expect(source.endpointSuffix).toBe(endpointSuffix)
+      expect(source.apiFormat).toBe(apiFormat)
+      expect(source.modelFields.map((field) => field.key)).toEqual(['model'])
     }
   })
 
