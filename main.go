@@ -23,7 +23,6 @@ import (
 	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/oauth"
-	"github.com/QuantumNous/new-api/pkg/imagecapability"
 	"github.com/QuantumNous/new-api/pkg/jsplugin"
 	perfmetrics "github.com/QuantumNous/new-api/pkg/perf_metrics"
 	"github.com/QuantumNous/new-api/pkg/wsmanager"
@@ -63,10 +62,6 @@ func main() {
 		common.FatalLog(common.LogText("failed to initialize resources: %s", err.Error()))
 		return
 	}
-	// Load the external image capability registry and enable its hot-reload
-	// watcher before any request can inspect image model capabilities.
-	imagecapability.EnsureRuntimeConfig()
-
 	common.SysLog(common.LogText("New API %s started", common.Version))
 	if os.Getenv("GIN_MODE") != "debug" {
 		gin.SetMode(gin.ReleaseMode)

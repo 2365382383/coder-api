@@ -430,14 +430,20 @@ node integrations/infinite-canvas/browser-startup-check.mjs
 | `/v1/videos` | `video` |
 | `/v1/audio/speech` | `audio` |
 
-画布不再为每个图片模型读取 Playground 的独立能力规则。`controller/canvas.go` 给所有图片端点的 bootstrap 选项附加 `CanvasDefaultImageCapabilities`；`overlay/config.ts` 只保留这一份配置，`image-settings-panel.tsx` 和 `image-api.ts` 共用它。Playground 自身的逐模型能力配置保持不变，两条产品链路互不覆盖。
+画布和 Playground 不再读取逐模型图片能力表。两端统一使用 `imagecapability.DefaultCapability()`：`aspect_ratio + resolution`，默认 `1:1 + 1K`，分辨率包含 `1K/2K/4K`。Playground 的 `/api/user/image-models` 直接复用画布的元数据端点目录；OpenAI 在请求边界把预设转换为合法 `size`，Gemini 与 xAI 保留原生画幅/分辨率字段。
 
 线上模型 `grok-imagine-agent-mode` 已新增持久化元数据记录，声明 `image-generation -> /v1/images/generations`。读回结果：模型 ID `188`、状态启用、可见分组包含 `default/image/Grok/Grok-heavy/vip` 等现有渠道分组、绑定渠道 2 个、`supported_endpoints` 为 `image-generation`。没有修改渠道分组、模型映射、价格或密钥。
+
+本轮同时补齐当前图片模型的元数据端点：`gemini-3-pro-image-preview`、`gemini-3.1-flash-image-preview`、`gpt-image-2` 更新现有记录；`gpt-image-2.6-flare`、`gpt-image-2.6-sunburst`、`grok-imagine-image`、`grok-imagine-image-quality` 创建新记录。新增记录 ID 为 `189`、`190`、`191`、`192`。已有记录的渠道、绑定和分组在写入前后比较一致。
 
 阶段验证：
 
 - `go test ./service -run TestCanvasCatalogUsesGroupScopedRoutingAndExplicitEndpointMetadata -count=1` 通过。
 - `GOMAXPROCS=2 go test ./controller -run TestCanvas -count=1` 通过。
+- `go test ./model ./service`、`go test ./relay/helper ./relay/channel/openai ./relay/channel/gemini ./relay/channel/xai ./pkg/imagecapability` 和图片相关控制器测试通过。
+- `controller` 完整包在干净 `HEAD` 同样被既有 `TestRelayKeepAlive*` 共享测试状态问题阻断；跳过该组用例后其余控制器测试通过。
+- `go test ./... -run '^$'` 全仓库编译检查通过；`go vet` 覆盖受影响包通过。
+- Playground 图片请求构造测试 7 项、宿主前端 `tsc --noEmit`、控制台生产构建和固定上游画布生产构建通过。
 - 固定上游 `e856c878e0a34651bb828e28f0af20d71016a7d4` 完成 `tsc --noEmit` 和 Vite 生产构建；构建以低优先级执行，只有现有动态/静态导入与大 chunk 警告。
 - `middleware` 的完整路由测试仍有既有夹具失败：测试库未建立 `options` 表，敏感词审计返回 503。已在未修改的干净 `HEAD` 工作树复跑同一测试并得到相同失败，因此没有把该结果归因于本轮改动，也没有把该测试记为通过。
 - 本轮不新增数据库表、不改 Tool 图床/媒体床协议，也不引入免 Key 之外的第二套凭据路径。

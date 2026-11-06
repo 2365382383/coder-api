@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
-	channelconstant "github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/pkg/imagecapability"
 	"github.com/QuantumNous/new-api/relay/channel"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
@@ -72,19 +71,11 @@ func (a *Adaptor) ConvertImageRequest(c *gin.Context, info *relaycommon.RelayInf
 		return nil, errors.New("Gemini image editing is not supported by the images edits endpoint")
 	}
 
-	aliasResolution := imagecapability.GeminiImageResolution(info.UpstreamModelName)
-	if aliasResolution == "" {
-		aliasResolution = imagecapability.GeminiImageResolution(info.OriginModelName)
-	}
-	capability, ok := imagecapability.Resolve(channelconstant.ChannelTypeGemini, info.UpstreamModelName)
-	if !ok {
-		return nil, fmt.Errorf("model %s does not support Gemini image generation", info.UpstreamModelName)
-	}
-
-	if capability.Provider == imagecapability.ProviderImagen {
+	capability := imagecapability.DefaultCapability()
+	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(info.UpstreamModelName)), "imagen-") {
 		return convertImagenRequest(request, capability)
 	}
-	return convertNativeGeminiImageRequest(request, capability, aliasResolution)
+	return convertNativeGeminiImageRequest(request, capability)
 }
 
 func convertImagenRequest(request dto.ImageRequest, capability imagecapability.Capability) (dto.GeminiImageRequest, error) {
@@ -108,19 +99,13 @@ func convertImagenRequest(request dto.ImageRequest, capability imagecapability.C
 	}, nil
 }
 
-func convertNativeGeminiImageRequest(request dto.ImageRequest, capability imagecapability.Capability, aliasResolution string) (*dto.GeminiChatRequest, error) {
+func convertNativeGeminiImageRequest(request dto.ImageRequest, capability imagecapability.Capability) (*dto.GeminiChatRequest, error) {
 	if lo.FromPtrOr(request.N, uint(1)) > 1 {
 		return nil, errors.New("Gemini native image generation supports n=1 per request")
 	}
 	aspectRatio, err := requestedAspectRatio(request, capability)
 	if err != nil {
 		return nil, err
-	}
-	if aliasResolution != "" && request.Resolution != "" && !strings.EqualFold(request.Resolution, aliasResolution) {
-		return nil, fmt.Errorf("resolution %s conflicts with model resolution %s", request.Resolution, aliasResolution)
-	}
-	if aliasResolution != "" {
-		request.Resolution = aliasResolution
 	}
 	resolution, err := requestedImageResolution(request, capability, false)
 	if err != nil {
@@ -166,6 +151,9 @@ func requestedAspectRatio(request dto.ImageRequest, capability imagecapability.C
 				aspectRatio = "16:9"
 			}
 		}
+	}
+	if strings.EqualFold(aspectRatio, "auto") {
+		aspectRatio = capability.DefaultAspectRatio
 	}
 	if aspectRatio == "" {
 		aspectRatio = capability.DefaultAspectRatio
@@ -357,8 +345,8 @@ func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycom
 		}
 	}
 
-	if capability, ok := imagecapability.Resolve(channelconstant.ChannelTypeGemini, info.UpstreamModelName); ok {
-		if capability.Provider == imagecapability.ProviderImagen {
+	if info.RelayMode == constant.RelayModeImagesGenerations {
+		if strings.HasPrefix(strings.ToLower(strings.TrimSpace(info.UpstreamModelName)), "imagen-") {
 			return GeminiImageHandler(c, info, resp)
 		}
 		return GeminiNativeImageHandler(c, info, resp)

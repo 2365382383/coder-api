@@ -87,7 +87,7 @@ func isXAIAspectRatio(size string) bool {
 
 func isXAIResolution(size string) bool {
 	switch size {
-	case "1k", "2k":
+	case "1k", "2k", "4k":
 		return true
 	default:
 		return false

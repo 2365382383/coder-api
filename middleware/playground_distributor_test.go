@@ -16,6 +16,9 @@ import (
 	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/gin-gonic/gin"
+	"github.com/glebarez/sqlite"
+	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
 
 func TestApplyPlaygroundGroupOverrideSupportsImageGenerationReusableBody(t *testing.T) {
@@ -161,6 +164,25 @@ func TestApplyPlaygroundGroupOverrideRejectsUnavailableGroup(t *testing.T) {
 }
 
 func TestImageGenerationEndpointRequiresChannelSpecificSupport(t *testing.T) {
+	oldDB, oldLogDB := model.DB, model.LOG_DB
+	db, err := gorm.Open(sqlite.Open("file:"+strings.ReplaceAll(t.Name(), "/", "_")+"?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	model.DB, model.LOG_DB = db, db
+	model.InitColumnNamesForTest()
+	require.NoError(t, db.AutoMigrate(&model.Channel{}, &model.Ability{}, &model.Model{}))
+	require.NoError(t, db.Create(&model.Channel{Id: 1, Type: constant.ChannelTypeOpenAI, Status: common.ChannelStatusEnabled}).Error)
+	require.NoError(t, db.Create(&model.Ability{Group: "default", Model: "gpt-image-2", ChannelId: 1, Enabled: true}).Error)
+	require.NoError(t, db.Create(&model.Model{ModelName: "gpt-image-2", Endpoints: `{"image-generation":{"path":"/v1/images/generations","method":"POST"}}`, Status: 1}).Error)
+	model.InvalidatePricingCache()
+	t.Cleanup(func() {
+		sqlDB, closeErr := db.DB()
+		if closeErr == nil {
+			_ = sqlDB.Close()
+		}
+		model.DB, model.LOG_DB = oldDB, oldLogDB
+		model.InvalidatePricingCache()
+	})
+
 	tests := []struct {
 		name        string
 		channelType int

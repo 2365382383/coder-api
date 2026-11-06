@@ -48,7 +48,7 @@ func normalizeChannelTestEndpoint(channel *model.Channel, modelName, endpointTyp
 	if normalized != "" {
 		return normalized
 	}
-	if channel != nil && common.IsChannelImageGenerationModel(channel.Type, modelName, channel.GetModelMapping()) {
+	if declaresImageModelEndpoint(modelName) {
 		return string(constant.EndpointTypeImageGeneration)
 	}
 	if strings.HasSuffix(modelName, ratio_setting.CompactModelSuffix) {
@@ -75,6 +75,10 @@ func resolveChannelTestUserID(c *gin.Context) (int, error) {
 		return 0, errors.New("failed to resolve channel test user")
 	}
 	return rootUser.Id, nil
+}
+
+func declaresImageModelEndpoint(modelName string) bool {
+	return model.ModelDeclaresEndpoint(modelName, constant.EndpointTypeImageGeneration)
 }
 
 func testChannel(ctx context.Context, channel *model.Channel, testUserID int, testModel string, endpointType string, isStream bool) testResult {
@@ -827,7 +831,7 @@ func buildTestRequest(model string, endpointType string, channel *model.Channel,
 		}
 	}
 
-	if channel != nil && common.IsChannelImageGenerationModel(channel.Type, model, channel.GetModelMapping()) {
+	if declaresImageModelEndpoint(model) {
 		return &dto.ImageRequest{
 			Model:  model,
 			Prompt: "a cute cat",

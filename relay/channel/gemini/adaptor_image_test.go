@@ -44,7 +44,7 @@ func TestConvertImageRequestBuildsNativeGeminiRequest(t *testing.T) {
 	assert.Equal(t, "gemini-3.1-flash-image-1k", info.UpstreamModelName)
 }
 
-func TestConvertImageRequestRejectsConflictingGeminiAliasResolution(t *testing.T) {
+func TestConvertImageRequestAllowsExplicit4KResolution(t *testing.T) {
 	info := &relaycommon.RelayInfo{
 		RelayMode: relayconstant.RelayModeImagesGenerations,
 		ChannelMeta: &relaycommon.ChannelMeta{
@@ -52,12 +52,16 @@ func TestConvertImageRequestRejectsConflictingGeminiAliasResolution(t *testing.T
 		},
 	}
 
-	_, err := (&Adaptor{}).ConvertImageRequest(nil, info, dto.ImageRequest{Prompt: "test", Resolution: "4K"})
-	require.EqualError(t, err, "resolution 4K conflicts with model resolution 2K")
+	converted, err := (&Adaptor{}).ConvertImageRequest(nil, info, dto.ImageRequest{Prompt: "test", Resolution: "4K"})
+	require.NoError(t, err)
+	geminiRequest := converted.(*dto.GeminiChatRequest)
+	var imageConfig map[string]string
+	require.NoError(t, common.Unmarshal(geminiRequest.GenerationConfig.ImageConfig, &imageConfig))
+	assert.Equal(t, "4K", imageConfig["imageSize"])
 	assert.Equal(t, "gemini-3.1-flash-image-2k", info.UpstreamModelName)
 }
 
-func TestConvertImageRequestPreservesOriginAliasResolutionAfterMapping(t *testing.T) {
+func TestConvertImageRequestUsesUnifiedDefaultResolution(t *testing.T) {
 	info := &relaycommon.RelayInfo{
 		RelayMode:       relayconstant.RelayModeImagesGenerations,
 		OriginModelName: "gemini-3.1-flash-image-4k",
@@ -71,7 +75,7 @@ func TestConvertImageRequestPreservesOriginAliasResolutionAfterMapping(t *testin
 	geminiRequest := converted.(*dto.GeminiChatRequest)
 	var imageConfig map[string]string
 	require.NoError(t, common.Unmarshal(geminiRequest.GenerationConfig.ImageConfig, &imageConfig))
-	assert.Equal(t, "4K", imageConfig["imageSize"])
+	assert.Equal(t, "1K", imageConfig["imageSize"])
 }
 
 func TestConvertImageRequestBuildsImagenRequestWithExplicitResolution(t *testing.T) {

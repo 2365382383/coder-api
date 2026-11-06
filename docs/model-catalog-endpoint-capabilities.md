@@ -4,7 +4,7 @@
 
 - `abilities` 加上已启用渠道才代表可用能力；`channels.model_mapping` 将公开名称解析为上游模型。
 - 插件路由索引按渠道绑定、模型和协议声明提供标准端点；内部 `openai_video` 与公开 `openai-video` 不能混用。
-- 图片能力使用可热加载的 `/data/image-capabilities.json`（支持 `IMAGE_CAPABILITY_CONFIG_FILE`），插件协议不能替代尺寸、比例等可用参数配置。
+- 图片模型是否属于图片工作台由持久化模型元数据端点决定；Playground 与画布共用静态 `aspect_ratio + resolution` 能力，旧的逐模型能力文件已移除。
 
 ## 重构方案
 
@@ -37,9 +37,9 @@
 | `model/model_endpoint_migration_test.go` | 旧键/冲突迁移、幂等性与新键校验回归。 |
 | `controller/user_models_test.go` | 用户可选端点按真实渠道输出的回归。 |
 | `controller/model_list_test.go` | 旧夹具补充真实渠道，保持计费模型列表回归有效。 |
-| `service/image_capability_test.go` | 未绑定插件图片模型不得出现在 Playground。 |
+| `service/canvas_test.go` | 未声明图片元数据的模型不得出现在 Playground/画布目录。 |
 | `common/model_mapping_test.go` | 图片映射与配置排除规则回归。 |
-| `pkg/imagecapability/registry_test.go` | 热加载配置版本递增回归。 |
+| `pkg/imagecapability/defaults_test.go` | 全局图片参数与 OpenAI 尺寸映射回归。 |
 | `web/src/features/pricing/lib/__tests__/media-samples.test.ts` | 图片可选参数及视频创建/查询/内容示例回归。 |
 | `web/src/features/pricing/__tests__/model-details-api.test.tsx` | 用户切换媒体端点时参数表同步切换。 |
 | `docs/custom-feature-preservation-checklist.md` | 在 P-13 记录本次跨模块维护入口。 |

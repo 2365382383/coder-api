@@ -71,6 +71,25 @@ func TestGetAndValidOpenAIImageRequestAcceptsGPTImage2AutoSize(t *testing.T) {
 	}
 }
 
+func TestGetAndValidOpenAIImageRequestMapsSharedPresetToSize(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	ctx := newImageGenerationContext(t, map[string]any{
+		"model":        "gpt-image-2",
+		"prompt":       "a clean product photo",
+		"aspect_ratio": "16:9",
+		"resolution":   "4K",
+	})
+
+	request, err := GetAndValidOpenAIImageRequest(ctx, relayconstant.RelayModeImagesGenerations)
+	if err != nil {
+		t.Fatalf("GetAndValidOpenAIImageRequest returned error: %v", err)
+	}
+	if request.Size != "3840x2160" {
+		t.Fatalf("size = %q, want 3840x2160", request.Size)
+	}
+}
+
 func TestGetAndValidOpenAIImageRequestRejectsGPTImage2InvalidSize(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

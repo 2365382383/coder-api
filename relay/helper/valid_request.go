@@ -11,6 +11,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
+	"github.com/QuantumNous/new-api/pkg/imagecapability"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
@@ -275,6 +276,9 @@ func GetAndValidOpenAIImageRequest(c *gin.Context, relayMode int) (*dto.ImageReq
 			if imageRequest.N == nil || *imageRequest.N == 0 {
 				imageRequest.N = common.GetPointer(uint(1))
 			}
+			if err := resolveOpenAIImagePreset(imageRequest); err != nil {
+				return nil, err
+			}
 			if isGPTImage2Model(imageRequest.Model) {
 				if imageRequest.Quality == "" {
 					imageRequest.Quality = "auto"
@@ -321,6 +325,9 @@ func GetAndValidOpenAIImageRequest(c *gin.Context, relayMode int) (*dto.ImageReq
 				imageRequest.Quality = "auto"
 			}
 		}
+		if err := resolveOpenAIImagePreset(imageRequest); err != nil {
+			return nil, err
+		}
 		if isGPTImage2Model(imageRequest.Model) {
 			if imageRequest.Quality == "" {
 				imageRequest.Quality = "auto"
@@ -356,6 +363,21 @@ func GetAndValidOpenAIImageRequest(c *gin.Context, relayMode int) (*dto.ImageReq
 		return nil, err
 	}
 	return imageRequest, nil
+}
+
+func resolveOpenAIImagePreset(imageRequest *dto.ImageRequest) error {
+	if imageRequest == nil || imageRequest.Size != "" {
+		return nil
+	}
+	if imageRequest.AspectRatio == "" && imageRequest.Resolution == "" {
+		return nil
+	}
+	size, err := imagecapability.DimensionsFor(imageRequest.AspectRatio, imageRequest.Resolution)
+	if err != nil {
+		return err
+	}
+	imageRequest.Size = size
+	return nil
 }
 
 func isGPTImage2Model(model string) bool {

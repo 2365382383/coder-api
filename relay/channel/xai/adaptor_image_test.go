@@ -29,6 +29,17 @@ func TestConvertImageRequestKeepsLegacySizeMapping(t *testing.T) {
 	assert.Empty(t, converted.Resolution)
 }
 
+func TestConvertImageRequestPassesExplicit4KResolution(t *testing.T) {
+	converted := ConvertImageRequest(dto.ImageRequest{
+		Model:       "grok-imagine-image",
+		Prompt:      "a city at night",
+		AspectRatio: "16:9",
+		Resolution:  "4K",
+	})
+	assert.Equal(t, "16:9", converted.AspectRatio)
+	assert.Equal(t, "4k", converted.Resolution)
+}
+
 func TestAdaptorRejectsImageEditing(t *testing.T) {
 	info := &relaycommon.RelayInfo{RelayMode: relayconstant.RelayModeImagesEdits}
 	_, err := (&Adaptor{}).ConvertImageRequest(nil, info, dto.ImageRequest{})

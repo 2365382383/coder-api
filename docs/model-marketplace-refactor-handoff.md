@@ -38,14 +38,14 @@ channels + abilities
   + task-plugin routing generation
   + models metadata (description/icon/tags/endpoints/name_rule/status)
   + ratio/billing options
-  + image-capabilities.json
+  + declared image-generation endpoints
         |
         v
 model.GetPricing()
         |
         +--> supported_endpoint_types (per public model)
         +--> supported_endpoint (endpoint type -> default/custom path)
-        +--> image_capabilities (mapped model + channel rules)
+        +--> image_capabilities (shared global workbench presets)
         +--> billing_usage_schema / billing_usage_examples
         +--> groups, vendor, price, metadata
         |
@@ -146,47 +146,27 @@ Task Plugin v1 有两种完全不同的注册方式：
 
 注意：`wan3.0-video` 若仍出现在模型广场，可能来自 Alibaba 插件。移除它只代表它不再由 `zhiqi-video` 实现，不代表从所有插件和所有渠道删除该模型。
 
-### 7. 图片能力是独立的公共事实源
+### 7. 图片工作台由元数据端点驱动
 
-图片插件协议不能替代图片能力配置。图片请求能否路由和图片请求支持哪些参数是两个问题：
+图片请求能否路由和图片请求显示哪些参数是两个问题：
 
 - 插件/渠道协议回答“请求由哪个适配器处理、进入哪个上游”。
-- 图片能力配置回答“该公开模型在该渠道上允许哪些 size、aspect ratio、resolution、quality、output format、编辑和图片数量”。
+- 持久化模型元数据中的 `image-generation` 端点回答“模型是否属于图片工作台”。
+- Playground 与画布共用静态全局参数：`aspect_ratio + resolution`，默认 `1:1 + 1K`，分辨率包含 `1K/2K/4K`。
 
-图片能力持久化文件：
+旧的 `/data/image-capabilities.json`、`IMAGE_CAPABILITY_CONFIG_FILE`、逐模型匹配规则和热加载链路已经移除，不得恢复为第二套模型筛选事实源。
 
-```text
-/data/image-capabilities.json
-```
-
-生产宿主机的常见挂载路径：
+当前链路是：
 
 ```text
-/opt/qlh-main/data/new-api/image-capabilities.json
+public model metadata
+  -> declared image-generation endpoint
+  -> enabled ability / group / channel mapping
+  -> shared global image capability
+  -> Playground + canvas model catalogs
 ```
 
-也可以通过 `IMAGE_CAPABILITY_CONFIG_FILE` 指定绝对路径。`pkg/imagecapability/registry.go` 负责内置默认规则、首次生成、每秒最多一次热加载、最后一份有效配置回退和配置版本号。
-
-配置规则特点：
-
-- `rules` 按顺序匹配，精确模型应放在前缀/包含规则之前。
-- 支持 `exact_models`、`model_prefixes`、`model_contains`，大小写不敏感。
-- 支持 `channel_types` 白名单和 `excluded_channel_types` 黑名单。
-- `size_mode` 为 `dimensions`、`aspect_ratio_resolution` 或 `none`。
-- `resolution_suffixes` 只影响展示默认值，不改变上游请求模型名。
-- 配置 JSON 无效时保留最后一份有效配置，不能让已有图片模型整体消失。
-
-当前图片查找链路是：
-
-```text
-public model
-  -> channel.model_mapping (如果存在，解析到 upstream model)
-  -> imagecapability.Resolve(channel type, upstream model)
-  -> ApplyModelAliasDefaults(public model)
-  -> image capability DTO
-```
-
-`imagecapability.Intersect` 用于同一个公开模型有多个可用渠道时计算保守交集。这个策略能避免用户选择一个某些渠道不支持的参数，但会隐藏供应商之间的差异；后续如果需要显示供应商变体，应新增 provider/channel 维度，而不是放宽交集。
+OpenAI 兼容渠道在请求边界把画幅/分辨率转换为合法 `size`；Gemini 和 xAI 使用各自原生的画幅、分辨率字段。
 
 ### 8. 定价与用量 schema
 
@@ -481,7 +461,7 @@ type ModelEndpointEvidence struct {
 
 ### 4. 图片能力统一方案
 
-保持 `/data/image-capabilities.json` 为图片参数能力事实源，插件只负责协议路由和上游转换。
+> 2026-11-06 更新：本节逐模型能力文件方案已被静态全局能力取代。图片模型是否可用只由持久化元数据端点决定；Playground 与画布共用 `aspect_ratio + resolution` 全局参数。
 
 推荐链路：
 
@@ -543,7 +523,7 @@ requestProfiles: [{
 | ability enabled/group | pricing、分组模型列表、用户模型选项 |
 | plugin upload/activate/deactivate | routing generation、pricing schema/endpoint、task plugin options |
 | model metadata endpoint/status | pricing metadata、模型广场列表 |
-| image-capabilities.json 有效版本变化 | pricing image capabilities、Playground image models |
+| model metadata image-generation endpoint changes | Playground image models、canvas catalog、image request routing |
 | billing expression/usage profile | model pricing snapshot、模型详情价格和定价编辑器 |
 
 React Query 的 5 分钟 stale time 不能成为后台配置变更后唯一的同步策略。后台保存/激活成功后应主动 invalidate；公共缓存若存在，应有版本号或 ETag。
@@ -565,7 +545,7 @@ React Query 的 5 分钟 stale time 不能成为后台配置变更后唯一的�
 | `common/model.go` | 图片模型旧列表与映射能力解析 | 新能力规则优先，旧列表只能兼容兜底 |
 | `pkg/imagecapability/types.go` | 图片能力 DTO 内部类型 | 变更时同步 DTO、配置校验和前端类型 |
 | `pkg/imagecapability/registry.go` | 图片配置持久化、热加载和匹配 | 无效文件回退最后有效配置 |
-| `pkg/imagecapability/image-capabilities.default.json` | 内置图片默认能力 | 生产文件生成前必须保持兼容 |
+| `pkg/imagecapability/defaults.go` | Playground 与画布共用的静态图片能力和 OpenAI 尺寸映射 | 不再维护逐模型 JSON 规则 |
 | `service/image_capability.go` | 用户分组图片模型选项 | 必须按用户 group 和实际 image endpoint 过滤 |
 | `controller/pricing.go` | 公共 `/api/pricing` | 只做用户分组脱敏，不重新猜端点 |
 | `controller/user.go` | `/api/user/models` 和 `/api/user/image-models` | 两条链路的权限语义不能混淆 |
@@ -722,7 +702,7 @@ options: billing_setting.billing_expr, billing_setting.plugin_billing_expr
 
 - 在前端过滤掉 `openai`，但后端 `/api/pricing` 仍返回它。
 - 全局把 `openai_video` 替换为 `openai-video`，破坏插件运行时。
-- 删除 `image-capabilities.json`，让插件协议“猜”图片参数。
+- 删除模型元数据端点，让插件协议或模型名称“猜”图片工作台归属。
 - 用模型名字正则推断视频分辨率、图片尺寸或供应商能力。
 - 只改当前一个模型的定价表达式，不修复共用 schema。
 - 看到同名模型就全局删除另一个插件的实现。

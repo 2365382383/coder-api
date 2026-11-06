@@ -16,6 +16,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
+	"github.com/QuantumNous/new-api/pkg/imagecapability"
 	"github.com/QuantumNous/new-api/relay/channel"
 	"github.com/QuantumNous/new-api/relay/channel/ai360"
 	"github.com/QuantumNous/new-api/relay/channel/lingyiwanwu"
@@ -521,6 +522,8 @@ func (a *Adaptor) ConvertImageRequest(c *gin.Context, info *relaycommon.RelayInf
 	switch info.RelayMode {
 	case relayconstant.RelayModeImagesEdits:
 		if isJSONRequest(c) {
+			request.AspectRatio = ""
+			request.Resolution = ""
 			return request, nil
 		}
 
@@ -543,13 +546,16 @@ func (a *Adaptor) ConvertImageRequest(c *gin.Context, info *relaycommon.RelayInf
 		// 写入所有非文件字段
 		if mf != nil {
 			for key, values := range mf.Value {
-				if key == "model" {
+				if key == "model" || key == "size" || key == "aspect_ratio" || key == "resolution" {
 					continue
 				}
 				for _, value := range values {
 					writer.WriteField(key, value)
 				}
 			}
+		}
+		if request.Size != "" {
+			writer.WriteField("size", request.Size)
 		}
 
 		if mf != nil && mf.File != nil {
@@ -647,6 +653,15 @@ func (a *Adaptor) ConvertImageRequest(c *gin.Context, info *relaycommon.RelayInf
 		return &requestBody, nil
 
 	default:
+		if request.Size == "" && (request.AspectRatio != "" || request.Resolution != "") {
+			size, err := imagecapability.DimensionsFor(request.AspectRatio, request.Resolution)
+			if err != nil {
+				return nil, err
+			}
+			request.Size = size
+		}
+		request.AspectRatio = ""
+		request.Resolution = ""
 		return request, nil
 	}
 }

@@ -10,6 +10,8 @@
   - `docs/upstream-merge-v1.0.0-rc.39.md`
 
 > 本文只描述如何完整修复和重构。代码、数据库、镜像和线上流量在实施阶段分别验证，不能用本文替代部署验收。
+>
+> 2026-11-06 更新：图片部分已改为元数据端点驱动和静态全局能力；下文关于 `/data/image-capabilities.json` 的段落属于历史方案。
 
 ## 一、项目整体分析
 
@@ -20,9 +22,9 @@
 | 视图 | 主要目的 | 当前主要接口 | 权威事实源 |
 | --- | --- | --- | --- |
 | 模型管理 | 管理目录元数据、匹配规则、可见性和模型级定价 | `/api/models`、`/api/option/model_pricing` | `models`、定价 options、派生渠道数据 |
-| 模型广场 | 向用户展示价格、分组、端点、目录规格和调用示例 | `/api/pricing` | enabled abilities、channels、mapping、插件路由、`models` 元数据、图片能力配置 |
+| 模型广场 | 向用户展示价格、分组、端点、目录规格和调用示例 | `/api/pricing` | enabled abilities、channels、mapping、插件路由、`models` 元数据、静态图片能力 |
 | 用户模型选择器 | 只展示当前用户/分组实际可请求的模型和端点 | `/api/user/models?with_endpoint_types=true` | 当前用户可用 groups 内的 abilities 和 endpoint resolver |
-| 图片 Playground | 展示真实可用的图片模型与参数 | `/api/user/image-models` | 用户分组、图片端点、`image-capabilities.json` |
+| 图片 Playground | 展示真实可用的图片模型与参数 | `/api/user/image-models` | 用户分组、模型元数据图片端点、静态全局图片能力 |
 | 管理诊断 | 解释端点来自哪个渠道/插件以及为什么被拒绝 | 当前没有完整安全 DTO | channel、ability、mapping、plugin generation、metadata |
 
 这些视图可以共享模型名称，但不能共享未经范围过滤的端点或能力结果。
@@ -41,7 +43,7 @@ enabled abilities + channels       admin /api/models
   + channel setting                  + square_state
   + plugin bindings                  + metadata editor
   + routing generation
-  + image-capabilities.json
+  + declared image-generation endpoint
         |
         v
 model.GetPricing()
@@ -161,7 +163,7 @@ web/src/features/pricing
 | 参数量 | `models.parameter_count` | 目录展示字符串 | 不把空值渲染为估算值 |
 | 输入/输出模态 | `models.input_modalities`、`output_modalities` | 人工维护的目录声明 | 不等同于当前渠道实际支持 |
 | 实际端点 | enabled abilities + channel + mapping + plugin generation | 可调用协议和路径 | 不由 metadata 凭空创造标准端点 |
-| 图片参数 | endpoint + `image-capabilities.json` | 尺寸、比例、质量、格式等真实能力 | 不使用模型名兜底猜默认值 |
+| 图片参数 | 静态全局 `aspect_ratio + resolution` 能力 | 1K/2K/4K 与画幅选项 | 不恢复逐模型能力文件或按名称猜模型归属 |
 | 视频参数 | plugin request profile | 模型级请求字段和枚举 | 不把 billing schema 当请求 schema |
 | 价格/计费 | ratio、fixed price、billing expression、usage schema | 用户可见价格和用量单位 | 不用目录规格推算价格 |
 | 性能 | 性能指标 API | 实际窗口内统计 | 不使用随机值冒充真实限制 |
@@ -306,7 +308,7 @@ exact > prefix > suffix > contains
 
 #### 图片
 
-- 保持 `/data/image-capabilities.json` 为图片参数事实源。
+- 图片模型是否属于图片工作台由持久化模型元数据端点决定；Playground 与画布共用静态全局能力。
 - 能力匹配使用映射后的 upstream model，返回仍使用 public model。
 - image endpoint 存在但没有能力规则时，广场显示“能力未配置”，Playground 按既定策略隐藏或禁用，不生成默认参数。
 - 多渠道能力继续使用保守交集，并在详情中说明“共同支持能力”。

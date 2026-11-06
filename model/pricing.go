@@ -67,12 +67,11 @@ type PricingVendor struct {
 }
 
 var (
-	pricingMap                    []Pricing
-	vendorsList                   []PricingVendor
-	supportedEndpointMap          map[string]common.EndpointInfo
-	lastGetPricingTime            time.Time
-	pricingImageCapabilityVersion uint64
-	updatePricingLock             sync.Mutex
+	pricingMap           []Pricing
+	vendorsList          []PricingVendor
+	supportedEndpointMap map[string]common.EndpointInfo
+	lastGetPricingTime   time.Time
+	updatePricingLock    sync.Mutex
 
 	// 缓存映射：模型名 -> 启用分组 / 计费类型
 	modelEnableGroups     = make(map[string][]string)
@@ -81,16 +80,17 @@ var (
 )
 
 var (
-	modelSupportEndpointTypes = make(map[string][]constant.EndpointType)
-	modelSupportEndpointsLock = sync.RWMutex{}
+	modelSupportEndpointTypes  = make(map[string][]constant.EndpointType)
+	modelMetadataEndpointTypes = make(map[string][]constant.EndpointType)
+	modelSupportEndpointsLock  = sync.RWMutex{}
 )
 
 func GetPricing() []Pricing {
-	if time.Since(lastGetPricingTime) > time.Minute*1 || len(pricingMap) == 0 || pricingImageCapabilityVersion != imagecapability.ConfigurationVersion() {
+	if time.Since(lastGetPricingTime) > time.Minute*1 || len(pricingMap) == 0 {
 		updatePricingLock.Lock()
 		defer updatePricingLock.Unlock()
 		// Double check after acquiring the lock
-		if time.Since(lastGetPricingTime) > time.Minute*1 || len(pricingMap) == 0 || pricingImageCapabilityVersion != imagecapability.ConfigurationVersion() {
+		if time.Since(lastGetPricingTime) > time.Minute*1 || len(pricingMap) == 0 {
 			modelSupportEndpointsLock.Lock()
 			defer modelSupportEndpointsLock.Unlock()
 			updatePricing()
@@ -125,6 +125,29 @@ func GetModelSupportEndpointTypes(model string) []constant.EndpointType {
 		return endpoints
 	}
 	return make([]constant.EndpointType, 0)
+}
+
+// GetModelMetadataEndpointTypes returns endpoints explicitly declared by the
+// persisted model metadata. The boolean reports whether metadata declared at
+// least one usable endpoint, allowing user-facing catalogs to treat metadata as
+// authoritative instead of merging channel defaults.
+func GetModelMetadataEndpointTypes(model string) ([]constant.EndpointType, bool) {
+	if model == "" || DB == nil {
+		return nil, false
+	}
+	GetPricing()
+	modelSupportEndpointsLock.RLock()
+	defer modelSupportEndpointsLock.RUnlock()
+	endpoints, ok := modelMetadataEndpointTypes[model]
+	if !ok {
+		return nil, false
+	}
+	return append([]constant.EndpointType(nil), endpoints...), true
+}
+
+func ModelDeclaresEndpoint(model string, endpoint constant.EndpointType) bool {
+	endpoints, declared := GetModelMetadataEndpointTypes(model)
+	return declared && slices.Contains(endpoints, endpoint)
 }
 
 // loadPricingAdvancedCustomConfigs runs inside updatePricing while
@@ -293,12 +316,36 @@ func updatePricing() {
 	groupImages := make(map[string]map[string]imageAggregate)
 	advancedCustomConfigs := loadPricingAdvancedCustomConfigs(enableAbilities)
 	pluginGeneration := jsplugin.DefaultRegistry.Generation()
+	metadataEndpointTypes := make(map[string][]constant.EndpointType)
+	for modelName, meta := range metaMap {
+		declared := catalogMetadataEndpoints(meta.Endpoints)
+		if len(declared) == 0 {
+			continue
+		}
+		keys := make([]string, 0, len(declared))
+		for key := range declared {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		endpoints := make([]constant.EndpointType, 0, len(keys))
+		for _, key := range keys {
+			endpoints = append(endpoints, constant.EndpointType(key))
+		}
+		metadataEndpointTypes[modelName] = endpoints
+	}
 
 	// 先根据已有能力填充原生端点
 	for _, ability := range enableAbilities {
 		modelAbilities[ability.Model] = append(modelAbilities[ability.Model], ability)
 		endpoints := modelSupportEndpointsStr[ability.Model]
 		channelTypes := ResolveAbilityEndpointTypes(ability, pluginGeneration, advancedCustomConfigs[ability.ChannelId])
+		if declared, ok := metadataEndpointTypes[ability.Model]; ok {
+			channelTypes = append([]constant.EndpointType(nil), declared...)
+		} else {
+			channelTypes = slices.DeleteFunc(channelTypes, func(endpoint constant.EndpointType) bool {
+				return endpoint == constant.EndpointTypeImageGeneration
+			})
+		}
 		if groupPlugins[ability.Model] == nil {
 			groupPlugins[ability.Model] = make(map[string][]string)
 		}
@@ -342,23 +389,18 @@ func updatePricing() {
 			}
 			groupImage := groupImages[ability.Model][ability.Group]
 			current := imageCapabilities[ability.Model]
-			capability, ok := common.ResolveChannelImageCapability(ability.ChannelType, ability.Model, ability.ChannelModelMapping)
-			if !ok {
-				current.unsupported = true
-				groupImage.unsupported = true
-			} else if current.initialized {
+			capability := imagecapability.DefaultCapability()
+			if current.initialized {
 				current.value = imagecapability.Intersect(current.value, capability)
 			} else {
 				current.value = capability
 				current.initialized = true
 			}
-			if ok {
-				if groupImage.initialized {
-					groupImage.value = imagecapability.Intersect(groupImage.value, capability)
-				} else {
-					groupImage.value = capability
-					groupImage.initialized = true
-				}
+			if groupImage.initialized {
+				groupImage.value = imagecapability.Intersect(groupImage.value, capability)
+			} else {
+				groupImage.value = capability
+				groupImage.initialized = true
 			}
 			groupImages[ability.Model][ability.Group] = groupImage
 			imageCapabilities[ability.Model] = current
@@ -397,6 +439,7 @@ func updatePricing() {
 		}
 		modelSupportEndpointTypes[model] = supportedEndpoints
 	}
+	modelMetadataEndpointTypes = metadataEndpointTypes
 
 	// 构建全局 supportedEndpointMap（默认 + 自定义覆盖）
 	supportedEndpointMap = make(map[string]common.EndpointInfo)
@@ -558,7 +601,6 @@ func updatePricing() {
 	modelEnableGroupsLock.Unlock()
 
 	lastGetPricingTime = time.Now()
-	pricingImageCapabilityVersion = imagecapability.ConfigurationVersion()
 }
 
 // GetSupportedEndpointMap 返回全局端点到路径的映射

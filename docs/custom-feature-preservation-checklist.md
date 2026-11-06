@@ -247,19 +247,18 @@
 - 必须保留：Playground 图片模式支持本项目已接入的多供应商能力；模型可见性、
   OpenAI/Gemini/xAI 的图片路由和模型名保持一致，不能因上游模型识别变化错误地把
   图片请求送到文本渠道或重新开放已明确移除的 Grok 图片路径。
-- 必须保留：图片能力规则从代码外置到 `/data/image-capabilities.json`，首次启动生成持久化
-  配置，支持 `IMAGE_CAPABILITY_CONFIG_FILE`、精确/前缀/包含匹配、渠道白/黑名单、固定
-  分辨率后缀和每秒检查一次的热加载；无效 JSON 必须继续使用最后一份有效配置和内置默认值，
-  不能因配置错误让已有图片模型从页面消失。配置只影响能力展示，不能改写实际路由模型名。
+- 必须保留：Playground 与画布图片模式共用全局 `aspect_ratio + resolution` 能力，模型是否
+  属于图片工作台只由持久化模型元数据端点决定。旧的 `/data/image-capabilities.json`、
+  `IMAGE_CAPABILITY_CONFIG_FILE` 和逐模型热加载规则属于历史方案，不得恢复为第二套事实源。
 - 必须保留：`gpt-image-2`、`gpt-image-2.5`、其变体和 `chatgpt-image-latest` 共享完整的
   GPT 图片分辨率能力，包括横竖 4K 规格；能力注册、前端模型选项和图片 relay 必须保持一致。
-- 当前位置：`pkg/imagecapability/**`、`/data/image-capabilities.json`、`service/image_capability.go`、
+- 当前位置：`pkg/imagecapability/**`、`service/image_capability.go`、
   `controller/playground.go`、`controller/user.go`、`router/api-router.go`、
   `middleware/distributor.go`、`relay/channel/gemini/**`、`relay/channel/xai/**`、
   `web/src/features/playground/**`。
 - 合并检查：模型能力注册、用户可见分组、渠道选择、实际 relay DTO 和前端模型筛选
   必须同时存在；只迁移其中一层会造成“看得到但不能生成”或“能路由但用户看不到”。
-- 验证入口：`pkg/imagecapability/registry_test.go`、`service/image_capability_test.go`、
+- 验证入口：`pkg/imagecapability/defaults_test.go`、`service/canvas_test.go`、
   `controller/playground_test.go`、Gemini/xAI 图片 relay 测试。
 - 模型广场与插件协议的交叉验证见 `docs/model-catalog-endpoint-capabilities.md`：
   定价端点及图片参数必须使用启用渠道、映射与配置，不能从公开模型名或插件内部协议名猜测。
@@ -1031,7 +1030,7 @@ GitHub Actions 的 amd64、arm64 与 manifest 均成功。
 | 文档 | 17 | 作为功能约束、维护/合并记录，不单独计运行时功能。 |
 | 内置插件源码 | 5 | 对照作者插件版本变化；不是新增的 QLH 自研插件功能。 |
 | CI 工作流 | 1 | 归入 P-01。 |
-| 配置/工具资源 | 3 | `web/.oxlintrc.json` 属工程治理；`web/scripts/sync-i18n.mjs` 的本地化同步契约归入 P-23；`pkg/imagecapability/image-capabilities.default.json` 归入 P-13。 |
+| 配置/工具资源 | 3 | `web/.oxlintrc.json` 属工程治理；`web/scripts/sync-i18n.mjs` 的本地化同步契约归入 P-23；`pkg/imagecapability` 的全局图片能力归入 P-13。 |
 | 合计 | 541 | 114 新增、422 修改、5 删除。 |
 
 作者 RC-40 相对 RC-39 有 14 个提交；`upstream/main` 相对 RC-40 又有 8 个提交，直接树差异为

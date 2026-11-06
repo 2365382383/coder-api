@@ -8,6 +8,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
@@ -17,6 +18,11 @@ func TestBuildUserModelOptionsUsesEnabledChannelEndpoints(t *testing.T) {
 	require.NoError(t, db.Create(&model.Channel{Id: 1, Type: constant.ChannelTypeOpenAI, Status: common.ChannelStatusEnabled}).Error)
 	for _, name := range []string{"gpt-image-1", "gpt-image-2"} {
 		require.NoError(t, db.Create(&model.Ability{Group: "default", Model: name, ChannelId: 1, Enabled: true}).Error)
+		require.NoError(t, db.Create(&model.Model{
+			ModelName: name,
+			Endpoints: `{"image-generation":{"path":"/v1/images/generations","method":"POST"}}`,
+			Status:    1,
+		}).Error)
 	}
 	model.InvalidatePricingCache()
 	model.GetPricing()
@@ -34,6 +40,11 @@ func TestBuildUserModelOptionsUsesEnabledChannelEndpoints(t *testing.T) {
 }
 
 func TestNormalizeChannelTestEndpointUsesImageGenerationForGptImage(t *testing.T) {
+	db := setupModelListControllerTestDB(t)
+	require.NoError(t, db.Create(&model.Channel{Id: 1, Type: constant.ChannelTypeOpenAI, Status: common.ChannelStatusEnabled}).Error)
+	require.NoError(t, db.Create(&model.Ability{Group: "default", Model: "gpt-image-2", ChannelId: 1, Enabled: true}).Error)
+	require.NoError(t, db.Create(&model.Model{ModelName: "gpt-image-2", Endpoints: `{"image-generation":{"path":"/v1/images/generations","method":"POST"}}`, Status: 1}).Error)
+	model.InvalidatePricingCache()
 	require.Equal(t,
 		"image-generation",
 		normalizeChannelTestEndpoint(&model.Channel{Type: constant.ChannelTypeOpenAI}, "gpt-image-2", ""),
@@ -46,6 +57,7 @@ func TestNormalizeChannelTestEndpointUsesImageGenerationForGptImage(t *testing.T
 
 func TestGetUserModelsDefaultResponseRemainsStringArray(t *testing.T) {
 	db := setupModelListControllerTestDB(t)
+	require.NoError(t, db.Create(&model.Channel{Id: 1, Type: constant.ChannelTypeOpenAI, Status: common.ChannelStatusEnabled}).Error)
 	require.NoError(t, db.Create(&model.User{
 		Id:       2001,
 		Username: "user-models-default",
@@ -93,6 +105,11 @@ func TestGetUserModelsWithEndpointTypesReturnsModelOptions(t *testing.T) {
 		ChannelId: 1,
 		Enabled:   true,
 	}).Error)
+	require.NoError(t, db.Create(&model.Model{
+		ModelName: "gpt-image-1",
+		Endpoints: `{"image-generation":{"path":"/v1/images/generations","method":"POST"}}`,
+		Status:    1,
+	}).Error)
 	model.InvalidatePricingCache()
 
 	recorder := httptest.NewRecorder()
@@ -139,6 +156,18 @@ func TestGetUserImageModelsReturnsConfiguredImageGroups(t *testing.T) {
 		ChannelId: 1,
 		Enabled:   true,
 	}).Error)
+	require.NoError(t, db.Create(&model.Model{
+		ModelName: "gpt-image-1",
+		Endpoints: `{"image-generation":{"path":"/v1/images/generations","method":"POST"}}`,
+		Status:    1,
+	}).Error)
+	model.InvalidatePricingCache()
+	catalog, err := service.CanvasModelCatalog("default")
+	require.NoError(t, err)
+	require.Contains(t, catalog, service.CanvasModelOption{Name: "gpt-image-1", Group: "default", Capability: "image"})
+	imageGroups, err := service.GetUserImageModelGroups("default")
+	require.NoError(t, err)
+	require.Len(t, imageGroups, 1)
 
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
@@ -155,7 +184,10 @@ func TestGetUserImageModelsReturnsConfiguredImageGroups(t *testing.T) {
 			Models []struct {
 				Value        string `json:"value"`
 				Capabilities struct {
-					Provider string `json:"provider"`
+					Provider     string   `json:"provider"`
+					SizeMode     string   `json:"size_mode"`
+					AspectRatios []string `json:"aspect_ratios"`
+					Resolutions  []string `json:"resolutions"`
 				} `json:"capabilities"`
 			} `json:"models"`
 		} `json:"data"`
@@ -167,6 +199,9 @@ func TestGetUserImageModelsReturnsConfiguredImageGroups(t *testing.T) {
 	require.Len(t, payload.Data[0].Models, 1)
 	require.Equal(t, "gpt-image-1", payload.Data[0].Models[0].Value)
 	require.Equal(t, "openai", payload.Data[0].Models[0].Capabilities.Provider)
+	require.Equal(t, "aspect_ratio_resolution", payload.Data[0].Models[0].Capabilities.SizeMode)
+	require.Contains(t, payload.Data[0].Models[0].Capabilities.AspectRatios, "16:9")
+	require.Equal(t, []string{"1K", "2K", "4K"}, payload.Data[0].Models[0].Capabilities.Resolutions)
 }
 
 func TestGetUserModelsWithEndpointTypesHonorsRequestedGroup(t *testing.T) {
@@ -182,6 +217,11 @@ func TestGetUserModelsWithEndpointTypesHonorsRequestedGroup(t *testing.T) {
 	require.NoError(t, db.Create(&[]model.Ability{
 		{Group: "default", Model: "gpt-image-2", ChannelId: 1, Enabled: true},
 		{Group: "default", Model: "gpt-4o-mini", ChannelId: 1, Enabled: true},
+	}).Error)
+	require.NoError(t, db.Create(&model.Model{
+		ModelName: "gpt-image-2",
+		Endpoints: `{"image-generation":{"path":"/v1/images/generations","method":"POST"}}`,
+		Status:    1,
 	}).Error)
 	model.InvalidatePricingCache()
 

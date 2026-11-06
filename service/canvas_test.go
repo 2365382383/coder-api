@@ -15,7 +15,7 @@ func TestCanvasCatalogUsesGroupScopedRoutingAndExplicitEndpointMetadata(t *testi
 	model.InitColumnNamesForTest()
 	require.NoError(t, model.DB.AutoMigrate(&model.Ability{}, &model.Model{}))
 	t.Cleanup(func() {
-		require.NoError(t, model.DB.Where("channel_id IN ?", []int{901, 902, 903, 904}).Delete(&model.Ability{}).Error)
+		require.NoError(t, model.DB.Where("channel_id IN ?", []int{901, 902, 903, 904, 905}).Delete(&model.Ability{}).Error)
 		require.NoError(t, model.DB.Where("model_name IN ?", []string{"public-model", "speech-model", "metadata-media"}).Delete(&model.Model{}).Error)
 	})
 	for _, channel := range []model.Channel{
@@ -23,6 +23,7 @@ func TestCanvasCatalogUsesGroupScopedRoutingAndExplicitEndpointMetadata(t *testi
 		{Id: 902, Type: constant.ChannelTypeSora, Status: common.ChannelStatusEnabled, Name: "video"},
 		{Id: 903, Type: constant.ChannelTypeOpenAI, Status: common.ChannelStatusEnabled, Name: "audio"},
 		{Id: 904, Type: constant.ChannelTypeOpenAI, Status: common.ChannelStatusEnabled, Name: "metadata"},
+		{Id: 905, Type: constant.ChannelTypeOpenAI, Status: common.ChannelStatusEnabled, Name: "legacy-image"},
 	} {
 		require.NoError(t, model.DB.Create(&channel).Error)
 	}
@@ -31,10 +32,12 @@ func TestCanvasCatalogUsesGroupScopedRoutingAndExplicitEndpointMetadata(t *testi
 		{Group: "private-not-usable", Model: "public-model", ChannelId: 902, Enabled: true},
 		{Group: "default", Model: "speech-model", ChannelId: 903, Enabled: true},
 		{Group: "default", Model: "metadata-media", ChannelId: 904, Enabled: true},
+		{Group: "default", Model: "gpt-image-without-metadata", ChannelId: 905, Enabled: true},
 	} {
 		require.NoError(t, model.DB.Create(&ability).Error)
 	}
 	require.NoError(t, model.DB.Create(&model.Model{ModelName: "speech-model", Endpoints: `{"speech":{"path":"/v1/audio/speech","method":"POST"}}`}).Error)
+	require.NoError(t, model.DB.Create(&model.Model{ModelName: "public-model", Endpoints: `{"openai-response":{"path":"/v1/responses","method":"POST"}}`}).Error)
 	require.NoError(t, model.DB.Create(&model.Model{ModelName: "metadata-media", Endpoints: `{"image-generation":{"path":"/v1/images/generations","method":"POST"},"openai-video":{"path":"/v1/videos","method":"POST"}}`}).Error)
 	options, err := CanvasModelCatalog("default")
 	require.NoError(t, err)
@@ -42,12 +45,21 @@ func TestCanvasCatalogUsesGroupScopedRoutingAndExplicitEndpointMetadata(t *testi
 	assert.Contains(t, options, CanvasModelOption{Name: "speech-model", Group: "default", Capability: "audio"})
 	assert.Contains(t, options, CanvasModelOption{Name: "metadata-media", Group: "default", Capability: "image"})
 	assert.Contains(t, options, CanvasModelOption{Name: "metadata-media", Group: "default", Capability: "video", VideoAdapter: "openai"})
+	assert.NotContains(t, options, CanvasModelOption{Name: "gpt-image-without-metadata", Group: "default", Capability: "image"}, "channel defaults cannot bypass model metadata")
 	assert.NotContains(t, options, CanvasModelOption{Name: "public-model", Group: "default", Capability: "video"}, "same model on a hidden group's video channel cannot leak capabilities")
 	for _, option := range options {
 		assert.NotEqual(t, "private-not-usable", option.Group)
 	}
-	capabilities := CanvasDefaultImageCapabilities()
+	capabilities := DefaultImageCapabilities()
 	require.NotNil(t, capabilities)
-	assert.Equal(t, "dimensions", capabilities.SizeMode)
+	assert.Equal(t, "aspect_ratio_resolution", capabilities.SizeMode)
+	assert.Equal(t, []string{"1K", "2K", "4K"}, capabilities.Resolutions)
 	assert.Equal(t, 10, capabilities.MaxImages)
+	imageGroups, err := GetUserImageModelGroups("default")
+	require.NoError(t, err)
+	require.Len(t, imageGroups, 1)
+	require.Len(t, imageGroups[0].Models, 1)
+	assert.Equal(t, "metadata-media", imageGroups[0].Models[0].Value)
+	assert.Equal(t, "aspect_ratio_resolution", imageGroups[0].Models[0].Capabilities.SizeMode)
+	assert.Equal(t, []string{"1K", "2K", "4K"}, imageGroups[0].Models[0].Capabilities.Resolutions)
 }

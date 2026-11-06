@@ -108,7 +108,7 @@ func TestPricingAdvancedCustomUsesConfiguredEndpointTypes(t *testing.T) {
 	}, byModel["gpt-4o"])
 }
 
-func TestPricingModelMetadataEndpointsMergeWithAdvancedCustomInference(t *testing.T) {
+func TestPricingModelMetadataEndpointsOverrideAdvancedCustomInference(t *testing.T) {
 	resetPricingEndpointTestTables(t)
 
 	insertPricingEndpointChannel(t, 103, constant.ChannelTypeAdvancedCustom, pricingEndpointAdvancedCustomConfig(
@@ -132,7 +132,6 @@ func TestPricingModelMetadataEndpointsMergeWithAdvancedCustomInference(t *testin
 	byModel := pricingEndpointTypesByModel(t)
 
 	assert.Equal(t, []constant.EndpointType{
-		constant.EndpointTypeOpenAIResponse,
 		constant.EndpointTypeOpenAI,
 	}, byModel["gemini-2.5-flash"])
 }
@@ -238,13 +237,19 @@ export const protocols = {
 	}
 	require.NoError(t, DB.Create(&Model{
 		ModelName: "public-video", NameRule: NameRuleExact, Status: 1,
-		Endpoints: `{"openai":"/v1/chat/completions","openai-video":"/v1/videos"}`,
+		Endpoints: `{"openai-video":"/v1/videos"}`,
+	}).Error)
+	require.NoError(t, DB.Create(&Model{
+		ModelName: "public-image", NameRule: NameRuleExact, Status: 1,
+		Endpoints: `{"image-generation":{"path":"/v1/images/generations","method":"POST"}}`,
 	}).Error)
 
 	models := pricingByModel(GetPricing())
 	assert.Equal(t, []constant.EndpointType{constant.EndpointTypeImageGeneration}, models["public-image"].SupportedEndpointTypes)
 	require.NotNil(t, models["public-image"].ImageCapabilities)
-	assert.Contains(t, models["public-image"].ImageCapabilities.Sizes, "3840x2160")
+	assert.Equal(t, "aspect_ratio_resolution", models["public-image"].ImageCapabilities.SizeMode)
+	assert.Equal(t, "1:1", models["public-image"].ImageCapabilities.DefaultAspectRatio)
+	assert.Equal(t, []string{"1K", "2K", "4K"}, models["public-image"].ImageCapabilities.Resolutions)
 	assert.Equal(t, []constant.EndpointType{constant.EndpointTypeOpenAIVideo}, models["public-video"].SupportedEndpointTypes)
 	assert.Nil(t, models["public-video"].ImageCapabilities)
 	assert.Equal(t, []constant.EndpointType{constant.EndpointTypeOpenAIResponse}, models["probe-text"].SupportedEndpointTypes)
@@ -255,15 +260,38 @@ export const protocols = {
 	assert.NotContains(t, GetSupportedEndpointMap(), "openai_video")
 }
 
-func TestPricingImageAliasUsesMappedCapabilityWithoutAddingChat(t *testing.T) {
+func TestPricingImageModelUsesMetadataCapability(t *testing.T) {
 	resetPricingEndpointTestTables(t)
 	mapping := `{"public-gpt-image":"gpt-image-2"}`
 	require.NoError(t, DB.Create(&Channel{Id: 411, Type: constant.ChannelTypeOpenAI, Key: "key-411", Status: common.ChannelStatusEnabled, Name: "image", ModelMapping: &mapping}).Error)
 	insertPricingEndpointAbility(t, 411, "public-gpt-image")
+	require.NoError(t, DB.Create(&Model{
+		ModelName: "public-gpt-image",
+		Endpoints: `{"image-generation":{"path":"/v1/images/generations","method":"POST"}}`,
+		Status:    1,
+	}).Error)
 	pricing := pricingByModel(GetPricing())["public-gpt-image"]
 	assert.Equal(t, []constant.EndpointType{constant.EndpointTypeImageGeneration}, pricing.SupportedEndpointTypes)
 	require.NotNil(t, pricing.ImageCapabilities)
-	assert.Equal(t, "1024x1024", pricing.ImageCapabilities.DefaultSize)
+	assert.Equal(t, "1:1", pricing.ImageCapabilities.DefaultAspectRatio)
+	assert.Equal(t, "1K", pricing.ImageCapabilities.DefaultResolution)
+}
+
+func TestModelMetadataEndpointTypesOverrideChannelDefaults(t *testing.T) {
+	resetPricingEndpointTestTables(t)
+	require.NoError(t, DB.Create(&Channel{Id: 413, Type: constant.ChannelTypeOpenAI, Key: "key-413", Status: common.ChannelStatusEnabled, Name: "metadata-authority"}).Error)
+	insertPricingEndpointAbility(t, 413, "opaque-media-model")
+	require.NoError(t, DB.Create(&Model{
+		ModelName: "opaque-media-model",
+		Endpoints: `{"openai-response":{"path":"/v1/responses","method":"POST"}}`,
+		Status:    1,
+	}).Error)
+	InvalidatePricingCache()
+	assert.False(t, ModelDeclaresEndpoint("opaque-media-model", constant.EndpointTypeImageGeneration))
+
+	require.NoError(t, DB.Model(&Model{}).Where("model_name = ?", "opaque-media-model").Update("endpoints", `{"image-generation":{"path":"/v1/images/generations","method":"POST"}}`).Error)
+	InvalidatePricingCache()
+	assert.True(t, ModelDeclaresEndpoint("opaque-media-model", constant.EndpointTypeImageGeneration))
 }
 
 func TestPricingIgnoresDisabledChannelAbilities(t *testing.T) {

@@ -3,7 +3,6 @@ package model
 import (
 	"slices"
 
-	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 )
@@ -106,7 +105,7 @@ func channelMatchesFilter(ch *Channel, modelName string, filter dto.ChannelFilte
 		case "":
 			return true
 		case constant.EndpointTypeImageGeneration:
-			return common.IsChannelImageGenerationModel(ch.Type, modelName, ch.GetModelMapping())
+			return ModelDeclaresEndpoint(modelName, constant.EndpointTypeImageGeneration)
 		default:
 			return true
 		}

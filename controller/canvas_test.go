@@ -175,7 +175,7 @@ func TestCanvasBrowserHarness(t *testing.T) {
 	testBridge, err := os.ReadFile(os.Getenv("CANVAS_BROWSER_BRIDGE_FILE"))
 	require.NoError(t, err, "bundle integrations/infinite-canvas/browser-host.ts for the fixture")
 	engine.GET("/api/canvas/bootstrap", func(c *gin.Context) {
-		common.ApiSuccess(c, gin.H{"user_id": 1, "groups": gin.H{"default": "Default"}, "models": []gin.H{{"name": "image-test", "group": "default", "capability": "image", "image_capabilities": gin.H{"provider": "openai", "size_mode": "dimensions", "sizes": []string{"1024x1024"}, "qualities": []string{"auto"}, "output_formats": []string{"png"}, "supports_editing": true, "max_images": 1}}, {"name": "text-test", "group": "default", "capability": "text"}, {"name": "video-test", "group": "default", "capability": "video", "video_adapter": "openai"}, {"name": "audio-test", "group": "default", "capability": "audio"}}})
+		common.ApiSuccess(c, gin.H{"user_id": 1, "groups": gin.H{"default": "Default"}, "models": []gin.H{{"name": "image-test", "group": "default", "capability": "image", "image_capabilities": gin.H{"provider": "openai", "size_mode": "aspect_ratio_resolution", "aspect_ratios": []string{"1:1", "16:9"}, "resolutions": []string{"1K", "2K", "4K"}, "default_aspect_ratio": "1:1", "default_resolution": "1K", "qualities": []string{"auto"}, "output_formats": []string{"png"}, "supports_editing": true, "max_images": 1}}, {"name": "text-test", "group": "default", "capability": "text"}, {"name": "video-test", "group": "default", "capability": "video", "video_adapter": "openai"}, {"name": "audio-test", "group": "default", "capability": "audio"}}})
 	})
 	engine.GET("/api/canvas/test/project-count", func(c *gin.Context) {
 		var count int64

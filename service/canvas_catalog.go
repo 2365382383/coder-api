@@ -8,6 +8,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	imagedto "github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/pkg/imagecapability"
 	"github.com/QuantumNous/new-api/pkg/jsplugin"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 )
@@ -20,24 +21,11 @@ type CanvasModelOption struct {
 	VideoAdapter      string                           `json:"video_adapter,omitempty"`
 }
 
-// Canvas uses one image workbench configuration for every image endpoint. The
-// endpoint metadata determines availability; provider-specific Playground
-// capability rules remain isolated from the embedded application.
-func CanvasDefaultImageCapabilities() *imagedto.ImageModelCapabilities {
-	return &imagedto.ImageModelCapabilities{
-		Provider:                  "openai",
-		SizeMode:                  "dimensions",
-		Sizes:                     []string{"auto", "1024x1024", "1024x1536", "1536x1024", "1024x1792", "1792x1024"},
-		Qualities:                 []string{"auto", "low", "medium", "high"},
-		OutputFormats:             []string{"png", "jpeg", "webp"},
-		DefaultSize:               "1024x1024",
-		DefaultQuality:            "auto",
-		DefaultOutputFormat:       "png",
-		SupportsEditing:           true,
-		SupportsModeration:        true,
-		SupportsOutputCompression: true,
-		MaxImages:                 10,
-	}
+// DefaultImageCapabilities is the single image workbench configuration used by
+// Playground and the embedded canvas.
+func DefaultImageCapabilities() *imagedto.ImageModelCapabilities {
+	capabilities := imagedto.ImageCapabilitiesFrom(imagecapability.DefaultCapability())
+	return &capabilities
 }
 
 func canvasVideoAdapter(ability model.AbilityWithChannel, generation *jsplugin.RoutingGeneration) string {
@@ -105,24 +93,6 @@ func CanvasModelCatalog(userGroup string) ([]CanvasModelOption, error) {
 		return nil, err
 	}
 	generation := jsplugin.DefaultRegistry.Generation()
-	custom := map[int]*dto.AdvancedCustomConfig{}
-	for _, ability := range abilities {
-		if ability.ChannelType != constant.ChannelTypeAdvancedCustom {
-			continue
-		}
-		if _, exists := custom[ability.ChannelId]; exists {
-			continue
-		}
-		var channel model.Channel
-		if err := model.DB.Select("id", "other_settings").First(&channel, ability.ChannelId).Error; err != nil {
-			return nil, err
-		}
-		var settings dto.ChannelOtherSettings
-		if common.UnmarshalJsonStr(channel.OtherSettings, &settings) != nil {
-			continue
-		}
-		custom[ability.ChannelId] = settings.AdvancedCustom
-	}
 	for _, group := range groupNames {
 		queryGroups := []string{group}
 		if group == "auto" {
@@ -134,34 +104,11 @@ func CanvasModelCatalog(userGroup string) ([]CanvasModelOption, error) {
 			if !slices.Contains(queryGroups, ability.Group) {
 				continue
 			}
-			for _, endpoint := range model.ResolveAbilityEndpointTypes(ability, generation, custom[ability.ChannelId]) {
-				capability := ""
-				switch endpoint {
-				case constant.EndpointTypeOpenAIResponse:
-					capability = "text"
-				case constant.EndpointTypeImageGeneration:
-					capability = "image"
-				case constant.EndpointTypeOpenAIVideo:
-					capability = "video"
-					adapter := canvasVideoAdapter(ability, generation)
-					if current, ok := videoAdapters[ability.Model]; ok && current != adapter {
-						adapter = "unsupported"
-					}
-					videoAdapters[ability.Model] = adapter
-				}
-				key := ability.Model + "\x00" + capability
-				if capability != "" && !seen[key] {
-					options = append(options, CanvasModelOption{Name: ability.Model, Group: group, Capability: capability})
-					seen[key] = true
-				}
-			}
-			// Metadata declares the public workbench endpoint for non-plugin
-			// channels. Group and model remain the routing/authorization identity.
-			// Never infer an endpoint from a model name.
-			if ability.ChannelType == constant.ChannelTypeTaskPlugin {
+			endpoints := metadata[ability.Model]
+			if len(endpoints) == 0 {
 				continue
 			}
-			for _, endpoint := range metadata[ability.Model] {
+			for _, endpoint := range endpoints {
 				capability := ""
 				switch endpoint.Path {
 				case "/v1/responses":
