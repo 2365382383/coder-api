@@ -31,7 +31,7 @@ function sourceFor(appId: string) {
 }
 
 describe('CC Switch source registry', () => {
-  test('contains the seven importable sources and the unsupported desktop entry', () => {
+  test('contains all importable CC Switch sources with coder as the default name', () => {
     expect(CCSWITCH_SOURCES.map((source) => source.appId)).toEqual([
       'claude',
       'claude-desktop',
@@ -42,9 +42,6 @@ describe('CC Switch source registry', () => {
       'openclaw',
       'hermes',
     ])
-    expect(CCSWITCH_SOURCES.filter((source) => source.supported)).toHaveLength(
-      7
-    )
     expect(
       new Set(CCSWITCH_SOURCES.map((source) => source.defaultName))
     ).toEqual(new Set(['coder']))
@@ -53,10 +50,15 @@ describe('CC Switch source registry', () => {
       (source) => source.appId === 'claude-desktop'
     )
     expect(desktop).toMatchObject({
-      supported: false,
-      modelFields: [],
-      unsupportedReasonKey: 'Claude Desktop setup instructions',
+      endpointSuffix: '',
+      apiFormat: 'anthropic',
     })
+    expect(desktop?.modelFields.map((field) => field.key)).toEqual([
+      'model',
+      'haikuModel',
+      'sonnetModel',
+      'opusModel',
+    ])
   })
 
   test('normalizes trailing slashes and an existing v1 suffix', () => {
@@ -107,7 +109,7 @@ describe('CC Switch source registry', () => {
     expect(claudeParams.get('opusModel')).toBe('claude-opus')
     expect(claudeParams.get('enabled')).toBe('true')
 
-    for (const source of CCSWITCH_SOURCES.filter((item) => item.supported)) {
+    for (const source of CCSWITCH_SOURCES) {
       const url = buildCCSwitchURL(
         source,
         source.defaultName,
@@ -122,20 +124,40 @@ describe('CC Switch source registry', () => {
       expect(params.get('endpoint')).toBe(expectedEndpoint)
       expect(params.get('homepage')).toBe('https://api.example.com')
       expect(params.get('model')).toBe('model-a')
+      expect(params.get('apiFormat')).toBe(
+        source.apiFormat === 'anthropic' ? 'anthropic' : null
+      )
     }
   })
 
-  test('does not create a deep link for Claude Desktop', () => {
+  test('builds a Claude Desktop deep link with Claude model tiers', () => {
     const desktop = sourceFor('claude-desktop')
-    expect(
-      buildCCSwitchURL(
-        desktop,
-        'Desktop',
-        {},
-        'sk-secret',
-        'https://api.example.com'
-      )
-    ).toBeNull()
+    const url = buildCCSwitchURL(
+      desktop,
+      'Desktop & Relay',
+      {
+        model: 'claude-sonnet-4-6',
+        haikuModel: 'claude-haiku-4-5',
+        sonnetModel: 'claude-sonnet-5',
+        opusModel: 'claude-opus-4-6',
+      },
+      'sk-key with spaces',
+      'https://api.example.com/v1///'
+    )
+    expect(url).not.toBeNull()
+    if (!url) throw new Error('Expected a Claude Desktop deep link')
+
+    const params = new URL(url).searchParams
+    expect(params.get('app')).toBe('claude-desktop')
+    expect(params.get('name')).toBe('Desktop & Relay')
+    expect(params.get('endpoint')).toBe('https://api.example.com')
+    expect(params.get('apiKey')).toBe('sk-key with spaces')
+    expect(params.get('apiFormat')).toBe('anthropic')
+    expect(params.get('model')).toBe('claude-sonnet-4-6')
+    expect(params.get('haikuModel')).toBe('claude-haiku-4-5')
+    expect(params.get('sonnetModel')).toBe('claude-sonnet-5')
+    expect(params.get('opusModel')).toBe('claude-opus-4-6')
+    expect(params.get('enabled')).toBe('true')
   })
 
   test('does not create a supported deep link without its required model', () => {

@@ -44,12 +44,8 @@ await i18n.use(initReactI18next).init({
       translation: {
         Application: 'Application',
         Cancel: 'Cancel',
-        'CC Switch temporarily unavailable':
-          'CC Switch temporarily unavailable',
         'Claude Code': 'Claude Code',
         'Claude Desktop': 'Claude Desktop',
-        'Claude Desktop setup instructions':
-          '用户 CC Switch 暂不支持，可在群内或者私聊 QQ：3834483010 机器人发送“Claude Desktop 配置流程”，即可获取方法',
         Codex: 'Codex',
         'Grok Build': 'Grok Build',
         Gemini: 'Gemini',
@@ -65,6 +61,8 @@ await i18n.use(initReactI18next).init({
         'Haiku Model': 'Haiku Model',
         'Sonnet Model': 'Sonnet Model',
         'Opus Model': 'Opus Model',
+        'Use the latest version of CC Switch':
+          'Use the latest version of CC Switch',
       },
     },
   },
@@ -101,7 +99,7 @@ function renderDialog(
 }
 
 describe('CC Switch dialog', () => {
-  test.each(['Claude Code', 'Codex', 'Gemini'])(
+  test.each(['Claude Code', 'Claude Desktop', 'Codex', 'Gemini'])(
     'opens %s models outside the clipping dialog and keeps the dialog open after selection',
     async (app) => {
       renderDialog()
@@ -220,20 +218,50 @@ describe('CC Switch dialog', () => {
     ).toBeDisabled()
   })
 
-  test('shows the Claude Desktop instructions and prevents opening a link', async () => {
+  test('builds a Claude Desktop link with scoped models', async () => {
     renderDialog()
     const user = userEvent.setup()
     await user.click(screen.getByRole('radio', { name: 'Claude Desktop' }))
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      '用户 CC Switch 暂不支持，可在群内或者私聊 QQ：3834483010 机器人发送“Claude Desktop 配置流程”，即可获取方法'
-    )
-    const unavailableButton = screen.getByRole('button', {
-      name: 'CC Switch temporarily unavailable',
+    expect(
+      screen.getByText('Use the latest version of CC Switch')
+    ).toBeVisible()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(
+      screen.getByRole('combobox', { name: 'Primary Model' })
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('combobox', { name: 'Haiku Model' })
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('combobox', { name: 'Sonnet Model' })
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('combobox', { name: 'Opus Model' })
+    ).toBeInTheDocument()
+
+    const primaryModel = screen.getByRole('combobox', {
+      name: 'Primary Model',
     })
-    expect(unavailableButton).toBeDisabled()
+    await waitFor(() => expect(primaryModel).not.toBeDisabled())
+    await user.click(primaryModel)
+    await user.click(
+      await screen.findByRole('option', { name: 'claude-sonnet-4-6' })
+    )
+
     const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
-    fireEvent.click(unavailableButton)
-    expect(openSpy).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: 'Open CC Switch' }))
+
+    await waitFor(() => expect(openSpy).toHaveBeenCalledOnce())
+    const openedURL = openSpy.mock.calls[0]?.[0]
+    if (typeof openedURL !== 'string') {
+      throw new Error('Expected window.open to receive a CC Switch URL')
+    }
+    const params = new URL(openedURL).searchParams
+    expect(params.get('app')).toBe('claude-desktop')
+    expect(params.get('endpoint')).toBe(window.location.origin)
+    expect(params.get('apiFormat')).toBe('anthropic')
+    expect(params.get('model')).toBe('claude-sonnet-4-6')
+    expect(params.get('enabled')).toBe('true')
   })
 })

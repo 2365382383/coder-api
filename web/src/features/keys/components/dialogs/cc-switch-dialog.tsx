@@ -111,7 +111,7 @@ export function CCSwitchDialog(props: Props) {
   }
 
   const handleSubmit = () => {
-    if (!currentSource.supported || !canUseModels) return
+    if (!canUseModels) return
     if (!models.model?.trim()) {
       toast.warning(t('Please select a primary model'))
       return
@@ -136,6 +136,7 @@ export function CCSwitchDialog(props: Props) {
       open={props.open}
       onOpenChange={props.onOpenChange}
       title={t('Import to CC Switch')}
+      description={t('Use the latest version of CC Switch')}
       contentClassName='sm:max-w-md'
       contentHeight='auto'
       bodyClassName='space-y-4'
@@ -144,13 +145,8 @@ export function CCSwitchDialog(props: Props) {
           <Button variant='outline' onClick={() => props.onOpenChange(false)}>
             {t('Cancel')}
           </Button>
-          <Button
-            onClick={handleSubmit}
-            disabled={!currentSource.supported || !canUseModels}
-          >
-            {currentSource.supported
-              ? t('Open CC Switch')
-              : t('CC Switch temporarily unavailable')}
+          <Button onClick={handleSubmit} disabled={!canUseModels}>
+            {t('Open CC Switch')}
           </Button>
         </>
       }
@@ -183,24 +179,15 @@ export function CCSwitchDialog(props: Props) {
           </RadioGroup>
         </div>
 
-        {!currentSource.supported ? (
-          <p
-            role='alert'
-            className='rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm leading-6 text-amber-700 dark:text-amber-300'
-          >
-            {t(currentSource.unsupportedReasonKey ?? '')}
-          </p>
-        ) : (
-          <div className='space-y-2'>
-            <Label htmlFor='cc-switch-name'>{t('Name')}</Label>
-            <Input
-              id='cc-switch-name'
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              placeholder={currentSource.defaultName}
-            />
-          </div>
-        )}
+        <div className='space-y-2'>
+          <Label htmlFor='cc-switch-name'>{t('Name')}</Label>
+          <Input
+            id='cc-switch-name'
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            placeholder={currentSource.defaultName}
+          />
+        </div>
 
         {currentSource.modelFields.map((field) => (
           <div key={field.key} className='space-y-2'>

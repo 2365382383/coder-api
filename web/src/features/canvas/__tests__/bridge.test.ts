@@ -159,7 +159,8 @@ describe('Canvas bridge operations', () => {
       port.onmessage?.call(port, { data } as MessageEvent)
     receive({ type: 'response', id: request.id, status: 200, headers: {} })
     const response = await result
-    await response.body!.cancel()
+    if (!response.body) throw new Error('Expected a response body')
+    await response.body.cancel()
     expect(send).toHaveBeenCalledWith({ type: 'cancel', id: request.id })
     expect(() => receive({ type: 'end', id: request.id })).not.toThrow()
   })

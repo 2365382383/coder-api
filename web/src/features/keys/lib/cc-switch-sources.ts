@@ -39,8 +39,7 @@ export type CCSwitchSource = {
   defaultName: string
   endpointSuffix: '' | '/v1'
   modelFields: readonly CCSwitchModelField[]
-  supported: boolean
-  unsupportedReasonKey?: string
+  apiFormat?: 'anthropic'
 }
 
 const PRIMARY_MODEL_FIELD: CCSwitchModelField = {
@@ -65,16 +64,14 @@ export const CCSWITCH_SOURCES: readonly CCSwitchSource[] = [
     defaultName: 'coder',
     endpointSuffix: '',
     modelFields: CLAUDE_MODEL_FIELDS,
-    supported: true,
   },
   {
     appId: 'claude-desktop',
     labelKey: 'Claude Desktop',
     defaultName: 'coder',
     endpointSuffix: '',
-    modelFields: [],
-    supported: false,
-    unsupportedReasonKey: 'Claude Desktop setup instructions',
+    modelFields: CLAUDE_MODEL_FIELDS,
+    apiFormat: 'anthropic',
   },
   {
     appId: 'codex',
@@ -82,7 +79,6 @@ export const CCSWITCH_SOURCES: readonly CCSwitchSource[] = [
     defaultName: 'coder',
     endpointSuffix: '/v1',
     modelFields: SINGLE_MODEL_FIELDS,
-    supported: true,
   },
   {
     appId: 'gemini',
@@ -90,7 +86,6 @@ export const CCSWITCH_SOURCES: readonly CCSwitchSource[] = [
     defaultName: 'coder',
     endpointSuffix: '',
     modelFields: SINGLE_MODEL_FIELDS,
-    supported: true,
   },
   {
     appId: 'grokbuild',
@@ -98,7 +93,6 @@ export const CCSWITCH_SOURCES: readonly CCSwitchSource[] = [
     defaultName: 'coder',
     endpointSuffix: '/v1',
     modelFields: SINGLE_MODEL_FIELDS,
-    supported: true,
   },
   {
     appId: 'opencode',
@@ -106,7 +100,6 @@ export const CCSWITCH_SOURCES: readonly CCSwitchSource[] = [
     defaultName: 'coder',
     endpointSuffix: '/v1',
     modelFields: SINGLE_MODEL_FIELDS,
-    supported: true,
   },
   {
     appId: 'openclaw',
@@ -114,7 +107,6 @@ export const CCSWITCH_SOURCES: readonly CCSwitchSource[] = [
     defaultName: 'coder',
     endpointSuffix: '/v1',
     modelFields: SINGLE_MODEL_FIELDS,
-    supported: true,
   },
   {
     appId: 'hermes',
@@ -122,7 +114,6 @@ export const CCSWITCH_SOURCES: readonly CCSwitchSource[] = [
     defaultName: 'coder',
     endpointSuffix: '/v1',
     modelFields: SINGLE_MODEL_FIELDS,
-    supported: true,
   },
 ] as const
 
@@ -138,8 +129,6 @@ export function buildCCSwitchURL(
   apiKey: string,
   serverAddress: string
 ): string | null {
-  if (!source.supported) return null
-
   const normalizedAddress = normalizeServerAddress(serverAddress)
   const endpoint = normalizedAddress + source.endpointSuffix
   const params = new URLSearchParams()
@@ -148,6 +137,7 @@ export function buildCCSwitchURL(
   params.set('name', name)
   params.set('endpoint', endpoint)
   params.set('apiKey', apiKey)
+  if (source.apiFormat) params.set('apiFormat', source.apiFormat)
   for (const field of source.modelFields) {
     const value = models[field.key]?.trim()
     if (field.required && !value) return null

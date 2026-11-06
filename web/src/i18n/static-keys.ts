@@ -443,8 +443,6 @@ export const STATIC_I18N_KEYS = [
   // CC Switch dialog
   'Claude Code',
   'Claude Desktop',
-  'Claude Desktop setup instructions',
-  'CC Switch temporarily unavailable',
   'Grok Build',
   'Hermes',
   'Import to CC Switch',
@@ -456,6 +454,7 @@ export const STATIC_I18N_KEYS = [
   'Sonnet Model',
   'Opus Model',
   'Enter model name',
+  'Use the latest version of CC Switch',
 
   // User binding dialog
   'Account Binding Management',
