@@ -5,7 +5,7 @@ import { buildImageReferencePromptText } from "../lib/image-reference-prompt";
 import { buildImageEditFormData, buildImageGenerationPayload } from "./playground/image-payload-builder";
 import { normalizePlaygroundImageConfig } from "./playground/image-generation-capabilities";
 import type { ImageGenerationConfig, ImageModelCapabilities } from "./playground/types";
-import { canvasHeaders, imageCapabilitiesForModel, resolveModelRequestConfig, type AiConfig } from "./config";
+import { canvasHeaders, canvasImageCapabilities, resolveModelRequestConfig, type AiConfig } from "./config";
 import i18n from "./messages";
 import type { ReferenceImage } from "../types/image";
 import { canvasData, canvasRequest } from "./bridge";
@@ -92,7 +92,7 @@ async function requestImages(config: AiConfig, prompt: string, references: Refer
 
 async function performImageRequest(config: AiConfig, prompt: string, references: ReferenceImage[], options?: { signal?: AbortSignal }) {
   const selection = config.model || config.imageModel;
-  const capabilities = imageCapabilitiesForModel(selection);
+  const capabilities = canvasImageCapabilities();
   if (!capabilities) throw new Error(i18n.t("embedded.unavailable"));
   if (references.length && !capabilities.supports_editing) throw new Error(i18n.t("embedded.editingUnavailable"));
   const resolved = resolveModelRequestConfig(config, selection);

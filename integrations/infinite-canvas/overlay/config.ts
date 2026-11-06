@@ -15,7 +15,7 @@ export * from "../stores/use-config-store";
 export { useConfigStore };
 type SessionConfig = AiConfig & { canvasGroup?: string };
 const channelGroups = new Map<string, string>();
-const imageCapabilities = new Map<string, ImageModelCapabilities>();
+let imageCapabilities: ImageModelCapabilities | undefined;
 const videoAdapters = new Map<string, string>();
 export type Bootstrap = {
   user_id: number;
@@ -32,7 +32,7 @@ export async function initializeConfig(): Promise<Bootstrap> {
   const bootstrap = await canvasData<Bootstrap>("bootstrap");
   const config = useConfigStore.getState().config;
   channelGroups.clear();
-  imageCapabilities.clear();
+  imageCapabilities = undefined;
   videoAdapters.clear();
   const groups = [...new Set(bootstrap.models.map((item) => item.group))];
   config.channels = groups.flatMap((group) =>
@@ -54,7 +54,7 @@ export async function initializeConfig(): Promise<Bootstrap> {
           apiFormat: "openai" as const,
           models: models.map((item) => {
             const value = id + "::" + item.name;
-            if (item.image_capabilities) imageCapabilities.set(value, item.image_capabilities);
+            if (item.image_capabilities && item.capability === "image") imageCapabilities = item.image_capabilities;
             if (item.video_adapter) videoAdapters.set(value, item.video_adapter);
             return { name: item.name, capability };
           }),
@@ -193,8 +193,8 @@ export function resolveModelRequestConfig(config: AiConfig, value: string): Sess
   };
 }
 
-export function imageCapabilitiesForModel(value: string): ImageModelCapabilities | undefined {
-  return imageCapabilities.get(value);
+export function canvasImageCapabilities(): ImageModelCapabilities | undefined {
+  return imageCapabilities;
 }
 
 export function videoAdapterForModel(value: string): string {

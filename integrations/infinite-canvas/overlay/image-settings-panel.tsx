@@ -2,7 +2,7 @@ import { useEffect, useMemo } from "react";
 import { InputNumber, Select } from "antd";
 import { useTranslation } from "react-i18next";
 import type { CanvasTheme } from "../lib/canvas-theme";
-import { imageCapabilitiesForModel, type AiConfig } from "./config";
+import { canvasImageCapabilities, type AiConfig } from "./config";
 import { canvasImageConfig } from "./image-api";
 import { ImageSettingsTheme } from "../components/image-settings-panel";
 import "./messages";
@@ -21,7 +21,7 @@ type Props = {
 export function ImageSettingsPanel(props: Props) {
   const { t } = useTranslation();
   const selection = props.config.model || props.config.imageModel;
-  const capabilities = imageCapabilitiesForModel(selection);
+  const capabilities = canvasImageCapabilities();
   const config = props.config;
   const onConfigChange = props.onConfigChange;
   const normalized = useMemo(() => capabilities ? canvasImageConfig(config, selection, capabilities) : null, [config, selection, capabilities]);

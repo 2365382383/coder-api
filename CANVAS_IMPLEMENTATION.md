@@ -343,13 +343,13 @@ node integrations/infinite-canvas/browser-startup-check.mjs
 | --- | --- |
 | `middleware/canvas.go` | 对 `X-Canvas-Group` 执行 ASCII 检查、单次百分号解码和 UTF-8 校验；无效值返回 `canvas_invalid_group`，越权返回 `canvas_group_forbidden`，不自动改用其他分组。 |
 | `middleware/canvas_test.go` | 覆盖 ASCII、中文编码、编码百分号、残缺 UTF-8、原始 Unicode 和控制字符。 |
-| `service/canvas_catalog.go` / `controller/canvas.go` | bootstrap 复用 `GetUserImageModelGroups` 的图片能力，不在每次生成重查图片能力；能力查询失败明确报错。目录保留分组/模型/能力身份，视频适配依据真实渠道类型或已绑定插件，不猜公开模型别名；同组协议冲突拒绝提交。移除 bootstrap 未使用的分组说明。 |
+| `service/canvas_catalog.go` / `controller/canvas.go` | 2026-11-06 起，bootstrap 直接从分组内渠道和模型元数据端点生成工作台目录；图片控件使用画布统一的单一配置，不再要求逐模型图片能力。分组保留为权限和路由身份，视频适配仍依据真实渠道类型或已绑定插件，不猜公开模型别名。 |
 | `integrations/infinite-canvas/overlay/config.ts` | 分组 channel 名改为真实分组名；模型 ID 仍保留分组用于授权和计费；画布请求头只在 HTTP 边界执行 `encodeURIComponent`；旧的独立主题偏好不再读取或写回。 |
 | `integrations/infinite-canvas/overlay/bridge.ts` / `transport.ts` | 增加宿主主题消息、空/非 JSON 响应安全解析、结构化 HTTP 错误、Axios timeout 和 AbortSignal；桥转发 `X-Request-ID`/`X-Oneapi-Request-Id`。 |
 | `integrations/infinite-canvas/overlay/start.tsx` / `layout.tsx` | 首次渲染使用宿主主题，运行中接收主题变化；删除画布内部独立浅色/深色按钮。 |
 | `integrations/infinite-canvas/prepare.mjs` | 精确上游 SHA 的一次性构建补丁；复制当前仓库游乐场 types、normalizer、payload builder，保持实际请求语义共用；补节点和工作台保存重试、受限并发、历史关联、导出及背景工具栏。关键上游边界变化使构建失败。 |
 | `integrations/infinite-canvas/overlay/model-picker.tsx` | 基于子应用现有 Ant Design Select 组合独立分组/模型选择，保留旧模型 ID。宿主 ModelGroupSelector 属于另一 React 树及组件库，不能直接插入沙箱；复用它的选择语义，不修改宿主公共控件。 |
-| `integrations/infinite-canvas/overlay/image-settings-panel.tsx` / `image-api.ts` | 控件只展示当前能力允许的参数；实际调用直接复用游乐场的归一化/请求构造。单次 n=1，子应用图片请求最多并发 2；已生成结果的保存失败保留内存副本和 Run-ID，重试不提交生成。 |
+| `integrations/infinite-canvas/overlay/image-settings-panel.tsx` / `image-api.ts` | 控件和实际调用共用画布唯一的默认图片配置，并通过 bootstrap 传入子应用；实际请求继续复用游乐场的归一化/请求构造。单次 n=1，子应用图片请求最多并发 2；已生成结果的保存失败保留内存副本和 Run-ID，重试不提交生成。 |
 | `integrations/infinite-canvas/overlay/image-settings.ts` / `video-settings.ts` | 组件与原有辅助函数的完整导出入口；与 TSX 面板分离，保留所有上游调用方使用的公开接口。 |
 | `integrations/infinite-canvas/overlay/video-request.ts` / `video-settings-panel.tsx` | Sora 单参考图 multipart、明确时长与尺寸；豆包 JSON 参考图角色；对不支持的输入明确拒绝。视频下载仍走既有 owner-check 内容端点。 |
 | `integrations/infinite-canvas/overlay/project.tsx` / `storage.ts` | 项目目录摘要、按需打开、失败重试；列表重命名和导出读取完整原文档，避免空摘要覆盖项目。资产上传携带来源运行并由服务器检查 owner。 |
@@ -418,3 +418,26 @@ node integrations/infinite-canvas/browser-startup-check.mjs
 - 固定切流前后各五分钟的代理日志：前窗 0 error / 5 warning、5 条 EOF/incomplete；后窗 1 error / 11 warning、8 条 EOF/incomplete。唯一 error 与 reload 同时发生，为无 HTTP 路径的 context canceled；画布路径 error 为 0。未逐请求归因所有警告，不声称所有进行中的中继均完全不受影响。
 
 范围内未发现仍阻断本次发布的已确认缺陷。源码、数据/接口职责、阶段清单、失败复现、验证范围与实际运行态已按以上记录闭合；后续跨服务媒体功能和真实渠道验收继续保持独立边界。
+
+## 2026-11-06 模型发现与图片参数收敛
+
+本轮确认分组类型不参与画布工作台识别，也不修改分组类型配置。分组只负责用户权限、路由范围和计费身份；模型属于文字、图片、视频或语音工作台，由当前分组内启用渠道的端点与持久化模型元数据共同决定。
+
+| 模型元数据端点 | 画布能力 |
+| --- | --- |
+| `/v1/responses` | `text` |
+| `/v1/images/generations`、`/v1/images/edits` | `image` |
+| `/v1/videos` | `video` |
+| `/v1/audio/speech` | `audio` |
+
+画布不再为每个图片模型读取 Playground 的独立能力规则。`controller/canvas.go` 给所有图片端点的 bootstrap 选项附加 `CanvasDefaultImageCapabilities`；`overlay/config.ts` 只保留这一份配置，`image-settings-panel.tsx` 和 `image-api.ts` 共用它。Playground 自身的逐模型能力配置保持不变，两条产品链路互不覆盖。
+
+线上模型 `grok-imagine-agent-mode` 已新增持久化元数据记录，声明 `image-generation -> /v1/images/generations`。读回结果：模型 ID `188`、状态启用、可见分组包含 `default/image/Grok/Grok-heavy/vip` 等现有渠道分组、绑定渠道 2 个、`supported_endpoints` 为 `image-generation`。没有修改渠道分组、模型映射、价格或密钥。
+
+阶段验证：
+
+- `go test ./service -run TestCanvasCatalogUsesGroupScopedRoutingAndExplicitEndpointMetadata -count=1` 通过。
+- `GOMAXPROCS=2 go test ./controller -run TestCanvas -count=1` 通过。
+- 固定上游 `e856c878e0a34651bb828e28f0af20d71016a7d4` 完成 `tsc --noEmit` 和 Vite 生产构建；构建以低优先级执行，只有现有动态/静态导入与大 chunk 警告。
+- `middleware` 的完整路由测试仍有既有夹具失败：测试库未建立 `options` 表，敏感词审计返回 503。已在未修改的干净 `HEAD` 工作树复跑同一测试并得到相同失败，因此没有把该结果归因于本轮改动，也没有把该测试记为通过。
+- 本轮不新增数据库表、不改 Tool 图床/媒体床协议，也不引入免 Key 之外的第二套凭据路径。

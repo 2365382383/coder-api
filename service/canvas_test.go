@@ -10,18 +10,19 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestCanvasCatalogUsesGroupScopedRoutingAndExplicitSpeechMetadata(t *testing.T) {
+func TestCanvasCatalogUsesGroupScopedRoutingAndExplicitEndpointMetadata(t *testing.T) {
 	truncate(t)
 	model.InitColumnNamesForTest()
 	require.NoError(t, model.DB.AutoMigrate(&model.Ability{}, &model.Model{}))
 	t.Cleanup(func() {
-		require.NoError(t, model.DB.Where("channel_id IN ?", []int{901, 902, 903}).Delete(&model.Ability{}).Error)
-		require.NoError(t, model.DB.Where("model_name IN ?", []string{"public-model", "speech-model"}).Delete(&model.Model{}).Error)
+		require.NoError(t, model.DB.Where("channel_id IN ?", []int{901, 902, 903, 904}).Delete(&model.Ability{}).Error)
+		require.NoError(t, model.DB.Where("model_name IN ?", []string{"public-model", "speech-model", "metadata-media"}).Delete(&model.Model{}).Error)
 	})
 	for _, channel := range []model.Channel{
 		{Id: 901, Type: constant.ChannelTypeCodex, Status: common.ChannelStatusEnabled, Name: "text"},
 		{Id: 902, Type: constant.ChannelTypeSora, Status: common.ChannelStatusEnabled, Name: "video"},
 		{Id: 903, Type: constant.ChannelTypeOpenAI, Status: common.ChannelStatusEnabled, Name: "audio"},
+		{Id: 904, Type: constant.ChannelTypeOpenAI, Status: common.ChannelStatusEnabled, Name: "metadata"},
 	} {
 		require.NoError(t, model.DB.Create(&channel).Error)
 	}
@@ -29,16 +30,24 @@ func TestCanvasCatalogUsesGroupScopedRoutingAndExplicitSpeechMetadata(t *testing
 		{Group: "default", Model: "public-model", ChannelId: 901, Enabled: true},
 		{Group: "private-not-usable", Model: "public-model", ChannelId: 902, Enabled: true},
 		{Group: "default", Model: "speech-model", ChannelId: 903, Enabled: true},
+		{Group: "default", Model: "metadata-media", ChannelId: 904, Enabled: true},
 	} {
 		require.NoError(t, model.DB.Create(&ability).Error)
 	}
 	require.NoError(t, model.DB.Create(&model.Model{ModelName: "speech-model", Endpoints: `{"speech":{"path":"/v1/audio/speech","method":"POST"}}`}).Error)
+	require.NoError(t, model.DB.Create(&model.Model{ModelName: "metadata-media", Endpoints: `{"image-generation":{"path":"/v1/images/generations","method":"POST"},"openai-video":{"path":"/v1/videos","method":"POST"}}`}).Error)
 	options, err := CanvasModelCatalog("default")
 	require.NoError(t, err)
 	assert.Contains(t, options, CanvasModelOption{Name: "public-model", Group: "default", Capability: "text"})
 	assert.Contains(t, options, CanvasModelOption{Name: "speech-model", Group: "default", Capability: "audio"})
+	assert.Contains(t, options, CanvasModelOption{Name: "metadata-media", Group: "default", Capability: "image"})
+	assert.Contains(t, options, CanvasModelOption{Name: "metadata-media", Group: "default", Capability: "video", VideoAdapter: "openai"})
 	assert.NotContains(t, options, CanvasModelOption{Name: "public-model", Group: "default", Capability: "video"}, "same model on a hidden group's video channel cannot leak capabilities")
 	for _, option := range options {
 		assert.NotEqual(t, "private-not-usable", option.Group)
 	}
+	capabilities := CanvasDefaultImageCapabilities()
+	require.NotNil(t, capabilities)
+	assert.Equal(t, "dimensions", capabilities.SizeMode)
+	assert.Equal(t, 10, capabilities.MaxImages)
 }

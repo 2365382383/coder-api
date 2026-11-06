@@ -52,27 +52,11 @@ func CanvasBootstrap(c *gin.Context) {
 		canvasError(c, err)
 		return
 	}
-	imageGroups, err := service.GetUserImageModelGroups(user.Group)
-	if err != nil {
-		canvasError(c, err)
-		return
-	}
 	for i := range options {
 		if options[i].Capability != "image" {
 			continue
 		}
-		for _, group := range imageGroups {
-			if group.Value != options[i].Group {
-				continue
-			}
-			for _, imageModel := range group.Models {
-				if imageModel.Value == options[i].Name {
-					capabilities := imageModel.Capabilities
-					options[i].ImageCapabilities = &capabilities
-					break
-				}
-			}
-		}
+		options[i].ImageCapabilities = service.CanvasDefaultImageCapabilities()
 	}
 	common.ApiSuccess(c, gin.H{"protocol": 1, "user_id": user.Id, "models": options, "embedded": true, "extensions": false, "max_document_bytes": model.CanvasMaxDocumentBytes})
 }

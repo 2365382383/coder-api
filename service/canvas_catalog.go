@@ -20,6 +20,26 @@ type CanvasModelOption struct {
 	VideoAdapter      string                           `json:"video_adapter,omitempty"`
 }
 
+// Canvas uses one image workbench configuration for every image endpoint. The
+// endpoint metadata determines availability; provider-specific Playground
+// capability rules remain isolated from the embedded application.
+func CanvasDefaultImageCapabilities() *imagedto.ImageModelCapabilities {
+	return &imagedto.ImageModelCapabilities{
+		Provider:                  "openai",
+		SizeMode:                  "dimensions",
+		Sizes:                     []string{"auto", "1024x1024", "1024x1536", "1536x1024", "1024x1792", "1792x1024"},
+		Qualities:                 []string{"auto", "low", "medium", "high"},
+		OutputFormats:             []string{"png", "jpeg", "webp"},
+		DefaultSize:               "1024x1024",
+		DefaultQuality:            "auto",
+		DefaultOutputFormat:       "png",
+		SupportsEditing:           true,
+		SupportsModeration:        true,
+		SupportsOutputCompression: true,
+		MaxImages:                 10,
+	}
+}
+
 func canvasVideoAdapter(ability model.AbilityWithChannel, generation *jsplugin.RoutingGeneration) string {
 	if ability.ChannelType == constant.ChannelTypeDoubaoVideo || ability.ChannelType == constant.ChannelTypeVolcEngine {
 		return "doubao"
@@ -135,8 +155,9 @@ func CanvasModelCatalog(userGroup string) ([]CanvasModelOption, error) {
 					seen[key] = true
 				}
 			}
-			// Honor explicit metadata on non-plugin channels, including speech
-			// (which has no built-in EndpointType). Never infer it from a name.
+			// Metadata declares the public workbench endpoint for non-plugin
+			// channels. Group and model remain the routing/authorization identity.
+			// Never infer an endpoint from a model name.
 			if ability.ChannelType == constant.ChannelTypeTaskPlugin {
 				continue
 			}
@@ -145,6 +166,15 @@ func CanvasModelCatalog(userGroup string) ([]CanvasModelOption, error) {
 				switch endpoint.Path {
 				case "/v1/responses":
 					capability = "text"
+				case "/v1/images/generations", "/v1/images/edits":
+					capability = "image"
+				case "/v1/videos":
+					capability = "video"
+					adapter := canvasVideoAdapter(ability, generation)
+					if current, ok := videoAdapters[ability.Model]; ok && current != adapter {
+						adapter = "unsupported"
+					}
+					videoAdapters[ability.Model] = adapter
 				case "/v1/audio/speech":
 					capability = "audio"
 				}
