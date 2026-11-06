@@ -137,7 +137,7 @@ export function CCSwitchDialog(props: Props) {
       onOpenChange={props.onOpenChange}
       title={t('Import to CC Switch')}
       description={t('Use the latest version of CC Switch')}
-      contentClassName='sm:max-w-lg'
+      contentClassName='sm:max-w-2xl'
       contentHeight='auto'
       bodyClassName='space-y-4'
       footer={
@@ -162,7 +162,7 @@ export function CCSwitchDialog(props: Props) {
             {CCSWITCH_SOURCES.map((source) => (
               <div
                 key={source.appId}
-                className='flex min-w-0 items-center gap-2'
+                className='flex min-w-0 items-start gap-2 py-1'
               >
                 <RadioGroupItem
                   value={source.appId}
@@ -170,7 +170,7 @@ export function CCSwitchDialog(props: Props) {
                 />
                 <Label
                   htmlFor={`app-${source.appId}`}
-                  className='cursor-pointer truncate'
+                  className='min-w-0 cursor-pointer leading-5 break-words'
                 >
                   {t(source.labelKey)}
                 </Label>
