@@ -9,12 +9,32 @@ import (
 	"github.com/QuantumNous/new-api/common"
 )
 
+func (token Token) cacheMAC() (string, error) {
+	key := getTokenCacheKey(token.Key)
+	token.Key = ""
+	token.RemainQuota = 0
+	token.UsedQuota = 0
+	token.RemainQuotaRaw = ""
+	token.UsedQuotaRaw = ""
+	token.AccessedTime = 0
+	if token.AllowIps != nil && *token.AllowIps == "" {
+		token.AllowIps = nil
+	}
+	return authCacheMAC(key, struct {
+		Token          Token
+		AutoGroups     string
+		CacheExpiresAt int64
+	}{token, token.AutoGroups, token.CacheExpiresAt})
+}
+
 func getTokenCacheKey(key string) string {
 	return fmt.Sprintf("token:%s", common.GenerateHMAC(key))
 }
 
+// The fence uses the cache key as its hash tag so cacheInitToken's script
+// reads both keys from one slot on sharded Redis.
 func getTokenCacheFenceKey(key string) string {
-	return fmt.Sprintf("token:fence:%s", common.GenerateHMAC(key))
+	return fmt.Sprintf("token:fence:{%s}", getTokenCacheKey(key))
 }
 
 func tokenCacheTTLSeconds() int {
@@ -47,9 +67,10 @@ func invalidateTokenCacheForMutation(key string) error {
 	return common.RDB.Del(ctx, getTokenCacheKey(key)).Err()
 }
 
-// cacheInitToken publishes only token identity and policy metadata. Quota
-// fields from old cache schemas are removed on both hit and cold fill.
-// 返回值：0=被 fence 拦截，1=完成初始化，2=哈希已存在，仅刷新 TTL。
+// cacheInitToken publishes signed token identity and policy metadata when the
+// hash is cold or fails verification. Quota remains database-authoritative:
+// legacy quota fields are removed on both hit and cold fill.
+// Returns 0 when fenced, 1 after initialization, or 2 for an existing hash.
 func cacheInitToken(token Token) (int, error) {
 	if !common.RedisEnabled {
 		return 0, nil
@@ -58,26 +79,50 @@ func cacheInitToken(token Token) (int, error) {
 	if token.AllowIps != nil {
 		allowIps = *token.AllowIps
 	}
+	cacheKey := getTokenCacheKey(token.Key)
+	var existing Token
+	readErr := common.RedisHGetObj(cacheKey, &existing)
+	if readErr != nil {
+		// Decoding stops at the first unreadable field, before CacheMAC.
+		existing.CacheMAC, _ = common.RDB.HGet(context.Background(), cacheKey, "CacheMAC").Result()
+	}
+	existing.Key = token.Key
+	existingMAC, macErr := existing.cacheMAC()
+	repair := readErr != nil || macErr != nil || !validAuthCacheMAC(existingMAC, existing.CacheMAC, existing.CacheExpiresAt)
+	token.CacheExpiresAt = time.Now().Add(time.Duration(tokenCacheTTLSeconds()) * time.Second).UnixMilli()
+	mac, err := token.cacheMAC()
+	if err != nil {
+		return 0, err
+	}
 	const script = `
 if redis.call('EXISTS', KEYS[2]) == 1 then
   return 0
 end
-if redis.call('EXISTS', KEYS[1]) == 1 then
+local exists = redis.call('EXISTS', KEYS[1])
+if exists == 1 and (ARGV[19] ~= 'true' or (redis.call('HGET', KEYS[1], 'CacheMAC') or '') ~= ARGV[20]) then
   redis.call('HDEL', KEYS[1], 'RemainQuota', 'UsedQuota')
   redis.call('EXPIRE', KEYS[1], ARGV[16])
   return 2
 end
+redis.call('HDEL', KEYS[1], 'DeletedAt', 'RemainQuota', 'UsedQuota')
 redis.call('HSET', KEYS[1],
   'Id', ARGV[1], 'UserId', ARGV[2], 'Status', ARGV[3], 'Name', ARGV[4],
-  'CreatedTime', ARGV[5], 'AccessedTime', ARGV[6], 'ExpiredTime', ARGV[7],
+  'CreatedTime', ARGV[5], 'ExpiredTime', ARGV[7],
   'UnlimitedQuota', ARGV[8], 'ModelLimitsEnabled', ARGV[9], 'ModelLimits', ARGV[10],
   'AllowIps', ARGV[11], 'Group', ARGV[12], 'CrossGroupRetry', ARGV[13],
-  'AutoGroups', ARGV[14], 'AllowUserQuotaQuery', ARGV[15])
+  'AutoGroups', ARGV[14], 'AllowUserQuotaQuery', ARGV[15],
+  'CacheExpiresAt', ARGV[17], 'CacheMAC', ARGV[18])
+if not string.match(redis.call('HGET', KEYS[1], 'AccessedTime') or '', '^-?%d+$') then
+  redis.call('HSET', KEYS[1], 'AccessedTime', ARGV[6])
+end
 redis.call('EXPIRE', KEYS[1], ARGV[16])
+if exists == 1 then
+  return 2
+end
 return 1`
 
 	return common.RDB.Eval(context.Background(), script, []string{
-		getTokenCacheKey(token.Key), getTokenCacheFenceKey(token.Key),
+		cacheKey, getTokenCacheFenceKey(token.Key),
 	},
 		token.Id, token.UserId, token.Status, token.Name,
 		token.CreatedTime, token.AccessedTime, token.ExpiredTime,
@@ -85,6 +130,7 @@ return 1`
 		token.ModelLimits, allowIps, token.Group, strconv.FormatBool(token.CrossGroupRetry),
 		token.AutoGroups, strconv.FormatBool(token.AllowUserQuotaQuery),
 		tokenCacheTTLSeconds(),
+		token.CacheExpiresAt, mac, strconv.FormatBool(repair), existing.CacheMAC,
 	).Int()
 }
 
@@ -101,6 +147,10 @@ func cacheGetTokenByKey(key string) (*Token, error) {
 		return nil, fmt.Errorf("token cache is incomplete")
 	}
 	token.Key = key
+	mac, err := token.cacheMAC()
+	if err != nil || !validAuthCacheMAC(mac, token.CacheMAC, token.CacheExpiresAt) {
+		return nil, fmt.Errorf("token cache integrity check failed")
+	}
 	token.syncQuotaRawFields()
 	return &token, nil
 }

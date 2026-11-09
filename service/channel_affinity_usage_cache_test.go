@@ -12,12 +12,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var channelAffinityStatsTestSeq atomic.Uint64
+var channelAffinityTestSeq atomic.Int64
 
-func newChannelAffinityStatsTestKeys(t *testing.T) (string, string, string) {
+func affinityTestKeys(t *testing.T) (string, string) {
 	t.Helper()
-	suffix := channelAffinityStatsTestSeq.Add(1)
-	return fmt.Sprintf("%s_rule_%d", t.Name(), suffix), "default", fmt.Sprintf("%s_fp_%d", t.Name(), suffix)
+	key := fmt.Sprintf("%s:%d", t.Name(), channelAffinityTestSeq.Add(1))
+	return key, key
 }
 
 func buildChannelAffinityStatsContextForTest(ruleName, usingGroup, keyFP string) *gin.Context {
@@ -34,7 +34,8 @@ func buildChannelAffinityStatsContextForTest(ruleName, usingGroup, keyFP string)
 }
 
 func TestObserveChannelAffinityUsageCacheByRelayFormat_ClaudeMode(t *testing.T) {
-	ruleName, usingGroup, keyFP := newChannelAffinityStatsTestKeys(t)
+	ruleName, keyFP := affinityTestKeys(t)
+	usingGroup := "default"
 	ctx := buildChannelAffinityStatsContextForTest(ruleName, usingGroup, keyFP)
 
 	usage := &dto.Usage{
@@ -59,7 +60,8 @@ func TestObserveChannelAffinityUsageCacheByRelayFormat_ClaudeMode(t *testing.T) 
 }
 
 func TestObserveChannelAffinityUsageCacheByRelayFormat_MixedMode(t *testing.T) {
-	ruleName, usingGroup, keyFP := newChannelAffinityStatsTestKeys(t)
+	ruleName, keyFP := affinityTestKeys(t)
+	usingGroup := "default"
 	ctx := buildChannelAffinityStatsContextForTest(ruleName, usingGroup, keyFP)
 
 	openAIUsage := &dto.Usage{
@@ -87,7 +89,8 @@ func TestObserveChannelAffinityUsageCacheByRelayFormat_MixedMode(t *testing.T) {
 }
 
 func TestObserveChannelAffinityUsageCacheByRelayFormat_UnsupportedModeKeepsEmpty(t *testing.T) {
-	ruleName, usingGroup, keyFP := newChannelAffinityStatsTestKeys(t)
+	ruleName, keyFP := affinityTestKeys(t)
+	usingGroup := "default"
 	ctx := buildChannelAffinityStatsContextForTest(ruleName, usingGroup, keyFP)
 
 	usage := &dto.Usage{

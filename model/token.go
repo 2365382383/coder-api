@@ -33,6 +33,8 @@ type Token struct {
 	RemainQuotaRaw      string         `json:"remain_quota_raw,omitempty" gorm:"-:all"`
 	UsedQuotaRaw        string         `json:"used_quota_raw,omitempty" gorm:"-:all"`
 	AllowUserQuotaQuery bool           `json:"allow_user_quota_query"`
+	CacheExpiresAt      int64          `json:"-" gorm:"-"`
+	CacheMAC            string         `json:"-" gorm:"-"`
 }
 
 func (token *Token) syncQuotaRawFields() {
