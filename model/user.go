@@ -932,7 +932,7 @@ func UpdateSelfProfile(userId int, username, displayName, password string, updat
 		return PublishUserAuthCache(userId)
 	}
 	if username != "" {
-		return updateUserNameCache(userId, username)
+		return PublishUserAuthCache(userId)
 	}
 	return nil
 }
