@@ -19,7 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { ArrowRight01Icon } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { useQuery } from '@tanstack/react-query'
-import { useEffect, useMemo, useRef } from 'react'
+import { useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { EmptyState } from '@/components/empty-state'
@@ -65,10 +65,6 @@ export function DocsArticlePage(props: { slug: string }) {
     headings,
     slug: props.slug,
   })
-
-  useEffect(() => {
-    document.title = article ? `${article.title} - ${t('Docs')}` : t('Docs')
-  }, [article, t])
 
   if (query.isLoading) {
     return <LoadingState className='min-h-[60svh]' />
