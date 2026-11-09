@@ -95,15 +95,24 @@ func CanvasRelay(capability string) gin.HandlerFunc {
 			if strings.HasPrefix(c.ContentType(), "multipart/form-data") {
 				storage, err := common.GetBodyStorage(c)
 				if err != nil {
-					c.AbortWithStatus(http.StatusBadRequest)
+					abortInvalidCanvasRequestBody(c, err)
 					return
 				}
+				if _, err = storage.Seek(0, io.SeekStart); err != nil {
+					abortInvalidCanvasRequestBody(c, err)
+					return
+				}
+				c.Request.Body = io.NopCloser(storage)
+				c.Request.ContentLength = storage.Size()
 				if _, err = c.MultipartForm(); err != nil {
-					c.AbortWithStatus(http.StatusBadRequest)
+					abortInvalidCanvasRequestBody(c, err)
 					return
 				}
 				modelName = c.PostForm("model")
-				_, _ = storage.Seek(0, io.SeekStart)
+				if _, err = storage.Seek(0, io.SeekStart); err != nil {
+					abortInvalidCanvasRequestBody(c, err)
+					return
+				}
 				c.Request.Body = io.NopCloser(storage)
 			} else {
 				var request struct {
@@ -150,4 +159,11 @@ func CanvasRelay(capability string) gin.HandlerFunc {
 		c.Request.Header.Del("X-Canvas-Group")
 		c.Next()
 	}
+}
+
+func abortInvalidCanvasRequestBody(c *gin.Context, err error) {
+	c.AbortWithStatusJSON(invalidRequestStatus(err), gin.H{"error": gin.H{
+		"code":    "canvas_invalid_request",
+		"message": "Invalid canvas request body",
+	}})
 }

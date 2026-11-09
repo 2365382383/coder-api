@@ -447,3 +447,24 @@ node integrations/infinite-canvas/browser-startup-check.mjs
 - 固定上游 `e856c878e0a34651bb828e28f0af20d71016a7d4` 完成 `tsc --noEmit` 和 Vite 生产构建；构建以低优先级执行，只有现有动态/静态导入与大 chunk 警告。
 - `middleware` 的完整路由测试仍有既有夹具失败：测试库未建立 `options` 表，敏感词审计返回 503。已在未修改的干净 `HEAD` 工作树复跑同一测试并得到相同失败，因此没有把该结果归因于本轮改动，也没有把该测试记为通过。
 - 本轮不新增数据库表、不改 Tool 图床/媒体床协议，也不引入免 Key 之外的第二套凭据路径。
+
+## 2026-11-09 画布图片编辑 multipart 修复
+
+用户 2964 的两次画布参考图编辑均在生成前返回空 body 的 HTTP 400，请求 ID 分别为 `202611091406053844239208268d9d6CDwSBhEQ` 和 `202611091406226624166808268d9d68IfaPrtp`。两条请求均未创建 `canvas_generation_runs`，未进入渠道选择、上游调用或计费。历史记录显示多个用户、多个图片模型从 10 月起持续出现同一现象，因此不是提示词、2K/high 参数、参考图格式或某个模型不可用。
+
+根因位于 `middleware/canvas.go`：`common.GetBodyStorage(c)` 已读取并关闭原始 body，但代码在重新挂回可重放存储前调用 `c.MultipartForm()`，解析器因此读取已耗尽的原 body 并得到 `multipart: NextPart: EOF`。使用生产前端桥和实际 2.73 MB WebP 复现后，原顺序稳定失败；先将存储 `Seek(0)` 并赋给 `c.Request.Body` 后，同一 multipart 可正常解析。
+
+修复内容：
+
+- multipart 解析前将 body storage 重置并重新挂到 `c.Request.Body`，同步 `ContentLength`。
+- multipart 解析完成后再次重置，保证后续 `CanvasGeneration` 与标准图片编辑中继能重放完整请求。
+- 请求体读取或解析失败改为结构化 `canvas_invalid_request` 错误；超限仍返回 413。
+- 新增 `middleware/canvas_test.go` 回归，验证模型字段、`reference.webp` 文件内容、路径重写及下游读取。
+
+验证结果：
+
+- 新增 `TestCanvasRelayParsesMultipartAndRestoresBody` 通过。
+- 画布分组解码既有测试通过。
+- `go vet ./middleware` 通过。
+- `middleware` 完整包仍受已在干净 `HEAD` 存在的共享测试状态和敏感词审计夹具失败影响；本次目标测试与静态检查通过，不把完整包记为通过。
+- 本轮没有数据库表结构变更，没有调用付费上游，也尚未声称生产镜像、Actions 或蓝绿发布完成。
