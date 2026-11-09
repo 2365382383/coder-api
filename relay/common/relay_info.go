@@ -149,6 +149,10 @@ type RelayInfo struct {
 	// consumes subscription quota first and only then falls back to wallet.
 	// It is request-scoped and is copied into durable task private data.
 	BillingAllocations []BillingAllocation
+	// SettlementUnbilledQuota is the positive settlement remainder left
+	// uncollected after subscription-only quota was exhausted. It is audit-only
+	// and never reduces wallet or subscription balances.
+	SettlementUnbilledQuota int64
 	// SubscriptionId is the user_subscriptions.id used when BillingSource == "subscription"
 	SubscriptionId int
 	// SubscriptionPreConsumed is the amount pre-consumed on subscription item (quota units or 1)

@@ -193,6 +193,9 @@ func appendBillingInfo(relayInfo *relaycommon.RelayInfo, other *model.LogOther) 
 	if relayInfo == nil || other == nil {
 		return
 	}
+	if relayInfo.SettlementUnbilledQuota > 0 {
+		other.SetAdmin("unbilled_quota", relayInfo.SettlementUnbilledQuota)
+	}
 	// billing_source: "wallet", "subscription" or "mixed"
 	if relayInfo.BillingSource != "" {
 		other.SetPublic("billing_source", relayInfo.BillingSource)

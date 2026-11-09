@@ -41,6 +41,10 @@ type BillingSession struct {
 	reserveCount     int
 	lang             string // 请求声明的语言，为空表示未声明
 	mu               sync.Mutex
+
+	settlementAllocations       []relaycommon.BillingAllocation
+	settlementSubscriptionDelta int64
+	settlementUnbilledQuota     int64
 }
 
 // Settle applies the funding and token difference in a single durable phase.
@@ -71,24 +75,76 @@ func (s *BillingSession) settle(actualQuota int, taskCommit *model.BillingTaskCo
 		tokenDelta = 0
 	}
 	var commit []*model.BillingTaskCommit
+	settlementPolicy := s.settlementPolicy(delta, taskCommit)
 	if taskCommit != nil {
 		commit = append(commit, taskCommit)
-	} else if err := model.RequestBillingSettlement(s.relayInfo.RequestId, walletDelta, subDelta, tokenDelta, int64(actualQuota), actualQuota > 0 || s.relayInfo.BillableUsageObserved); err != nil {
+	} else {
+		countRequest := actualQuota > 0 || s.relayInfo.BillableUsageObserved
+		if settlementPolicy != "" {
+			if err := model.RequestBillingSettlementWithPolicy(s.relayInfo.RequestId, walletDelta, subDelta, tokenDelta, int64(actualQuota), countRequest, settlementPolicy); err != nil {
+				return err
+			}
+		} else if err := model.RequestBillingSettlement(s.relayInfo.RequestId, walletDelta, subDelta, tokenDelta, int64(actualQuota), countRequest); err != nil {
+			return err
+		}
+	}
+	result, err := model.ApplyBillingAdjustmentWithResult(s.relayInfo.RequestId, "settle", walletDelta, subDelta, tokenDelta, false, true, int64(actualQuota), actualQuota > 0 || s.relayInfo.BillableUsageObserved, commit...)
+	if err != nil {
 		return err
 	}
-	if err := model.ApplyBillingAdjustment(s.relayInfo.RequestId, "settle", walletDelta, subDelta, tokenDelta, false, true, int64(actualQuota), actualQuota > 0 || s.relayInfo.BillableUsageObserved, commit...); err != nil {
-		return err
+	s.applyFundingDeltas(result.WalletDelta, result.SubscriptionDelta)
+	s.settlementSubscriptionDelta = result.SubscriptionDelta
+	s.settlementUnbilledQuota = result.UnbilledAmount
+	if sub, ok := s.funding.(*SubscriptionFunding); ok && result.WalletDelta > 0 {
+		s.settlementAllocations = s.subscriptionFallbackAllocations(sub, result)
 	}
-	s.applyFundingDeltas(walletDelta, subDelta)
-	if s.funding.Source() == BillingSourceSubscription {
-		s.relayInfo.SubscriptionPostDelta += int64(delta)
-	} else if s.funding.Source() == BillingSourceMixed {
-		// Mixed funding mutates its allocation slices during settlement; refresh
-		// the request snapshot before task persistence and consume logging.
-		s.syncRelayInfo()
-	}
+	// Refresh the request snapshot before task persistence and consume logging.
+	// The model may cap the subscription delta under its lock and move part of it
+	// to wallet debt or an audit-only unbilled remainder.
+	s.syncRelayInfo()
 	s.settled = true
 	return nil
+}
+
+func (s *BillingSession) settlementPolicy(delta int, taskCommit *model.BillingTaskCommit) string {
+	if taskCommit != nil || delta <= 0 {
+		return ""
+	}
+	preference := common.NormalizeBillingPreference(s.relayInfo.UserSetting.BillingPreference)
+	switch preference {
+	case "subscription_only":
+		if s.funding.Source() == BillingSourceSubscription || s.funding.Source() == BillingSourceMixed {
+			return model.BillingSettlementSubscriptionClamp
+		}
+	case "subscription_first", "wallet_first":
+		if s.funding.Source() == BillingSourceSubscription || s.funding.Source() == BillingSourceMixed {
+			return model.BillingSettlementWalletFallback
+		}
+	}
+	return ""
+}
+
+func (s *BillingSession) subscriptionFallbackAllocations(sub *SubscriptionFunding, result model.BillingAdjustmentResult) []relaycommon.BillingAllocation {
+	allocations := make([]relaycommon.BillingAllocation, 0, 2)
+	subscriptionQuota := s.preConsumedQuota + int(result.SubscriptionDelta)
+	if subscriptionQuota > 0 {
+		allocations = append(allocations, relaycommon.BillingAllocation{
+			Source:                             BillingSourceSubscription,
+			Quota:                              subscriptionQuota,
+			SubscriptionId:                     sub.subscriptionId,
+			SubscriptionPlanId:                 sub.PlanId,
+			SubscriptionPlanTitle:              sub.PlanTitle,
+			SubscriptionAmountTotal:            sub.AmountTotal,
+			SubscriptionAmountUsedAfterConsume: sub.AmountUsedAfter + int64(s.extraReserved) + result.SubscriptionDelta,
+		})
+	}
+	if result.WalletDelta > 0 {
+		allocations = append(allocations, relaycommon.BillingAllocation{
+			Source: BillingSourceWallet,
+			Quota:  int(result.WalletDelta),
+		})
+	}
+	return allocations
 }
 
 // Refund 退还所有预扣费，幂等安全，异步执行。
@@ -424,11 +480,25 @@ func (s *BillingSession) syncRelayInfo() {
 	info := s.relayInfo
 	info.FinalPreConsumedQuota = s.preConsumedQuota
 	info.BillingSource = s.funding.Source()
+	info.SettlementUnbilledQuota = s.settlementUnbilledQuota
+
+	if len(s.settlementAllocations) > 0 {
+		info.BillingSource = BillingSourceMixed
+		info.SubscriptionId = 0
+		info.SubscriptionPreConsumed = 0
+		info.SubscriptionPostDelta = 0
+		info.SubscriptionAmountTotal = 0
+		info.SubscriptionAmountUsedAfterPreConsume = 0
+		info.SubscriptionPlanId = 0
+		info.SubscriptionPlanTitle = ""
+		info.BillingAllocations = append([]relaycommon.BillingAllocation(nil), s.settlementAllocations...)
+		return
+	}
 
 	if sub, ok := s.funding.(*SubscriptionFunding); ok {
 		info.SubscriptionId = sub.subscriptionId
 		info.SubscriptionPreConsumed = sub.preConsumed + int64(s.extraReserved)
-		info.SubscriptionPostDelta = 0
+		info.SubscriptionPostDelta = s.settlementSubscriptionDelta
 		info.SubscriptionAmountTotal = sub.AmountTotal
 		info.SubscriptionAmountUsedAfterPreConsume = sub.AmountUsedAfter + int64(s.extraReserved)
 		info.SubscriptionPlanId = sub.PlanId

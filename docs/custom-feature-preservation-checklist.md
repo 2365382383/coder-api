@@ -374,11 +374,17 @@
 - 必须保留：`subscription_first` 在订阅余额不足时可以按规则使用钱包补足；严格计划
   的钱包回退语义正确。混合扣费必须保存订阅/钱包分摊，结算负差额先退钱包，正差额
   继续按正确来源追扣，任务退款同样按分摊回滚。
+- 必须保留：普通 relay 请求开始时预扣成功、最终实际费用更高时，`subscription_first`
+  必须在结算锁内先扣完订阅剩余，再把 overflow 记到钱包并允许形成欠费；`subscription_only`
+  必须先扣完订阅剩余，再把 overflow 写成独立的 `unbilled` 审核记录。结算策略随
+  `settlement_request` 持久化，恢复任务不得按当前余额重新猜测；历史旧意图不得在部署
+  后被自动改成新策略。
 - 当前位置：`service/funding_source.go`、`service/billing_session.go`、
   `service/task_billing.go`、`model/subscription.go`、钱包订阅偏好界面。
 - 数据/迁移：既有任务 `private_data` 中的 billing allocations 是账务事实，不能把
   mixed 任务当成单一订阅或单一钱包任务处理。
-- 验证入口：`service/task_billing_test.go`、`service/billing_session_test.go`（如存在）。
+- 验证入口：`service/task_billing_test.go`、
+  `service/billing_session_settlement_test.go`、`model/billing_operation_database_matrix_test.go`。
 - 来源提交：`460b36a8`、`1779060b`、`525ecf72`。
 
 ### P-21 用户管理、缓存一致性与硬删除边界

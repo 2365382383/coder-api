@@ -18,6 +18,13 @@ const (
 	BillingSettled             = "settled"
 	BillingSettlementRequested = "settlement_requested"
 	BillingReviewRequired      = "review_required"
+
+	// BillingSettlementWalletFallback consumes the remaining subscription quota
+	// first and charges the settlement overflow to the wallet, including wallet
+	// debt. BillingSettlementSubscriptionClamp consumes every remaining
+	// subscription unit and leaves the overflow uncollected for audit.
+	BillingSettlementWalletFallback    = "wallet_fallback"
+	BillingSettlementSubscriptionClamp = "subscription_clamp"
 )
 
 var ErrBillingWalletInsufficient = errors.New("wallet quota insufficient")
@@ -111,10 +118,36 @@ type BillingTaskCommit struct {
 	FromStatus TaskStatus
 }
 
+// BillingAdjustmentResult is the allocation actually committed by a billing
+// phase. Settlement may reduce the requested subscription delta after locking
+// the subscription row and move that amount to the wallet or to an explicit
+// unbilled remainder.
+type BillingAdjustmentResult struct {
+	WalletDelta       int64
+	SubscriptionDelta int64
+	TokenDelta        int64
+	UnbilledAmount    int64
+}
+
 // RequestBillingSettlement records the exact ordinary-relay settlement before
 // any balance is changed. The request row is the recovery source of truth when
 // a process exits between the upstream response and the financial commit.
 func RequestBillingSettlement(requestId string, walletDelta, subscriptionDelta, tokenDelta, actual int64, countRequest bool) error {
+	return requestBillingSettlement(requestId, walletDelta, subscriptionDelta, tokenDelta, actual, countRequest, "")
+}
+
+// RequestBillingSettlementWithPolicy persists the settlement allocation policy
+// together with the known upstream result. The final allocation is recalculated
+// under the subscription lock during ApplyBillingAdjustmentWithResult, so a
+// concurrent request cannot consume the same remaining subscription twice.
+func RequestBillingSettlementWithPolicy(requestId string, walletDelta, subscriptionDelta, tokenDelta, actual int64, countRequest bool, policy string) error {
+	if policy != BillingSettlementWalletFallback && policy != BillingSettlementSubscriptionClamp {
+		return errors.New("invalid billing settlement policy")
+	}
+	return requestBillingSettlement(requestId, walletDelta, subscriptionDelta, tokenDelta, actual, countRequest, policy)
+}
+
+func requestBillingSettlement(requestId string, walletDelta, subscriptionDelta, tokenDelta, actual int64, countRequest bool, policy string) error {
 	if !billingOperationKeyValid(requestId, "settlement_request") || actual < 0 || actual > int64(common.MaxChargeQuota) ||
 		walletDelta == common.MinWalletQuota || subscriptionDelta == common.MinWalletQuota || tokenDelta == common.MinWalletQuota {
 		return errors.New("invalid billing settlement request")
@@ -134,7 +167,7 @@ func RequestBillingSettlement(requestId string, walletDelta, subscriptionDelta, 
 		}
 		if found.RowsAffected == 1 {
 			if existing.WalletAmount != walletDelta || existing.SubscriptionAmount != subscriptionDelta || existing.TokenAmount != tokenDelta ||
-				existing.Actual != actual || existing.UsageCounted != countRequest {
+				existing.Actual != actual || existing.UsageCounted != countRequest || existing.FundingSource != settlementIntentFundingSource(root.FundingSource, policy) {
 				return errors.New("billing settlement request replay has different amounts")
 			}
 			return nil
@@ -151,7 +184,7 @@ func RequestBillingSettlement(requestId string, walletDelta, subscriptionDelta, 
 		now := common.GetTimestamp()
 		intent := BillingOperation{RequestId: requestId, Phase: "settlement_request", State: BillingSettlementRequested,
 			UserId: root.UserId, ChannelId: root.ChannelId, TokenId: root.TokenId, SubscriptionId: root.SubscriptionId,
-			FundingSource: root.FundingSource, WalletAmount: walletDelta, SubscriptionAmount: subscriptionDelta,
+			FundingSource: settlementIntentFundingSource(root.FundingSource, policy), WalletAmount: walletDelta, SubscriptionAmount: subscriptionDelta,
 			TokenAmount: tokenDelta, Actual: actual, UsageCounted: countRequest, CreatedAt: now, UpdatedAt: now}
 		if err := tx.Create(&intent).Error; err != nil {
 			return err
@@ -162,20 +195,38 @@ func RequestBillingSettlement(requestId string, walletDelta, subscriptionDelta, 
 	})
 }
 
+func settlementIntentFundingSource(rootFundingSource, policy string) string {
+	if policy != "" {
+		return policy
+	}
+	return rootFundingSource
+}
+
 func ApplyBillingAdjustment(requestId, phase string, walletDelta, subscriptionDelta, tokenDelta int64, requireWalletBalance, settle bool, actual int64, countRequest bool, taskCommit ...*BillingTaskCommit) error {
+	_, err := ApplyBillingAdjustmentWithResult(requestId, phase, walletDelta, subscriptionDelta, tokenDelta, requireWalletBalance, settle, actual, countRequest, taskCommit...)
+	return err
+}
+
+// ApplyBillingAdjustmentWithResult applies one billing phase and returns the
+// allocation that was actually committed. Ordinary settlement can cap the
+// subscription delta under its row lock and either move the overflow to wallet
+// debt or leave it explicitly unbilled.
+func ApplyBillingAdjustmentWithResult(requestId, phase string, walletDelta, subscriptionDelta, tokenDelta int64, requireWalletBalance, settle bool, actual int64, countRequest bool, taskCommit ...*BillingTaskCommit) (BillingAdjustmentResult, error) {
 	if !billingOperationKeyValid(requestId, phase) || phase == "initial" || phase == "refund" {
-		return errors.New("invalid billing adjustment phase")
+		return BillingAdjustmentResult{}, errors.New("invalid billing adjustment phase")
 	}
 	if len(taskCommit) > 1 || len(taskCommit) == 1 && (taskCommit[0] == nil || taskCommit[0].Task == nil) {
-		return errors.New("invalid billing task commit")
+		return BillingAdjustmentResult{}, errors.New("invalid billing task commit")
 	}
 	var commit *BillingTaskCommit
 	if len(taskCommit) == 1 {
 		commit = taskCommit[0]
 		if !settle || phase != "settle" || actual < 0 || actual > int64(common.MaxChargeQuota) {
-			return errors.New("invalid task billing settlement")
+			return BillingAdjustmentResult{}, errors.New("invalid task billing settlement")
 		}
 	}
+
+	var committed BillingAdjustmentResult
 	var updatedTask *Task
 	err := withBillingTransaction(context.Background(), func(tx *gorm.DB) error {
 		var currentTask *Task
@@ -194,14 +245,45 @@ func ApplyBillingAdjustment(requestId, phase string, walletDelta, subscriptionDe
 			}
 			currentTask = &locked
 		}
+
+		settlementIntent := false
+		settlementPolicy := ""
+		if settle && commit == nil {
+			var intent BillingOperation
+			intentFound := tx.Where("request_id = ? AND phase = ?", requestId, "settlement_request").Limit(1).Find(&intent)
+			if intentFound.Error != nil {
+				return intentFound.Error
+			}
+			if intentFound.RowsAffected == 1 {
+				if intent.WalletAmount != walletDelta || intent.SubscriptionAmount != subscriptionDelta ||
+					intent.TokenAmount != tokenDelta || intent.Actual != actual || intent.UsageCounted != countRequest {
+					return errors.New("billing settlement intent does not match adjustment")
+				}
+				settlementIntent = root.State == BillingSettlementRequested
+				if intent.FundingSource == BillingSettlementWalletFallback || intent.FundingSource == BillingSettlementSubscriptionClamp {
+					settlementPolicy = intent.FundingSource
+				}
+			} else if root.State == BillingSettlementRequested {
+				return errors.New("billing settlement intent does not match adjustment")
+			}
+		}
+
 		var previous BillingOperation
 		found := tx.Where("request_id = ? AND phase = ?", requestId, phase).Limit(1).Find(&previous)
 		if found.Error != nil {
 			return found.Error
 		}
 		if found.RowsAffected == 1 {
-			if previous.WalletAmount != walletDelta || previous.SubscriptionAmount != subscriptionDelta || previous.TokenAmount != tokenDelta || previous.Actual != actual || previous.UsageCounted != countRequest {
-				return errors.New("billing operation phase replay has different amounts")
+			if settlementPolicy != "" {
+				if previous.TokenAmount != tokenDelta || previous.Actual != actual || previous.UsageCounted != countRequest {
+					return errors.New("billing operation phase replay has different amounts")
+				}
+				committed = billingAdjustmentResultFromSettledPhase(root, previous)
+			} else {
+				if previous.WalletAmount != walletDelta || previous.SubscriptionAmount != subscriptionDelta || previous.TokenAmount != tokenDelta || previous.Actual != actual || previous.UsageCounted != countRequest {
+					return errors.New("billing operation phase replay has different amounts")
+				}
+				committed = BillingAdjustmentResult{WalletDelta: previous.WalletAmount, SubscriptionDelta: previous.SubscriptionAmount, TokenDelta: previous.TokenAmount}
 			}
 			if commit != nil && (currentTask.Status != commit.Task.Status || currentTask.Quota != int(actual)) {
 				return errors.New("billing phase committed without matching task state")
@@ -214,23 +296,33 @@ func ApplyBillingAdjustment(requestId, phase string, walletDelta, subscriptionDe
 		if commit != nil && currentTask.Status != commit.FromStatus {
 			return ErrBillingTaskStateChanged
 		}
-		settlementIntent := false
-		if settle && commit == nil && root.State == BillingSettlementRequested {
-			var intent BillingOperation
-			intentFound := tx.Where("request_id = ? AND phase = ?", requestId, "settlement_request").Limit(1).Find(&intent)
-			if intentFound.Error != nil {
-				return intentFound.Error
-			}
-			if intentFound.RowsAffected == 1 && intent.WalletAmount == walletDelta && intent.SubscriptionAmount == subscriptionDelta &&
-				intent.TokenAmount == tokenDelta && intent.Actual == actual && intent.UsageCounted == countRequest {
-				settlementIntent = true
-			} else {
-				return errors.New("billing settlement intent does not match adjustment")
-			}
-		}
 		if root.State != BillingReserved && !(commit != nil && root.State == BillingSettlementRequested && root.Actual == actual && root.PendingTaskStatus == commit.Task.Status) && !settlementIntent {
 			return fmt.Errorf("billing operation state %s cannot be adjusted", root.State)
 		}
+
+		result := BillingAdjustmentResult{WalletDelta: walletDelta, SubscriptionDelta: subscriptionDelta, TokenDelta: tokenDelta}
+		subscriptionAdjusted := false
+		if settlementPolicy != "" && actual > root.PreConsumed {
+			if root.SubscriptionId <= 0 {
+				return errors.New("subscription id missing")
+			}
+			charged, unbilled, err := settleUserSubscriptionDeltaWithCapTx(tx, root.SubscriptionId, actual-root.PreConsumed)
+			if err != nil {
+				return err
+			}
+			result.SubscriptionDelta = charged
+			result.UnbilledAmount = unbilled
+			if settlementPolicy == BillingSettlementWalletFallback {
+				result.WalletDelta = unbilled
+				result.UnbilledAmount = 0
+			} else {
+				result.WalletDelta = 0
+			}
+			subscriptionAdjusted = true
+			walletDelta = result.WalletDelta
+			subscriptionDelta = result.SubscriptionDelta
+		}
+
 		walletTotal, err := common.AddWalletQuota(root.WalletAmount, walletDelta)
 		if err != nil || walletTotal < 0 {
 			return common.ErrWalletQuotaOverflow
@@ -243,7 +335,7 @@ func ApplyBillingAdjustment(requestId, phase string, walletDelta, subscriptionDe
 		if err != nil || tokenTotal < 0 {
 			return common.ErrWalletQuotaOverflow
 		}
-		if subscriptionDelta != 0 {
+		if !subscriptionAdjusted && subscriptionDelta != 0 {
 			if root.SubscriptionId <= 0 {
 				return errors.New("subscription id missing")
 			}
@@ -261,7 +353,7 @@ func ApplyBillingAdjustment(requestId, phase string, walletDelta, subscriptionDe
 				return err
 			}
 		}
-		if subscriptionDelta != 0 {
+		if !subscriptionAdjusted && subscriptionDelta != 0 {
 			if requireWalletBalance && subscriptionDelta > 0 {
 				err = reserveSubscriptionAdditionalTx(tx, root.SubscriptionId, subscriptionDelta)
 			} else {
@@ -294,14 +386,19 @@ func ApplyBillingAdjustment(requestId, phase string, walletDelta, subscriptionDe
 				return err
 			}
 		}
+
+		finalFundingSource := root.FundingSource
+		if settlementPolicy == BillingSettlementWalletFallback && result.WalletDelta > 0 {
+			finalFundingSource = "mixed"
+		}
 		state := root.State
 		if settle {
 			state = BillingSettled
 		}
 		now := common.GetTimestamp()
 		step := BillingOperation{RequestId: requestId, Phase: phase, State: state, UserId: root.UserId, ChannelId: root.ChannelId,
-			TokenId: root.TokenId, FundingSource: root.FundingSource, SubscriptionId: root.SubscriptionId,
-			WalletAmount: walletDelta, SubscriptionAmount: subscriptionDelta, TokenAmount: tokenDelta,
+			TokenId: root.TokenId, FundingSource: finalFundingSource, SubscriptionId: root.SubscriptionId,
+			WalletAmount: result.WalletDelta, SubscriptionAmount: result.SubscriptionDelta, TokenAmount: result.TokenDelta,
 			Actual: actual, UsageCounted: countRequest, CreatedAt: now, UpdatedAt: now}
 		if commit != nil {
 			step.TaskId = commit.Task.ID
@@ -309,13 +406,23 @@ func ApplyBillingAdjustment(requestId, phase string, walletDelta, subscriptionDe
 		if err := tx.Create(&step).Error; err != nil {
 			return err
 		}
+		if result.UnbilledAmount > 0 {
+			if err := tx.Create(&BillingOperation{RequestId: requestId, Phase: "unbilled", State: BillingReviewRequired,
+				UserId: root.UserId, ChannelId: root.ChannelId, TokenId: root.TokenId, SubscriptionId: root.SubscriptionId,
+				FundingSource: "unbilled", Actual: result.UnbilledAmount, CreatedAt: now, UpdatedAt: now}).Error; err != nil {
+				return err
+			}
+		}
 		updates := map[string]any{"wallet_amount": walletTotal, "subscription_amount": subTotal,
 			"token_amount": tokenTotal, "state": state, "updated_at": now}
+		if finalFundingSource != root.FundingSource {
+			updates["funding_source"] = finalFundingSource
+		}
 		if commit != nil {
 			updates["task_id"] = commit.Task.ID
 			taskCopy := *commit.Task
 			taskCopy.PrivateData.BillingAllocations = append([]BillingAllocation(nil), commit.Task.PrivateData.BillingAllocations...)
-			if err := applyTaskBillingAllocationDeltas(&taskCopy, walletDelta, subscriptionDelta, root.SubscriptionId); err != nil {
+			if err := applyTaskBillingAllocationDeltas(&taskCopy, result.WalletDelta, result.SubscriptionDelta, root.SubscriptionId); err != nil {
 				return err
 			}
 			taskToCommit = &taskCopy
@@ -341,8 +448,8 @@ func ApplyBillingAdjustment(requestId, phase string, walletDelta, subscriptionDe
 			updates["actual"] = actual
 		}
 		if strings.HasPrefix(phase, "reserve:") {
-			updates["extra_reserved"] = gorm.Expr("extra_reserved + ?", subscriptionDelta)
-			updates["pre_consumed"] = gorm.Expr("pre_consumed + ?", walletDelta+subscriptionDelta)
+			updates["extra_reserved"] = gorm.Expr("extra_reserved + ?", result.SubscriptionDelta)
+			updates["pre_consumed"] = gorm.Expr("pre_consumed + ?", result.WalletDelta+result.SubscriptionDelta)
 		}
 		if err := tx.Model(root).Updates(updates).Error; err != nil {
 			return err
@@ -350,12 +457,29 @@ func ApplyBillingAdjustment(requestId, phase string, walletDelta, subscriptionDe
 		if commit != nil {
 			updatedTask = currentTask
 		}
+		committed = result
 		return nil
 	})
-	if err == nil && commit != nil && updatedTask != nil {
+	if err != nil {
+		return BillingAdjustmentResult{}, err
+	}
+	if commit != nil && updatedTask != nil {
 		*commit.Task = *updatedTask
 	}
-	return err
+	return committed, nil
+}
+
+func billingAdjustmentResultFromSettledPhase(root *BillingOperation, settled BillingOperation) BillingAdjustmentResult {
+	result := BillingAdjustmentResult{
+		WalletDelta:       settled.WalletAmount,
+		SubscriptionDelta: settled.SubscriptionAmount,
+		TokenDelta:        settled.TokenAmount,
+	}
+	charged := root.PreConsumed + settled.WalletAmount + settled.SubscriptionAmount
+	if settled.Actual > charged {
+		result.UnbilledAmount = settled.Actual - charged
+	}
+	return result
 }
 
 // InsertTaskWithBillingIntent makes the accepted upstream result recoverable

@@ -1838,3 +1838,50 @@ func postConsumeUserSubscriptionDeltaTx(tx *gorm.DB, userSubscriptionId int, del
 	sub.AmountUsed = newUsed
 	return tx.Save(&sub).Error
 }
+
+// settleUserSubscriptionDeltaWithCapTx consumes as much of a positive
+// settlement delta as the subscription can still accept. The caller decides
+// whether the remainder goes to the wallet or is recorded as unbilled. A
+// negative delta keeps the existing refund semantics.
+func settleUserSubscriptionDeltaWithCapTx(tx *gorm.DB, userSubscriptionID int, delta int64) (charged, unbilled int64, err error) {
+	if tx == nil {
+		return 0, 0, errors.New("transaction is nil")
+	}
+	if userSubscriptionID <= 0 {
+		return 0, 0, errors.New("invalid user subscription id")
+	}
+	if delta < 0 {
+		if err := postConsumeUserSubscriptionDeltaTx(tx, userSubscriptionID, delta); err != nil {
+			return 0, 0, err
+		}
+		return delta, 0, nil
+	}
+	if delta == 0 {
+		return 0, 0, nil
+	}
+
+	var sub UserSubscription
+	if err := lockForUpdate(tx).Where("id = ?", userSubscriptionID).First(&sub).Error; err != nil {
+		return 0, 0, err
+	}
+	charged = delta
+	if sub.AmountTotal > 0 {
+		remaining := max(sub.AmountTotal-sub.AmountUsed, 0)
+		if charged > remaining {
+			charged = remaining
+			unbilled = delta - charged
+		}
+	}
+	if charged <= 0 {
+		return 0, unbilled, nil
+	}
+	nextUsed, err := common.AddWalletQuota(sub.AmountUsed, charged)
+	if err != nil {
+		return 0, 0, err
+	}
+	sub.AmountUsed = nextUsed
+	if err := tx.Save(&sub).Error; err != nil {
+		return 0, 0, err
+	}
+	return charged, unbilled, nil
+}
