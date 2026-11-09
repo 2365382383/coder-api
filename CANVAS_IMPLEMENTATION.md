@@ -468,3 +468,18 @@ node integrations/infinite-canvas/browser-startup-check.mjs
 - `go vet ./middleware` 通过。
 - `middleware` 完整包仍受已在干净 `HEAD` 存在的共享测试状态和敏感词审计夹具失败影响；本次目标测试与静态检查通过，不把完整包记为通过。
 - 本轮没有数据库表结构变更，没有调用付费上游，也尚未声称生产镜像、Actions 或蓝绿发布完成。
+
+## 2026-11-09 精选提示词库上线
+
+`infinite-canvas-prompt-catalog` 继续作为独立仓库维护，不把 1408 条提示词和 1594 个本地媒体文件写入 new-api Git 历史或镜像。部署时由独立只读静态服务在 `/prompt-catalog/` 提供 `data/catalog.json` 和去重后的 `media/`，容器内存上限 128 MB，实测常驻约 14 MB。
+
+画布宿主桥新增唯一的 `prompts.catalog` 公开读取操作，固定请求同域 `/prompt-catalog/data/catalog.json`，不接收客户端 URL，不携带控制台 Authorization/Cookie，也不恢复作者的远程运行时依赖。内嵌提示词库将本地精选目录与用户自己的文字资产合并展示：精选提示词使用本地封面和参考图路径，用户资产继续沿用现有账户存储。
+
+筛选和分页仍在浏览器内存中完成，目录只加载一次；任何条目缺失标题、正文或本地 `media/` 路径时不会生成外部 URL。当前目录包含 1408 条提示词，`nsfw` 作为普通标签保留，模型和许可证字段不作为运行时数据。
+
+验证要求：
+
+- 静态目录和封面必须通过 `/prompt-catalog/` 返回 200，目录 `total=1408`。
+- 宿主桥单元测试必须验证固定路径、`credentials=omit` 和无 Authorization。
+- 画布浏览器验收必须加载本地精选提示词、封面和“精选提示词”分类。
+- 本轮没有把该 479 MB 媒体集合打包进 new-api 镜像，也没有引入新的数据库表。

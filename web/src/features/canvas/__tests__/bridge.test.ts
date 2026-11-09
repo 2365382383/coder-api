@@ -59,6 +59,13 @@ describe('Canvas bridge operations', () => {
     expect((target.body as FormData).get('model')).toBe('image-model')
     expect(target).not.toHaveProperty('Authorization')
   })
+  it('maps the bundled prompt catalog to a public same-origin path', () => {
+    const target = canvasEndpoint('prompts.catalog', {})
+    expect(target.path).toBe('/prompt-catalog/data/catalog.json')
+    expect(target.method).toBe('GET')
+    expect(target.rootPath).toBe(true)
+    expect(target.publicRequest).toBe(true)
+  })
   it('streams bytes with backpressure and never sends session auth to the child', async () => {
     const first = new TextEncoder().encode('中文🙂')
     let receive: (event: MessageEvent) => Promise<void>
@@ -123,6 +130,48 @@ describe('Canvas bridge operations', () => {
     expect(fetcher).toHaveBeenCalledOnce()
     dispose()
     expect(port.close).toHaveBeenCalledOnce()
+  })
+
+  it('loads the public prompt catalog without session credentials', async () => {
+    let receive: (event: MessageEvent) => Promise<void>
+    const port = {
+      postMessage: vi.fn((message: { type: string; id: string }) => {
+        if (message.type === 'chunk') {
+          queueMicrotask(
+            () =>
+              void receive({
+                data: { type: 'ack', id: message.id },
+              } as MessageEvent)
+          )
+        }
+      }),
+      start: vi.fn(),
+      close: vi.fn(),
+      onmessage: undefined,
+      onmessageerror: undefined,
+    } as unknown as MessagePort
+    const fetcher = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ items: [], total: 0 }), {
+        headers: { 'Content-Type': 'application/json' },
+      })
+    )
+    vi.stubGlobal('fetch', fetcher)
+    const dispose = createCanvasBridge(port, vi.fn())
+    receive = port.onmessage as unknown as typeof receive
+    await receive({
+      data: {
+        type: 'request',
+        protocol: 1,
+        id: 'prompts-1',
+        operation: 'prompts.catalog',
+        payload: {},
+      },
+    } as MessageEvent)
+    expect(fetcher).toHaveBeenCalledOnce()
+    expect(fetcher.mock.calls[0][0]).toBe('/prompt-catalog/data/catalog.json')
+    expect(fetcher.mock.calls[0][1].credentials).toBe('omit')
+    expect(fetcher.mock.calls[0][1].headers.get('Authorization')).toBeNull()
+    dispose()
   })
   it('ignores late stream messages after the child cancels a response body', async () => {
     vi.resetModules()

@@ -46,11 +46,25 @@ function resource(payload: Record<string, unknown>, key = 'id'): string {
 export function canvasEndpoint(
   operation: string,
   payload: Record<string, unknown>
-): { path: string; method: string; body?: BodyInit; group?: string } {
+): {
+  path: string
+  method: string
+  body?: BodyInit
+  group?: string
+  rootPath?: boolean
+  publicRequest?: boolean
+} {
   const json = (value: unknown): string => JSON.stringify(value)
   switch (operation) {
     case 'bootstrap':
       return { path: '/bootstrap', method: 'GET' }
+    case 'prompts.catalog':
+      return {
+        path: '/prompt-catalog/data/catalog.json',
+        method: 'GET',
+        rootPath: true,
+        publicRequest: true,
+      }
     case 'projects.list':
       return {
         path: `/projects?offset=${Number(payload.offset ?? 0)}${payload.trash === true ? '&trash=true' : ''}`,
@@ -252,6 +266,10 @@ export function createCanvasBridge(
     try {
       const target = canvasEndpoint(message.operation, message.payload)
       const headers = new Headers(await getFreshAuthHeaders())
+      if (target.publicRequest) {
+        headers.delete('Authorization')
+        headers.delete('Cookie')
+      }
       if (disposed || !isCurrent()) return
       if (target.body instanceof FormData) headers.delete('Content-Type')
       if (target.body instanceof Blob) {
@@ -261,14 +279,17 @@ export function createCanvasBridge(
       if (target.method === 'POST' && target.path.startsWith('/v1/')) {
         headers.set('X-Canvas-Request-ID', message.id)
       }
-      const response = await fetch(`/api/canvas${target.path}`, {
-        method: target.method,
-        body: target.body,
-        headers,
-        signal: abort.signal,
-        credentials: 'same-origin',
-        cache: 'no-store',
-      })
+      const response = await fetch(
+        target.rootPath ? target.path : `/api/canvas${target.path}`,
+        {
+          method: target.method,
+          body: target.body,
+          headers,
+          signal: abort.signal,
+          credentials: target.publicRequest ? 'omit' : 'same-origin',
+          cache: 'no-store',
+        }
+      )
       if (disposed || !isCurrent()) return
       port.postMessage({
         type: 'response',

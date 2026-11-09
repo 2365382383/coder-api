@@ -29,7 +29,7 @@ const project = { id: "existing", title: "保留旧画布", createdAt: new Date(
 let projectRevision = 1;
 const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
 const fixtureModels = [
-  { name: "gpt-image-2", group: expectedGroup, capability: "image", image_capabilities: { provider: "openai", size_mode: "dimensions", sizes: ["1024x1024", "1024x1536"], aspect_ratios: [], resolutions: [], qualities: ["auto", "high"], output_formats: ["png", "jpeg"], default_size: "1024x1024", supports_editing: true, supports_moderation: false, supports_output_compression: true, max_images: 2 } },
+  { name: "gpt-image-2", group: expectedGroup, capability: "image", image_capabilities: { provider: "openai", size_mode: "aspect_ratio_resolution", sizes: [], aspect_ratios: ["1:1", "16:9"], resolutions: ["1K", "2K"], qualities: ["auto", "high"], output_formats: ["png", "jpeg"], default_aspect_ratio: "1:1", default_resolution: "1K", default_quality: "auto", default_output_format: "png", supports_editing: true, supports_moderation: false, supports_output_compression: true, max_images: 2 } },
   { name: "gpt-image-2", group: "GPT-Pro-正价", capability: "image", image_capabilities: { provider: "gemini", size_mode: "aspect_ratio_resolution", sizes: [], aspect_ratios: ["1:1", "16:9"], resolutions: ["1K", "2K"], qualities: [], output_formats: [], supports_editing: false, supports_moderation: false, supports_output_compression: false, max_images: 1 } },
   { name: "video-sora", group: expectedGroup, capability: "video", video_adapter: "sora" },
 ];
@@ -37,7 +37,6 @@ const fixtureModels = [
 function envelope(data) {
   return JSON.stringify({ success: true, data });
 }
-
 function send(response, status, body, type = "application/json") {
   response.writeHead(status, { "Content-Type": type, "Cache-Control": "no-store", "Access-Control-Allow-Origin": "*" });
   response.end(Buffer.isBuffer(body) || typeof body === "string" ? body : JSON.stringify(body));
@@ -48,6 +47,32 @@ const server = http.createServer(async (request, response) => {
   if (url.pathname === "/canvas-test-host.js") {
     response.writeHead(200, { "Content-Type": "text/javascript", "Cache-Control": "no-store" });
     response.end(hostBundle);
+    return;
+  }
+  if (url.pathname === "/prompt-catalog/data/catalog.json") {
+    send(response, 200, {
+      schema_version: 1,
+      generated_at: new Date(timestamp).toISOString(),
+      total: 1,
+      items: [{
+        id: "fixture-prompt-1",
+        title: "测试精选提示词",
+        prompt: "生成一张本地提示词库测试图片",
+        description: "验证提示词目录与本地媒体路径",
+        tags: ["测试标签"],
+        author: "fixture",
+        source_id: "fixture-catalog",
+        source_url: "https://example.test/prompts",
+        created_at: new Date(timestamp).toISOString(),
+        mode: "generate",
+        cover: "media/test-cover.png",
+        references: [],
+      }],
+    });
+    return;
+  }
+  if (url.pathname === "/prompt-catalog/media/test-cover.png") {
+    send(response, 200, Buffer.from(png, "base64"), "image/png");
     return;
   }
   if (url.pathname.startsWith("/api/")) {
@@ -108,8 +133,8 @@ const server = http.createServer(async (request, response) => {
       for await (const chunk of request) raw += chunk;
       const body = JSON.parse(raw);
       assert.equal(body.n, 1);
-      assert.equal(body.size, "1024x1024");
-      assert.equal(body.output_format, "png");
+      assert.equal(body.aspect_ratio, "1:1");
+      assert.equal(body.resolution, "1K");
       if (emptyGenerationFailure) { send(response, 403, "", "text/plain"); return; }
       response.setHeader("X-Canvas-Run-ID", "fixture-run-" + generationRequests);
       send(response, 200, { created: 1, data: [{ b64_json: png }] });
@@ -212,7 +237,7 @@ try {
   await frame.getByRole("combobox", { name: "宽高比", exact: true }).waitFor();
   await frame.getByRole("combobox", { name: "分组", exact: true }).click();
   await frame.getByText(expectedGroup, { exact: true }).last().click();
-  await frame.getByRole("combobox", { name: "尺寸", exact: true }).waitFor();
+  await frame.getByRole("combobox", { name: "宽高比", exact: true }).waitFor();
   await frame.getByPlaceholder("描述画面主体、风格、构图、光线和用途").fill("中文分组请求验证");
   const historyWritten = page.waitForResponse((response) => response.request().method() === "PUT" && response.url().includes("/api/canvas/state/image_generation_logs/"));
   void historyWritten.catch(() => undefined);
@@ -247,6 +272,17 @@ try {
   await frame.getByRole("button", { name: "开始生成", exact: true }).click();
   await frame.getByText("请求失败（HTTP 403）", { exact: true }).first().waitFor();
   assert.equal(await frame.getByText(/Unexpected end of JSON/).count(), 0);
+  await frame.getByRole("link", { name: "提示词库", exact: true }).click();
+  await frame.getByText("测试精选提示词", { exact: true }).waitFor();
+  await frame.getByText("精选提示词", { exact: true }).first().waitFor();
+  const promptCover = frame.getByRole("img", { name: "测试精选提示词", exact: true });
+  await promptCover.waitFor();
+  await promptCover.evaluate(async (element) => {
+    await element.decode();
+    if (element.naturalWidth !== 1) {
+      throw new Error("Prompt catalog cover did not load");
+    }
+  });
   await frame.getByRole("link", { name: "视频创作台", exact: true }).click();
   await frame.getByRole("heading", { name: "视频创作台", exact: true }).waitFor();
   const videoPrompt = frame.getByPlaceholder("描述镜头运动、主体动作、场景氛围和画面风格", { exact: true });
