@@ -32,6 +32,7 @@ const fixtureModels = [
   { name: "gpt-image-2", group: expectedGroup, capability: "image", image_capabilities: { provider: "openai", size_mode: "aspect_ratio_resolution", sizes: [], aspect_ratios: ["1:1", "16:9"], resolutions: ["1K", "2K"], qualities: ["auto", "high"], output_formats: ["png", "jpeg"], default_aspect_ratio: "1:1", default_resolution: "1K", default_quality: "auto", default_output_format: "png", supports_editing: true, supports_moderation: false, supports_output_compression: true, max_images: 2 } },
   { name: "gpt-image-2", group: "GPT-Pro-正价", capability: "image", image_capabilities: { provider: "gemini", size_mode: "aspect_ratio_resolution", sizes: [], aspect_ratios: ["1:1", "16:9"], resolutions: ["1K", "2K"], qualities: [], output_formats: [], supports_editing: false, supports_moderation: false, supports_output_compression: false, max_images: 1 } },
   { name: "video-sora", group: expectedGroup, capability: "video", video_adapter: "sora" },
+  { name: "H3", group: expectedGroup, capability: "video", video_adapter: "openai" },
 ];
 
 function envelope(data) {
@@ -143,9 +144,18 @@ const server = http.createServer(async (request, response) => {
     if (url.pathname === "/api/canvas/v1/videos" && request.method === "POST") {
       let raw = "";
       for await (const chunk of request) raw += chunk;
-      assert.match(raw, /name="input_reference"/);
-      assert.doesNotMatch(raw, /name="first_frame"|name="image\[\]"/);
-      assert.match(raw, /name="seconds"\r\n\r\n4/);
+      if ((request.headers["content-type"] || "").includes("application/json")) {
+        const body = JSON.parse(raw);
+        assert.equal(body.model, "H3");
+        assert.equal(body.duration, 4);
+        assert.equal(body.resolution, "720p");
+        assert.equal(body.aspect_ratio, "16:9");
+        assert.equal("seconds" in body, false);
+        assert.equal("size" in body, false);
+      } else {
+        assert.match(raw, /name="input_reference"|name="first_frame"|name="image\[\]"/);
+        assert.match(raw, /name="seconds"\r\n\r\n4/);
+      }
       videoRequests++;
       send(response, 200, { id: "fixturevideo", status: "queued" });
       return;
@@ -288,12 +298,19 @@ try {
   const videoPrompt = frame.getByPlaceholder("描述镜头运动、主体动作、场景氛围和画面风格", { exact: true });
   await videoPrompt.fill("视频请求契约验证");
   assert.equal(await videoPrompt.inputValue(), "视频请求契约验证");
+  await frame.locator(".canvas-model-picker-text").last().click();
+  await frame.getByText("H3", { exact: true }).last().click();
+  await frame.getByRole("button", { name: "开始生成", exact: true }).click();
+  await frame.getByText("Fixture video stops after checking request fields", { exact: true }).first().waitFor();
+  assert.equal(videoRequests, 1);
+  await frame.locator(".canvas-model-picker-text").last().click();
+  await frame.getByText("video-sora", { exact: true }).last().click();
   await frame.locator('input[type="file"]').first().setInputFiles({ name: "ref.png", mimeType: "image/png", buffer: Buffer.from(png, "base64") });
   await frame.getByRole("img", { name: "ref.png", exact: true }).waitFor();
   assert.equal(await videoPrompt.inputValue(), "视频请求契约验证", "the video prompt must survive reference upload");
   await frame.getByRole("button", { name: "开始生成", exact: true }).click();
   await frame.getByText("Fixture video stops after checking request fields", { exact: true }).first().waitFor();
-  assert.equal(videoRequests, 1);
+  assert.equal(videoRequests, 2);
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({ result: "PASS", generationRequests, assetUploads, lastGroupHeader, projectReads, videoRequests, themeSync: true }));
 } catch (error) {

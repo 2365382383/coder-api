@@ -351,7 +351,7 @@ node integrations/infinite-canvas/browser-startup-check.mjs
 | `integrations/infinite-canvas/overlay/model-picker.tsx` | 基于子应用现有 Ant Design Select 组合独立分组/模型选择，保留旧模型 ID。宿主 ModelGroupSelector 属于另一 React 树及组件库，不能直接插入沙箱；复用它的选择语义，不修改宿主公共控件。 |
 | `integrations/infinite-canvas/overlay/image-settings-panel.tsx` / `image-api.ts` | 控件和实际调用共用画布唯一的默认图片配置，并通过 bootstrap 传入子应用；实际请求继续复用游乐场的归一化/请求构造。单次 n=1，子应用图片请求最多并发 2；已生成结果的保存失败保留内存副本和 Run-ID，重试不提交生成。 |
 | `integrations/infinite-canvas/overlay/image-settings.ts` / `video-settings.ts` | 组件与原有辅助函数的完整导出入口；与 TSX 面板分离，保留所有上游调用方使用的公开接口。 |
-| `integrations/infinite-canvas/overlay/video-request.ts` / `video-settings-panel.tsx` | Sora 单参考图 multipart、明确时长与尺寸；豆包 JSON 参考图角色；对不支持的输入明确拒绝。视频下载仍走既有 owner-check 内容端点。 |
+| `integrations/infinite-canvas/overlay/video-request.ts` / `video-settings-panel.tsx` | 画布标准视频插件使用统一 JSON 字段 `duration`、`resolution`、`aspect_ratio` 和公开参考 URL；Sora 保留已验证的本地 multipart，豆包保留 JSON `content` 角色转换。URL-only 模型不会把私有画布素材伪装成 multipart 或自动公开。视频下载仍走既有 owner-check 内容端点。 |
 | `integrations/infinite-canvas/overlay/project.tsx` / `storage.ts` | 项目目录摘要、按需打开、失败重试；列表重命名和导出读取完整原文档，避免空摘要覆盖项目。资产上传携带来源运行并由服务器检查 owner。 |
 | `integrations/infinite-canvas/overlay/messages.ts` | 子应用原有中英文两语言的新增界面和失败消息；不另加语言或外部运行依赖。 |
 | `controller/canvas_run.go` | 对归档 JSON / SSE 识别业务错误、成功终态和截断，不改变既有账单结算；保存状态仍与生成状态独立。 |
@@ -483,3 +483,16 @@ node integrations/infinite-canvas/browser-startup-check.mjs
 - 宿主桥单元测试必须验证固定路径、`credentials=omit` 和无 Authorization。
 - 画布浏览器验收必须加载本地精选提示词、封面和“精选提示词”分类。
 - 本轮没有把该 479 MB 媒体集合打包进 new-api 镜像，也没有引入新的数据库表。
+
+## 2026-11-11 视频统一请求协议修复
+
+线上请求 `202611101818311383838008268d9d6SeSlVcur` 由 `zhiqi-video` 在 `stage=parse_request` 以 `ZeeQi video API accepts JSON only` 拒绝。根因不是上游账号或 Key，而是画布旧的通用 OpenAI 视频构造器把所有非 Sora/豆包模型都编码为 multipart，并发送 `seconds`/`size`；这同时违背本站 `/docs/videos` 的统一字段契约，也会触发 H3 对 `size` 的明确拒绝。
+
+修复内容：
+
+- 标准视频分支统一发送 JSON，字段为 `model`、`prompt`、`duration`、`resolution`、`aspect_ratio`；单图使用 `input_reference`，多图使用 `reference_image_urls`。
+- Sora 继续使用它已验证的本地 `input_reference`/首尾帧 multipart；豆包继续使用 `metadata.content` 的 JSON 角色格式，避免把两个已验证的上游适配破坏。
+- URL-only 模型只接受公开 `http(s)` 参考图；浏览器本地 `blob:`、`data:` 或私有 `storageKey` 在提交前返回明确错误，不自动把私有画布资产上传到 Tools 图床。
+- 浏览器产品回归新增 H3 JSON 和 Sora multipart 两条请求契约断言；两条请求、图片保存重试、提示词库、主题和项目恢复均通过。
+
+边界：本轮不接入 Tools 图床/媒体床会话委托，不修改数据库，不新增凭据路径。需要让 URL-only 模型使用私有画布参考图时，必须另行设计并授权跨服务可见性、归属、有效期和清理闭环，不能在前端隐藏式公开。

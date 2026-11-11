@@ -5,6 +5,12 @@ import { videoAdapterForModel, type AiConfig } from "./config";
 import type { ReferenceImage } from "../types/image";
 import i18n from "./messages";
 
+function publicReferenceURL(image: ReferenceImage): string {
+  const url = typeof image.url === "string" ? image.url.trim() : "";
+  if (/^https?:\/\//i.test(url)) return url;
+  throw new Error(i18n.t("embedded.videoPublicReferenceRequired"));
+}
+
 export async function canvasVideoBody(config: AiConfig, selection: string, prompt: string, references: ReferenceImage[], options?: { signal?: AbortSignal; videos?: unknown[]; audios?: unknown[] }): Promise<FormData | string> {
   const adapter = videoAdapterForModel(selection);
   if (adapter === "unsupported") throw new Error(i18n.t("embedded.videoUnsupported"));
@@ -13,7 +19,6 @@ export async function canvasVideoBody(config: AiConfig, selection: string, promp
   if (!Number.isInteger(seconds) || seconds < 1 || seconds > 3600) throw new Error(i18n.t("apiErrors.videoTaskCreateFailed"));
   if (adapter === "sora" && ![4, 8, 12].includes(seconds)) throw new Error(i18n.t("embedded.soraDuration"));
   const ratio = inferVideoRatio(config.size);
-  const size = /^\d+x\d+$/.test(config.size) ? config.size : computeVideoSize(config.vquality || "720", ratio === "auto" ? "16:9" : ratio);
   if (adapter === "doubao") {
     if (config.videoMode !== "reference" && references.length > 2) throw new Error(i18n.t("embedded.videoFramesLimit"));
     const content = await Promise.all(references.map(async (image, index) => {
@@ -25,19 +30,38 @@ export async function canvasVideoBody(config: AiConfig, selection: string, promp
     if (references.length && config.videoMode !== "reference") outputRatio = "adaptive";
     return JSON.stringify({ model: config.model, prompt, seconds, metadata: {
       content, ratio: outputRatio,
-      resolution: (config.vquality || "720").replace(/p$/, "") + "p",
+      resolution: `${(config.vquality || "720").replace(/p$/, "")}p`,
       generate_audio: config.videoGenerateAudio !== "false", watermark: config.videoWatermark === "true",
     } });
   }
-  if (references.length > 1) throw new Error(i18n.t("embedded.videoSingleReference"));
-  const form = new FormData();
-  form.set("model", config.model);
-  form.set("prompt", prompt);
-  form.set("seconds", String(seconds));
-  form.set("size", size);
-  if (references[0]) {
-    const image = references[0];
-    form.append("input_reference", dataUrlToFile({ ...image, dataUrl: await imageToDataUrl(image, options) }));
+  if (adapter === "sora") {
+    const size = /^\d+x\d+$/.test(config.size) ? config.size : computeVideoSize(config.vquality || "720", ratio === "auto" ? "16:9" : ratio);
+    const mode = config.videoMode === "reference" ? "reference" : "frames";
+    const files = await Promise.all(references.map(async (image) => dataUrlToFile({ ...image, dataUrl: await imageToDataUrl(image, options) })));
+    const form = new FormData();
+    form.set("model", config.model);
+    form.set("prompt", prompt);
+    form.set("seconds", String(seconds));
+    form.set("size", size);
+    form.set("generate_audio", String(config.videoGenerateAudio !== "false"));
+    form.set("watermark", String(config.videoWatermark === "true"));
+    form.set("mode", mode);
+    if (mode === "frames") {
+      if (files[0]) form.append("first_frame", files[0], "first.png");
+      if (files[1]) form.append("last_frame", files[1], "last.png");
+    } else {
+      files.forEach((file) => form.append("image[]", file, "ref.png"));
+    }
+    return form;
   }
-  return form;
+  const payload: Record<string, unknown> = {
+    model: config.model,
+    prompt,
+    duration: seconds,
+    resolution: `${(config.vquality || "720").replace(/p$/, "")}p`,
+    aspect_ratio: ratio === "auto" ? "16:9" : ratio,
+  };
+  if (references.length === 1) payload.input_reference = publicReferenceURL(references[0]);
+  else if (references.length > 1) payload.reference_image_urls = references.map(publicReferenceURL);
+  return JSON.stringify(payload);
 }
