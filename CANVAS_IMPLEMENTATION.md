@@ -496,3 +496,36 @@ node integrations/infinite-canvas/browser-startup-check.mjs
 - 浏览器产品回归新增 H3 JSON 和 Sora multipart 两条请求契约断言；两条请求、图片保存重试、提示词库、主题和项目恢复均通过。
 
 边界：本轮不接入 Tools 图床/媒体床会话委托，不修改数据库，不新增凭据路径。需要让 URL-only 模型使用私有画布参考图时，必须另行设计并授权跨服务可见性、归属、有效期和清理闭环，不能在前端隐藏式公开。
+
+## 2026-11-11 画布视频本地参考图发布修复
+
+上一节的“未接入 Tools 图床”结论已由本节的受限发布路径取代。此次只解决 URL-only 视频模型无法使用画布本地参考图的问题，不把画布私有资源改成固定公开地址，也不新增第二套用户凭据或数据库发布表。
+
+### 设计与数据流
+
+1. 内嵌画布继续用现有 `storageKey` 保存参考图。浏览器只通过固定桥操作 `assets.publish_image` 发送资产 ID，不发送 URL、目标地址、认证头或 API Key。
+2. New API 的 `/api/canvas/assets/:asset_id/public-url` 只接受已登录画布会话；服务端按 `user_id + asset_id + deleted_at=0` 查询，确认资产为 JPEG、PNG 或 WebP 图片后从私有画布存储读取。
+3. New API 服务端使用运行时环境变量 `CANVAS_IMAGE_UPLOAD_API_KEY`，向固定的 Tools `POST /image-upload/upload` 发送单文件 multipart。Key 只存在蓝绿容器环境，不进入前端 bundle、消息桥、请求体、日志和 Git 提交。
+4. 服务端只返回 Tools 响应中的 HTTPS 图片 URL；标准视频适配器将其写入 `input_reference` 或 `reference_image_urls`。已有公开 HTTPS 图片直接透传，Sora multipart 和豆包 JSON 适配不变。
+5. Tools 公共图床沿用默认临时保存策略（当前为 7 天）；不新增 New API 表，也不把 `canvas_assets` 与 Tools `media_objects` 做持久映射。上传失败先终止视频请求，不产生付费上游提交。
+
+### 代码职责与限制
+
+| 路径 | 调整 |
+| --- | --- |
+| `service/canvas_image_publish.go` | owner-check、图片类型/20MiB 限制、固定 Tools multipart、响应 URL 校验和服务端 Key 边界 |
+| `controller/canvas.go` | 新增发布 URL 控制器及配置缺失、上游失败、超限的结构化状态 |
+| `router/canvas-router.go` | 注册 `/assets/:asset_id/public-url` 会话路由 |
+| `web/src/features/canvas/bridge.ts` | 仅增加固定 `assets.publish_image` 映射，不开放代理能力 |
+| `integrations/infinite-canvas/overlay/video-request.ts` | URL-only 模型遇到本地 `storageKey` 时请求服务端发布；公开 HTTPS 仍透传 |
+| `integrations/infinite-canvas/overlay/bridge.ts` | `canvasData` 支持取消信号，视频取消时同步终止发布请求 |
+| `integrations/infinite-canvas/browser-product-check.mjs` | fixture 验收本地参考图发布、H3 JSON 和 Sora multipart |
+| `service/canvas_image_publish_test.go` / `web/src/features/canvas/__tests__/bridge.test.ts` | 上传认证/multipart/URL 契约与固定桥操作单测 |
+
+### 阶段自检
+
+- Go 服务上传协议测试通过；服务端只向固定 Tools 地址发送 `Authorization: Bearer`，响应 URL 必须为固定 HTTPS 图床前缀。
+- 画布生产构建的上游锁定 SHA、`tsc --noEmit` 和 Vite 构建通过。
+- Vitest 桥接测试 7 项通过；浏览器产品 fixture 返回 `generationRequests=2`、`assetUploads=3`、`publishedAssetRequests=1`、`videoRequests=3`，分别覆盖 H3 无图、H3 本地图和 Sora 本地图；无页面错误。
+- `deploy/docker-compose.yml` 的 blue/green 槽位均只引用 `${CANVAS_IMAGE_UPLOAD_API_KEY}`。实际 Key 写在服务器本地 `deploy/.env`，不纳入本次提交；提交前执行源码和产物秘密扫描。
+- 未修改 Tools 项目源码、Tools 数据库或画布数据库结构；不直接公开 `/api/canvas/assets/.../content`。

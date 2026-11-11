@@ -59,6 +59,13 @@ describe('Canvas bridge operations', () => {
     expect((target.body as FormData).get('model')).toBe('image-model')
     expect(target).not.toHaveProperty('Authorization')
   })
+  it('publishes only an owner-scoped asset identifier', () => {
+    const target = canvasEndpoint('assets.publish_image', { id: 'image:one' })
+    expect(target.path).toBe('/assets/image%3Aone/public-url')
+    expect(target.method).toBe('POST')
+    expect(target).not.toHaveProperty('body')
+    expect(target).not.toHaveProperty('Authorization')
+  })
   it('maps the bundled prompt catalog to a public same-origin path', () => {
     const target = canvasEndpoint('prompts.catalog', {})
     expect(target.path).toBe('/prompt-catalog/data/catalog.json')

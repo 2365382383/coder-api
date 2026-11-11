@@ -15,6 +15,7 @@ const expectedGroup = "Codex特惠";
 const encodedGroup = encodeURIComponent(expectedGroup);
 let generationRequests = 0;
 let assetUploads = 0;
+let publishedAssetRequests = 0;
 let lastGroupHeader = "";
 const settings = new Map();
 const assets = new Map();
@@ -180,6 +181,14 @@ const server = http.createServer(async (request, response) => {
       send(response, 200, envelope({ asset_id: url.pathname.split("/").at(-2), mime: "image/png" }));
       return;
     }
+    if (url.pathname.startsWith("/api/canvas/assets/") && url.pathname.endsWith("/public-url") && request.method === "POST") {
+      const assetID = url.pathname.split("/").at(-2);
+      const content = assets.get(`/api/canvas/assets/${assetID}/content`);
+      assert.ok(content, "published canvas asset must already belong to the fixture user");
+      publishedAssetRequests += 1;
+      send(response, 200, envelope({ url: `https://coderapi.vip/image-upload/m_fixture-${publishedAssetRequests}` }));
+      return;
+    }
     if (url.pathname.startsWith("/api/canvas/assets/") && request.method === "GET") {
       const data = assets.get(url.pathname);
       if (data) send(response, 200, data, "image/png");
@@ -303,16 +312,20 @@ try {
   await frame.getByRole("button", { name: "开始生成", exact: true }).click();
   await frame.getByText("Fixture video stops after checking request fields", { exact: true }).first().waitFor();
   assert.equal(videoRequests, 1);
-  await frame.locator(".canvas-model-picker-text").last().click();
-  await frame.getByText("video-sora", { exact: true }).last().click();
   await frame.locator('input[type="file"]').first().setInputFiles({ name: "ref.png", mimeType: "image/png", buffer: Buffer.from(png, "base64") });
   await frame.getByRole("img", { name: "ref.png", exact: true }).waitFor();
-  assert.equal(await videoPrompt.inputValue(), "视频请求契约验证", "the video prompt must survive reference upload");
   await frame.getByRole("button", { name: "开始生成", exact: true }).click();
   await frame.getByText("Fixture video stops after checking request fields", { exact: true }).first().waitFor();
   assert.equal(videoRequests, 2);
+  assert.equal(publishedAssetRequests, 1);
+  await frame.locator(".canvas-model-picker-text").last().click();
+  await frame.getByText("video-sora", { exact: true }).last().click();
+  assert.equal(await videoPrompt.inputValue(), "视频请求契约验证", "the video prompt must survive reference upload");
+  await frame.getByRole("button", { name: "开始生成", exact: true }).click();
+  await frame.getByText("Fixture video stops after checking request fields", { exact: true }).first().waitFor();
+  assert.equal(videoRequests, 3);
   assert.deepEqual(errors, []);
-  console.log(JSON.stringify({ result: "PASS", generationRequests, assetUploads, lastGroupHeader, projectReads, videoRequests, themeSync: true }));
+  console.log(JSON.stringify({ result: "PASS", generationRequests, assetUploads, publishedAssetRequests, lastGroupHeader, projectReads, videoRequests, themeSync: true }));
 } catch (error) {
   console.error(error.message);
   const frameDetails = [];

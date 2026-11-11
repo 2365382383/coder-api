@@ -25,6 +25,7 @@ func SetCanvasRouter(router *gin.Engine) {
 	canvas.DELETE("/state/:namespace/:entry_key", controller.CanvasSettings)
 	canvas.GET("/assets", controller.ListCanvasAssets)
 	canvas.POST("/assets/import", controller.ImportCanvasGeneratedAsset)
+	canvas.POST("/assets/:asset_id/public-url", controller.PublishCanvasImage)
 	canvas.PUT("/assets/:asset_id/content", controller.UploadCanvasAsset)
 	canvas.GET("/assets/:asset_id", controller.CanvasAsset)
 	canvas.DELETE("/assets/:asset_id", controller.CanvasAsset)

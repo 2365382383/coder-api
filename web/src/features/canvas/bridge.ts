@@ -111,6 +111,11 @@ export function canvasEndpoint(
         method: 'PUT',
         body: payload.blob,
       }
+    case 'assets.publish_image':
+      return {
+        path: `/assets/${resource(payload)}/public-url`,
+        method: 'POST',
+      }
     case 'assets.content':
       return {
         path: `/assets/${resource(payload)}/content`,

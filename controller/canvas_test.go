@@ -47,6 +47,7 @@ func canvasControllerFixture(t *testing.T) *gin.Engine {
 	engine.PUT("/api/canvas/state/:namespace/:entry_key", CanvasSettings)
 	engine.DELETE("/api/canvas/state/:namespace/:entry_key", CanvasSettings)
 	engine.GET("/api/canvas/assets", ListCanvasAssets)
+	engine.POST("/api/canvas/assets/:asset_id/public-url", PublishCanvasImage)
 	engine.PUT("/api/canvas/assets/:asset_id/content", UploadCanvasAsset)
 	engine.GET("/api/canvas/assets/:asset_id/content", CanvasAsset)
 	engine.DELETE("/api/canvas/assets/:asset_id", CanvasAsset)
@@ -98,6 +99,8 @@ func TestCanvasProjectsAssetsAndConflicts(t *testing.T) {
 	assert.NotContains(t, response.Body.String(), "blob:temporary")
 	response = perform(http.MethodPut, "/api/canvas/state/app_state/config", `{"revision":0,"value":"{\"apiKey\":\"secret-canary\"}"}`, "application/json", "")
 	assert.Equal(t, http.StatusUnprocessableEntity, response.Code)
+	response = perform(http.MethodPost, "/api/canvas/assets/image:one/public-url", "", "", "")
+	assert.Equal(t, http.StatusServiceUnavailable, response.Code, response.Body.String())
 }
 
 func TestCanvasGenerationIdempotencyAndArchive(t *testing.T) {

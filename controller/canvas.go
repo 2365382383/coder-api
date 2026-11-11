@@ -34,6 +34,12 @@ func canvasError(c *gin.Context, err error) {
 	case errors.Is(err, service.ErrCanvasAssetTooLarge):
 		status = http.StatusRequestEntityTooLarge
 		message = err.Error()
+	case errors.Is(err, service.ErrCanvasImagePublishTooLarge):
+		status = http.StatusRequestEntityTooLarge
+		message = "Canvas image is too large for public upload"
+	case errors.Is(err, service.ErrCanvasImagePublishNotConfigured), errors.Is(err, service.ErrCanvasImagePublishFailed):
+		status = http.StatusServiceUnavailable
+		message = "Canvas image publishing is temporarily unavailable"
 	}
 	if status == http.StatusInternalServerError {
 		common.SysError("canvas operation failed: " + err.Error())
@@ -266,6 +272,15 @@ func UploadCanvasAsset(c *gin.Context) {
 		return
 	}
 	common.ApiSuccess(c, asset)
+}
+
+func PublishCanvasImage(c *gin.Context) {
+	publicURL, err := service.PublishCanvasAssetImage(c.Request.Context(), c.GetInt("id"), c.Param("asset_id"))
+	if err != nil {
+		canvasError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"url": publicURL})
 }
 
 func CanvasAsset(c *gin.Context) {

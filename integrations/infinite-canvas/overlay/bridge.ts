@@ -139,8 +139,9 @@ export async function canvasRequest(
 export async function canvasData<T>(
   operation: string,
   payload: Record<string, unknown> = {},
+  signal?: AbortSignal,
 ): Promise<T> {
-  const response = await canvasRequest(operation, payload);
+  const response = await canvasRequest(operation, payload, signal);
   const mediaErrorKey = operation === "assets.upload" && typeof payload.run_id === "string" ? `media:${payload.run_id}` : "";
   const text = await response.text();
   type CanvasEnvelope = {

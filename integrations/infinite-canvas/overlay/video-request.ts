@@ -4,11 +4,17 @@ import { imageToDataUrl } from "../services/image-storage";
 import { videoAdapterForModel, type AiConfig } from "./config";
 import type { ReferenceImage } from "../types/image";
 import i18n from "./messages";
+import { canvasData } from "./bridge";
 
-function publicReferenceURL(image: ReferenceImage): string {
+async function publicReferenceURL(image: ReferenceImage, signal?: AbortSignal): Promise<string> {
   const url = typeof image.url === "string" ? image.url.trim() : "";
   if (/^https?:\/\//i.test(url)) return url;
-  throw new Error(i18n.t("embedded.videoPublicReferenceRequired"));
+  const storageKey = typeof image.storageKey === "string" ? image.storageKey.trim() : "";
+  if (!storageKey) throw new Error(i18n.t("embedded.videoPublicReferenceRequired"));
+  const published = await canvasData<{ url?: unknown }>("assets.publish_image", { id: storageKey }, signal);
+  const publicURL = typeof published?.url === "string" ? published.url.trim() : "";
+  if (!/^https:\/\//i.test(publicURL)) throw new Error(i18n.t("embedded.videoPublicReferenceRequired"));
+  return publicURL;
 }
 
 export async function canvasVideoBody(config: AiConfig, selection: string, prompt: string, references: ReferenceImage[], options?: { signal?: AbortSignal; videos?: unknown[]; audios?: unknown[] }): Promise<FormData | string> {
@@ -61,7 +67,11 @@ export async function canvasVideoBody(config: AiConfig, selection: string, promp
     resolution: `${(config.vquality || "720").replace(/p$/, "")}p`,
     aspect_ratio: ratio === "auto" ? "16:9" : ratio,
   };
-  if (references.length === 1) payload.input_reference = publicReferenceURL(references[0]);
-  else if (references.length > 1) payload.reference_image_urls = references.map(publicReferenceURL);
+  if (references.length === 1) payload.input_reference = await publicReferenceURL(references[0], options?.signal);
+  else if (references.length > 1) {
+    const publicURLs: string[] = [];
+    for (const image of references) publicURLs.push(await publicReferenceURL(image, options?.signal));
+    payload.reference_image_urls = publicURLs;
+  }
   return JSON.stringify(payload);
 }
