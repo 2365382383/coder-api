@@ -34,7 +34,11 @@ New API 的图片工作台使用一份全局图片参数配置。Playground 与�
 | Gemini | 使用 `aspectRatio` 与 `imageSize` |
 | xAI | 使用 `aspect_ratio` 与 `resolution` |
 
-OpenAI 尺寸转换保证宽高按 16 像素对齐、单边不超过 3840，并满足 `3840x2160` 像素上限。`auto` 保持为 `size=auto`。
+工作台预设由 OpenAI 渠道适配器转换，生图、JSON 编辑和 multipart 编辑使用同一转换入口。预设转换保证宽高按 16 像素对齐、单边不超过 3840，并满足 `3840x2160` 像素上限。`auto` 保持为 `size=auto`。
+
+客户端显式提供 `size` 时保持原值，不使用工作台预设覆盖；没有提供尺寸或预设时，也不补写尺寸。公共 Images API 入口不按 `gpt-image-2` 前缀校验尺寸、输出格式或质量，不补写该模型族的默认值，具体参数合法性由上游判断。上游已有的模型必填、数量上限、旧 DALL-E 兼容与计费数量校验继续保留。
+
+`complexity`、`markup`、`svg`、`frame_count`、`frame_duration_ms` 使用已合并的上游 DTO 与转发实现。工作台的选项列表不构成客户端 API 请求的参数白名单。
 
 ## 配置边界
 
@@ -50,4 +54,10 @@ OpenAI 尺寸转换保证宽高按 16 像素对齐、单边不超过 3840，并�
 - 未声明图片端点的模型不会因名称或渠道类型进入图片工作台。
 - 两个页面均显示 `1K`、`2K`、`4K`。
 - OpenAI、Gemini、xAI 的请求字段符合各自协议。
+- OpenAI 生图、JSON 编辑和 multipart 编辑均保留原生参数，且工作台预设转换后不丢失尺寸；显式零值和 markup 文件保持不变。
+- 验证入口：`relay/helper/valid_image_request_test.go`、`relay/channel/openai/adaptor_image_test.go`；数量和溢出保护继续由 `relay/helper/openai_image_request_test.go` 覆盖。
 - 删除旧能力文件后，服务日志不再出现该文件的加载记录。
+
+本次参数边界恢复已通过 `relay/helper`、`relay/channel/openai`、`relay/channel/gemini`、`relay/channel/xai`、`pkg/imagecapability` 的完整包测试，以及 `relay`、`middleware` 的图片/Playground 集成用例。主模块 `go build ./...`、独立 relaykit 模块的 DTO 测试和 `GOWORK=off go build ./...` 均通过。
+
+Controller 图片/Playground 测试仍受已有测试编译错误阻塞：`auth_flow_test.go` 的两处 OAuth 函数调用缺少参数，`plugin_native_e2e_test.go` 的两处额度类型不匹配。使用原始 `9f4188d37` 的生产源码临时覆盖后可复现相同错误，不属于本次参数边界变更。

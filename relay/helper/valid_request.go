@@ -11,7 +11,6 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
-	"github.com/QuantumNous/new-api/pkg/imagecapability"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
@@ -19,18 +18,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 )
-
-const (
-	gptImage2MaxWidth  = 3840
-	gptImage2MaxHeight = 3840
-	gptImage2MaxPixels = 3840 * 2160
-)
-
-var gptImage2AllowedOutputFormats = map[string]struct{}{
-	"png":  {},
-	"jpeg": {},
-	"webp": {},
-}
 
 func GetAndValidateRequest(c *gin.Context, format types.RelayFormat) (request dto.Request, err error) {
 	relayMode := relayconstant.Path2RelayMode(c.Request.URL.Path)
@@ -276,20 +263,6 @@ func GetAndValidOpenAIImageRequest(c *gin.Context, relayMode int) (*dto.ImageReq
 			if imageRequest.N == nil || *imageRequest.N == 0 {
 				imageRequest.N = common.GetPointer(uint(1))
 			}
-			if err := resolveOpenAIImagePreset(imageRequest); err != nil {
-				return nil, err
-			}
-			if isGPTImage2Model(imageRequest.Model) {
-				if imageRequest.Quality == "" {
-					imageRequest.Quality = "auto"
-				}
-				if imageRequest.Size == "" {
-					imageRequest.Size = "1024x1024"
-				}
-				if err := validateGPTImage2Request(imageRequest); err != nil {
-					return nil, err
-				}
-			}
 
 			hasWatermark := formData.Has("watermark")
 			if hasWatermark {
@@ -325,20 +298,6 @@ func GetAndValidOpenAIImageRequest(c *gin.Context, relayMode int) (*dto.ImageReq
 				imageRequest.Quality = "auto"
 			}
 		}
-		if err := resolveOpenAIImagePreset(imageRequest); err != nil {
-			return nil, err
-		}
-		if isGPTImage2Model(imageRequest.Model) {
-			if imageRequest.Quality == "" {
-				imageRequest.Quality = "auto"
-			}
-			if imageRequest.Size == "" {
-				imageRequest.Size = "1024x1024"
-			}
-			if err := validateGPTImage2Request(imageRequest); err != nil {
-				return nil, err
-			}
-		}
 
 		//if imageRequest.Prompt == "" {
 		//	return nil, errors.New("prompt is required")
@@ -363,85 +322,6 @@ func GetAndValidOpenAIImageRequest(c *gin.Context, relayMode int) (*dto.ImageReq
 		return nil, err
 	}
 	return imageRequest, nil
-}
-
-func resolveOpenAIImagePreset(imageRequest *dto.ImageRequest) error {
-	if imageRequest == nil || imageRequest.Size != "" {
-		return nil
-	}
-	if imageRequest.AspectRatio == "" && imageRequest.Resolution == "" {
-		return nil
-	}
-	size, err := imagecapability.DimensionsFor(imageRequest.AspectRatio, imageRequest.Resolution)
-	if err != nil {
-		return err
-	}
-	imageRequest.Size = size
-	return nil
-}
-
-func isGPTImage2Model(model string) bool {
-	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(model)), "gpt-image-2")
-}
-
-func validateGPTImage2Request(imageRequest *dto.ImageRequest) error {
-	if imageRequest == nil {
-		return errors.New("image request is required")
-	}
-	if imageRequest.Size != "" && !strings.EqualFold(strings.TrimSpace(imageRequest.Size), "auto") {
-		width, height, err := parseImageSize(imageRequest.Size)
-		if err != nil {
-			return fmt.Errorf("size must use WIDTHxHEIGHT format for gpt-image-2")
-		}
-		if width%16 != 0 || height%16 != 0 {
-			return errors.New("size width and height must be divisible by 16 for gpt-image-2")
-		}
-		if width > gptImage2MaxWidth || height > gptImage2MaxHeight {
-			return fmt.Errorf("size must not exceed %dx%d for gpt-image-2", gptImage2MaxWidth, gptImage2MaxHeight)
-		}
-		if width*height > gptImage2MaxPixels {
-			return errors.New("size pixel count must not exceed 3840x2160 for gpt-image-2")
-		}
-		if width > height*3 || height > width*3 {
-			return errors.New("size aspect ratio must be between 1:3 and 3:1 for gpt-image-2")
-		}
-	}
-
-	if len(imageRequest.OutputFormat) > 0 {
-		outputFormat, err := jsonRawMessageString(imageRequest.OutputFormat)
-		if err != nil {
-			return errors.New("output_format must be a string for gpt-image-2")
-		}
-		if _, ok := gptImage2AllowedOutputFormats[outputFormat]; !ok {
-			return errors.New("output_format must be one of png, jpeg, or webp for gpt-image-2")
-		}
-	}
-
-	return nil
-}
-
-func parseImageSize(size string) (int, int, error) {
-	parts := strings.Split(strings.ToLower(strings.TrimSpace(size)), "x")
-	if len(parts) != 2 {
-		return 0, 0, errors.New("invalid image size")
-	}
-	width, err := strconv.Atoi(strings.TrimSpace(parts[0]))
-	if err != nil || width <= 0 {
-		return 0, 0, errors.New("invalid image width")
-	}
-	height, err := strconv.Atoi(strings.TrimSpace(parts[1]))
-	if err != nil || height <= 0 {
-		return 0, 0, errors.New("invalid image height")
-	}
-	return width, height, nil
-}
-
-func jsonRawMessageString(value json.RawMessage) (string, error) {
-	var output string
-	if err := common.Unmarshal(value, &output); err != nil {
-		return "", err
-	}
-	return strings.ToLower(strings.TrimSpace(output)), nil
 }
 
 func GetAndValidateClaudeRequest(c *gin.Context) (textRequest *dto.ClaudeRequest, err error) {

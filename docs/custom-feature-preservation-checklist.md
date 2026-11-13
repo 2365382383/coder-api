@@ -269,8 +269,12 @@
 ### P-14 Playground 图片请求构造、编辑与规格选项
 
 - 必须保留：GPT 图片请求按所需规格拆分；参考图编辑、直接预览/灯箱、质量/尺寸
-  选项和 `auto` 尺寸都能正确落到请求载荷。`auto` 是新增可选值，默认尺寸仍为
-  `1024x1024`，不得被意外改写。
+  选项和 `auto` 尺寸都能正确落到请求载荷。工作台自己的默认规格不能变成公共
+  Images API 的强制默认值；`gpt-image-2` 及后续型号的客户端没有提供 `size`、
+  `quality` 时应保持省略，旧模型兼容默认值仍沿用上游。
+- 必须保留：原生图片参数沿用上游转发设计，不恢复 `gpt-image-2*` 的本地尺寸或
+  输出格式白名单。工作台的画幅/分辨率转换只在对应渠道适配层执行，显式 `size`
+  优先，并覆盖生图、JSON 编辑与 multipart 编辑。
 - 当前位置：`relaykit/dto/openai_image.go`、`dto/image_capability.go`、
   `web/src/features/playground/components/playground-image-input.tsx`、
   `web/src/features/playground/hooks/use-playground-image-options.ts`、

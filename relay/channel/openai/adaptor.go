@@ -519,6 +519,16 @@ func (a *Adaptor) ConvertAudioRequest(c *gin.Context, info *relaycommon.RelayInf
 }
 
 func (a *Adaptor) ConvertImageRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.ImageRequest) (any, error) {
+	// Workbench presets are a local extension. Resolve them only for this
+	// protocol, preserving explicit provider sizes and omitted parameters.
+	if request.Size == "" && (request.AspectRatio != "" || request.Resolution != "") {
+		size, err := imagecapability.DimensionsFor(request.AspectRatio, request.Resolution)
+		if err != nil {
+			return nil, err
+		}
+		request.Size = size
+	}
+
 	switch info.RelayMode {
 	case relayconstant.RelayModeImagesEdits:
 		if isJSONRequest(c) {
@@ -651,13 +661,6 @@ func (a *Adaptor) ConvertImageRequest(c *gin.Context, info *relaycommon.RelayInf
 		return &requestBody, nil
 
 	default:
-		if request.Size == "" && (request.AspectRatio != "" || request.Resolution != "") {
-			size, err := imagecapability.DimensionsFor(request.AspectRatio, request.Resolution)
-			if err != nil {
-				return nil, err
-			}
-			request.Size = size
-		}
 		request.AspectRatio = ""
 		request.Resolution = ""
 		return request, nil
