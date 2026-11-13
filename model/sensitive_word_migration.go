@@ -171,7 +171,12 @@ func migrateSensitiveWordPolicy() error {
 		if promptErr != nil && !errors.Is(promptErr, gorm.ErrRecordNotFound) {
 			return promptErr
 		}
-		if enabledErr == nil || promptErr == nil {
+		var wordsOption Option
+		wordsErr := DB.Where(&Option{Key: "SensitiveWords"}).First(&wordsOption).Error
+		if wordsErr != nil && !errors.Is(wordsErr, gorm.ErrRecordNotFound) {
+			return wordsErr
+		}
+		if enabledErr == nil || promptErr == nil || wordsErr == nil {
 			policy.Enabled = enabledErr == nil && enabledOption.Value == "true"
 			policy.CheckPrompt = promptErr == nil && promptOption.Value == "true"
 		}

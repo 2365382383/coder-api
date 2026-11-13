@@ -16,13 +16,13 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { zodResolver } from '@hookform/resolvers/zod'
-import { useQuery } from '@tanstack/react-query'
-import { Pencil } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
-import { useForm } from 'react-hook-form'
-import { useTranslation } from 'react-i18next'
-import { toast } from 'sonner'
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useQuery } from "@tanstack/react-query";
+import { Pencil } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { useForm } from "react-hook-form";
+import { useTranslation } from "react-i18next";
+import { toast } from "sonner";
 
 import {
   SideDrawerSection,
@@ -30,10 +30,12 @@ import {
   sideDrawerFooterClassName,
   sideDrawerFormClassName,
   sideDrawerHeaderClassName,
-} from '@/components/drawer-layout'
-import { PermissionMatrix } from '@/components/permission-matrix'
-import { Button } from '@/components/ui/button'
-import { Combobox } from '@/components/ui/combobox'
+} from "@/components/drawer-layout";
+import { PasswordInput } from "@/components/password-input";
+import { PasswordStrength } from "@/components/password-strength";
+import { PermissionMatrix } from "@/components/permission-matrix";
+import { Button } from "@/components/ui/button";
+import { Combobox } from "@/components/ui/combobox";
 import {
   Form,
   FormControl,
@@ -42,9 +44,9 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
-} from '@/components/ui/form'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+} from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -52,7 +54,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select'
+} from "@/components/ui/select";
 import {
   Sheet,
   SheetClose,
@@ -61,9 +63,9 @@ import {
   SheetFooter,
   SheetHeader,
   SheetTitle,
-} from '@/components/ui/sheet'
-import { Switch } from '@/components/ui/switch'
-import { Textarea } from '@/components/ui/textarea'
+} from "@/components/ui/sheet";
+import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import {
   ADMIN_PERMISSION_ACTIONS,
   ADMIN_PERMISSION_RESOURCES,
@@ -71,15 +73,15 @@ import {
   hasPermission,
   normalizeAdminPermissions,
   type AdminPermissionMatrix,
-} from '@/lib/admin-permissions'
-import { getCurrencyDisplay, getCurrencyLabel } from '@/lib/currency'
-import { formatQuota, parseQuotaFromDollars } from '@/lib/format'
-import { handleServerError } from '@/lib/handle-server-error'
-import { accountPasswordSchema } from '@/lib/password-policy'
-import { ROLE } from '@/lib/roles'
-import { AuthOperationError } from '@/lib/secure-verification'
-import { requireServerSuccess } from '@/lib/server-error-message'
-import { useAuthStore } from '@/stores/auth-store'
+} from "@/lib/admin-permissions";
+import { getCurrencyDisplay, getCurrencyLabel } from "@/lib/currency";
+import { formatQuota, parseQuotaFromDollars } from "@/lib/format";
+import { handleServerError } from "@/lib/handle-server-error";
+import { accountPasswordSchema } from "@/lib/password-policy";
+import { ROLE } from "@/lib/roles";
+import { AuthOperationError } from "@/lib/secure-verification";
+import { requireServerSuccess } from "@/lib/server-error-message";
+import { useAuthStore } from "@/stores/auth-store";
 
 import {
   createUser,
@@ -87,60 +89,62 @@ import {
   getUser,
   getGroups,
   getPermissionCatalog,
-} from '../api'
-import { BINDING_FIELDS, ERROR_MESSAGES, SUCCESS_MESSAGES } from '../constants'
+} from "../api";
+import { BINDING_FIELDS, ERROR_MESSAGES, SUCCESS_MESSAGES } from "../constants";
 import {
   userFormSchema,
   type UserFormValues,
   USER_FORM_DEFAULT_VALUES,
   transformFormDataToPayload,
   transformUserToFormDefaults,
-} from '../lib'
-import type { User } from '../types'
-import { UserQuotaDialog } from './user-quota-dialog'
-import { useUsers } from './users-provider'
+} from "../lib";
+import type { User } from "../types";
+import { UserQuotaDialog } from "./user-quota-dialog";
+import { useUsers } from "./users-provider";
 
 type UsersMutateDrawerProps = {
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  currentRow?: User
-}
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  currentRow?: User;
+};
 
 export function UsersMutateDrawer({
   open,
   onOpenChange,
   currentRow,
 }: UsersMutateDrawerProps) {
-  const { t } = useTranslation()
-  const isUpdate = !!currentRow
-  const { triggerRefresh, requestVerification } = useUsers()
-  const currentUser = useAuthStore((s) => s.auth.user)
-  const [isSubmitting, setIsSubmitting] = useState(false)
-  const [quotaDialogOpen, setQuotaDialogOpen] = useState(false)
+  const { t } = useTranslation();
+  const isUpdate = !!currentRow;
+  const { triggerRefresh, requestVerification } = useUsers();
+  const currentUser = useAuthStore((s) => s.auth.user);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [quotaDialogOpen, setQuotaDialogOpen] = useState(false);
   // Matrix as loaded from the server; an unchanged matrix is not resubmitted so
   // routine edits of an administrator do not require step-up verification.
-  const loadedPermissions = useRef<AdminPermissionMatrix | undefined>(undefined)
+  const loadedPermissions = useRef<AdminPermissionMatrix | undefined>(
+    undefined,
+  );
 
   // Fetch groups
   const { data: groupsData } = useQuery({
-    queryKey: ['groups'],
+    queryKey: ["groups"],
     queryFn: async () => requireServerSuccess(await getGroups()),
     staleTime: 5 * 60 * 1000,
-  })
+  });
 
-  const groups = groupsData?.data || []
+  const groups = groupsData?.data || [];
 
   // Permission catalog is owned by the backend; fetched once and reused.
   const { data: permissionCatalog = EMPTY_PERMISSION_CATALOG } = useQuery({
-    queryKey: ['admin-permission-catalog'],
+    queryKey: ["admin-permission-catalog"],
     queryFn: async () => requireServerSuccess(await getPermissionCatalog()),
     staleTime: 5 * 60 * 1000,
-  })
+  });
 
   const form = useForm<UserFormValues>({
     resolver: zodResolver(userFormSchema),
     defaultValues: USER_FORM_DEFAULT_VALUES,
-  })
+  });
 
   // Load existing data when updating
   useEffect(() => {
@@ -149,46 +153,46 @@ export function UsersMutateDrawer({
       getUser(currentRow.id)
         .then((result) => {
           if (result.success && result.data) {
-            loadedPermissions.current = result.data.admin_permissions
-            form.reset(transformUserToFormDefaults(result.data))
+            loadedPermissions.current = result.data.admin_permissions;
+            form.reset(transformUserToFormDefaults(result.data));
           } else {
-            handleServerError(result, t('Failed to load'))
+            handleServerError(result, t("Failed to load"));
           }
         })
-        .catch((error) => handleServerError(error, t('Failed to load')))
+        .catch((error) => handleServerError(error, t("Failed to load")));
     } else if (open && !isUpdate) {
       // For create, reset to defaults
-      form.reset(USER_FORM_DEFAULT_VALUES)
+      form.reset(USER_FORM_DEFAULT_VALUES);
     }
-  }, [open, isUpdate, currentRow, form, t])
+  }, [open, isUpdate, currentRow, form, t]);
 
-  const { meta: currencyMeta } = getCurrencyDisplay()
-  const currencyLabel = getCurrencyLabel()
-  const tokensOnly = currencyMeta.kind === 'tokens'
+  const { meta: currencyMeta } = getCurrencyDisplay();
+  const currencyLabel = getCurrencyLabel();
+  const tokensOnly = currencyMeta.kind === "tokens";
 
-  const currentQuotaRaw = form.watch('quota_dollars') || 0
-  const selectedRole = form.watch('role')
-  const canEditAdminPermissions = currentUser?.role === ROLE.SUPER_ADMIN
-  const targetIsAdmin = (selectedRole ?? currentRow?.role ?? 0) >= ROLE.ADMIN
+  const currentQuotaRaw = form.watch("quota_dollars") || 0;
+  const selectedRole = form.watch("role");
+  const canEditAdminPermissions = currentUser?.role === ROLE.SUPER_ADMIN;
+  const targetIsAdmin = (selectedRole ?? currentRow?.role ?? 0) >= ROLE.ADMIN;
 
   const onSubmit = async (data: UserFormValues) => {
     if (!isUpdate || data.password) {
-      if (!accountPasswordSchema.safeParse(data.password ?? '').success) {
-        form.setError('password', {
-          type: 'manual',
-          message: t('Password must contain between 8 and 128 characters.'),
-        })
-        return
+      if (!accountPasswordSchema.safeParse(data.password ?? "").success) {
+        form.setError("password", {
+          type: "manual",
+          message: t("Password must contain between 8 and 128 characters."),
+        });
+        return;
       }
     }
 
-    setIsSubmitting(true)
+    setIsSubmitting(true);
     try {
       const payload = transformFormDataToPayload(
         data,
         currentRow?.id,
-        permissionCatalog
-      )
+        permissionCatalog,
+      );
       // Safety fields are intentionally patch-like. Sending their form defaults
       // during an unrelated profile edit could overwrite violations recorded
       // after this drawer loaded.
@@ -197,11 +201,11 @@ export function UsersMutateDrawer({
         form.formState.dirtyFields.sensitive_word_violation_count
       ) {
         payload.sensitive_word_violation_count =
-          data.sensitive_word_violation_count ?? 0
+          data.sensitive_word_violation_count ?? 0;
       }
       if (isUpdate && form.formState.dirtyFields.sensitive_word_whitelist) {
         payload.sensitive_word_whitelist =
-          data.sensitive_word_whitelist === true
+          data.sensitive_word_whitelist === true;
       }
       if (
         isUpdate &&
@@ -210,130 +214,130 @@ export function UsersMutateDrawer({
           JSON.stringify(
             normalizeAdminPermissions(
               loadedPermissions.current,
-              permissionCatalog
-            )
+              permissionCatalog,
+            ),
           )
       ) {
-        delete payload.admin_permissions
+        delete payload.admin_permissions;
       }
       // Resetting a password, rewriting admin permissions, or creating an
       // administrator changes who can sign in or what they may do.
-      let proofToken: string | undefined
+      let proofToken: string | undefined;
       if (isUpdate && currentRow) {
         if (payload.password || payload.admin_permissions) {
           const proof = await requestVerification({
-            scope: 'admin.user.update',
+            scope: "admin.user.update",
             context: { user_id: currentRow.id },
-            title: t('Verify to update user credentials'),
+            title: t("Verify to update user credentials"),
             description: t(
-              'Confirm your identity before changing the account {{username}}.',
-              { username: currentRow.username }
+              "Confirm your identity before changing the account {{username}}.",
+              { username: currentRow.username },
             ),
-          })
-          if (!proof) return
-          proofToken = proof.proof_token
+          });
+          if (!proof) return;
+          proofToken = proof.proof_token;
         }
       } else if ((payload.role ?? 0) >= ROLE.ADMIN) {
         const proof = await requestVerification({
-          scope: 'admin.user.create',
+          scope: "admin.user.create",
           context: { role: payload.role ?? ROLE.ADMIN },
-          title: t('Verify to create administrator'),
+          title: t("Verify to create administrator"),
           description: t(
-            'Confirm your identity before creating an administrator account.'
+            "Confirm your identity before creating an administrator account.",
           ),
-        })
-        if (!proof) return
-        proofToken = proof.proof_token
+        });
+        if (!proof) return;
+        proofToken = proof.proof_token;
       }
       const result = isUpdate
         ? await updateUser(
             payload as typeof payload & { id: number },
-            proofToken
+            proofToken,
           )
-        : await createUser(payload, proofToken)
+        : await createUser(payload, proofToken);
 
       if (result.success) {
         toast.success(
           isUpdate
             ? t(SUCCESS_MESSAGES.USER_UPDATED)
-            : t(SUCCESS_MESSAGES.USER_CREATED)
-        )
-        onOpenChange(false)
-        triggerRefresh()
+            : t(SUCCESS_MESSAGES.USER_CREATED),
+        );
+        onOpenChange(false);
+        triggerRefresh();
       } else {
-        handleServerError(result, t(ERROR_MESSAGES.CREATE_FAILED))
+        handleServerError(result, t(ERROR_MESSAGES.CREATE_FAILED));
       }
     } catch (error) {
       handleServerError(
         AuthOperationError.from(error),
-        t(ERROR_MESSAGES.UNEXPECTED)
-      )
+        t(ERROR_MESSAGES.UNEXPECTED),
+      );
     } finally {
-      setIsSubmitting(false)
+      setIsSubmitting(false);
     }
-  }
+  };
 
   const refreshUserData = async () => {
-    if (!currentRow) return
+    if (!currentRow) return;
     try {
-      const result = requireServerSuccess(await getUser(currentRow.id))
+      const result = requireServerSuccess(await getUser(currentRow.id));
       if (result.success && result.data) {
-        loadedPermissions.current = result.data.admin_permissions
-        form.reset(transformUserToFormDefaults(result.data))
+        loadedPermissions.current = result.data.admin_permissions;
+        form.reset(transformUserToFormDefaults(result.data));
       }
-      triggerRefresh()
+      triggerRefresh();
     } catch (error) {
-      handleServerError(error, t('Failed to load'))
+      handleServerError(error, t("Failed to load"));
     }
-  }
+  };
 
   return (
     <>
       <Sheet
         open={open}
         onOpenChange={(v) => {
-          onOpenChange(v)
+          onOpenChange(v);
           if (!v) {
-            form.reset()
+            form.reset();
           }
         }}
       >
         <SheetContent
-          side='left'
-          className={sideDrawerContentClassName('sm:max-w-[600px]')}
+          side="left"
+          className={sideDrawerContentClassName("sm:max-w-[600px]")}
         >
           <SheetHeader className={sideDrawerHeaderClassName()}>
             <SheetTitle>
-              {isUpdate ? t('Update') : t('Create')} {t('User')}
+              {isUpdate ? t("Update") : t("Create")} {t("User")}
             </SheetTitle>
             <SheetDescription>
               {isUpdate
-                ? t('Update the user by providing necessary info.')
-                : t('Add a new user by providing necessary info.')}
+                ? t("Update the user by providing necessary info.")
+                : t("Add a new user by providing necessary info.")}
             </SheetDescription>
           </SheetHeader>
           <Form {...form}>
             <form
-              id='user-form'
+              id="user-form"
               onSubmit={form.handleSubmit(onSubmit)}
               className={sideDrawerFormClassName()}
             >
               {/* Basic Information */}
               <SideDrawerSection>
-                <h3 className='text-sm font-medium'>
-                  {t('Basic Information')}
+                <h3 className="text-sm font-medium">
+                  {t("Basic Information")}
                 </h3>
 
                 <FormField
                   control={form.control}
-                  name='username'
+                  name="username"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>{t('Username')}</FormLabel>
+                      <FormLabel>{t("Username")}</FormLabel>
                       <FormControl>
                         <Input
                           {...field}
-                          placeholder={t('Enter username')}
+                          placeholder={t("Enter username")}
                           disabled={isUpdate}
                         />
                       </FormControl>
@@ -345,14 +349,14 @@ export function UsersMutateDrawer({
                 {!isUpdate && (
                   <FormField
                     control={form.control}
-                    name='role'
+                    name="role"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>{t('Role')}</FormLabel>
+                        <FormLabel>{t("Role")}</FormLabel>
                         <Select
                           items={[
-                            { value: '1', label: t('Common User') },
-                            { value: '10', label: t('Admin') },
+                            { value: "1", label: t("Common User") },
+                            { value: "10", label: t("Admin") },
                           ]}
                           onValueChange={(value) =>
                             value !== null &&
@@ -362,15 +366,15 @@ export function UsersMutateDrawer({
                         >
                           <FormControl>
                             <SelectTrigger>
-                              <SelectValue placeholder={t('Select a role')} />
+                              <SelectValue placeholder={t("Select a role")} />
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent alignItemWithTrigger={false}>
                             <SelectGroup>
-                              <SelectItem value='1'>
-                                {t('Common User')}
+                              <SelectItem value="1">
+                                {t("Common User")}
                               </SelectItem>
-                              <SelectItem value='10'>{t('Admin')}</SelectItem>
+                              <SelectItem value="10">{t("Admin")}</SelectItem>
                             </SelectGroup>
                           </SelectContent>
                         </Select>
@@ -385,18 +389,18 @@ export function UsersMutateDrawer({
 
                 <FormField
                   control={form.control}
-                  name='display_name'
+                  name="display_name"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>{t('Display Name')}</FormLabel>
+                      <FormLabel>{t("Display Name")}</FormLabel>
                       <FormControl>
                         <Input
                           {...field}
-                          placeholder={t('Enter display name')}
+                          placeholder={t("Enter display name")}
                         />
                       </FormControl>
                       <FormDescription>
-                        {t('Leave empty to use username')}
+                        {t("Leave empty to use username")}
                       </FormDescription>
                       <FormMessage />
                     </FormItem>
@@ -405,21 +409,33 @@ export function UsersMutateDrawer({
 
                 <FormField
                   control={form.control}
-                  name='password'
+                  name="password"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>{t('Password')}</FormLabel>
-                      <FormControl>
-                        <Input
+                      <FormLabel>{t("Password")}</FormLabel>
+                      <FormControl
+                        describedBy={
+                          !isUpdate || field.value
+                            ? "user-password-strength"
+                            : undefined
+                        }
+                      >
+                        <PasswordInput
                           {...field}
-                          type='password'
+                          value={field.value ?? ""}
+                          autoComplete="new-password"
                           placeholder={
                             isUpdate
-                              ? t('Leave empty to keep unchanged')
-                              : t('Enter password (8–128 characters)')
+                              ? t("Leave empty to keep unchanged")
+                              : t("Enter password (8–128 characters)")
                           }
                         />
                       </FormControl>
+                      <PasswordStrength
+                        id="user-password-strength"
+                        value={field.value ?? ""}
+                        quietWhenEmpty={isUpdate}
+                      />
                       <FormMessage />
                     </FormItem>
                   )}
@@ -429,14 +445,14 @@ export function UsersMutateDrawer({
               {/* Group & Quota Settings (Update only) */}
               {isUpdate && (
                 <SideDrawerSection>
-                  <h3 className='text-sm font-medium'>{t('Group & Quota')}</h3>
+                  <h3 className="text-sm font-medium">{t("Group & Quota")}</h3>
 
                   <FormField
                     control={form.control}
-                    name='group'
+                    name="group"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>{t('Group')}</FormLabel>
+                        <FormLabel>{t("Group")}</FormLabel>
                         <FormControl>
                           <Combobox
                             options={groups.map((group) => ({
@@ -445,8 +461,8 @@ export function UsersMutateDrawer({
                             }))}
                             onValueChange={field.onChange}
                             value={field.value}
-                            className='w-full'
-                            placeholder={t('Select a group')}
+                            className="w-full"
+                            placeholder={t("Select a group")}
                           />
                         </FormControl>
                         <FormMessage />
@@ -456,15 +472,15 @@ export function UsersMutateDrawer({
 
                   <FormField
                     control={form.control}
-                    name='quota_dollars'
+                    name="quota_dollars"
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>
-                          {t('Remaining Quota ({{currency}})', {
+                          {t("Remaining Quota ({{currency}})", {
                             currency: currencyLabel,
                           })}
                         </FormLabel>
-                        <div className='flex gap-2'>
+                        <div className="flex gap-2">
                           <FormControl>
                             <Input
                               value={
@@ -473,16 +489,16 @@ export function UsersMutateDrawer({
                                   : (field.value || 0).toFixed(6)
                               }
                               readOnly
-                              className='flex-1'
+                              className="flex-1"
                             />
                           </FormControl>
                           <Button
-                            type='button'
-                            variant='outline'
+                            type="button"
+                            variant="outline"
                             onClick={() => setQuotaDialogOpen(true)}
                           >
-                            <Pencil className='mr-1 h-4 w-4' />
-                            {t('Adjust Quota')}
+                            <Pencil className="mr-1 h-4 w-4" />
+                            {t("Adjust Quota")}
                           </Button>
                         </div>
                         <FormDescription>
@@ -495,15 +511,15 @@ export function UsersMutateDrawer({
 
                   <FormField
                     control={form.control}
-                    name='remark'
+                    name="remark"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>{t('Remark')}</FormLabel>
+                        <FormLabel>{t("Remark")}</FormLabel>
                         <FormControl>
                           <Textarea
                             {...field}
                             placeholder={t(
-                              'Admin notes (only visible to admins)'
+                              "Admin notes (only visible to admins)",
                             )}
                             rows={3}
                           />
@@ -517,44 +533,44 @@ export function UsersMutateDrawer({
 
               {isUpdate && (
                 <SideDrawerSection>
-                  <h3 className='text-sm font-medium'>{t('Content Safety')}</h3>
-                  <p className='text-muted-foreground text-xs'>
+                  <h3 className="text-sm font-medium">{t("Content Safety")}</h3>
+                  <p className="text-muted-foreground text-xs">
                     {t(
-                      'Whitelist users are still audited but sensitive-word matches do not block requests or increase the violation count.'
+                      "Whitelist users are still audited but sensitive-word matches do not block requests or increase the violation count.",
                     )}
                   </p>
 
                   <FormField
                     control={form.control}
-                    name='sensitive_word_violation_count'
+                    name="sensitive_word_violation_count"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>{t('Sensitive-word violations')}</FormLabel>
-                        <div className='flex gap-2'>
+                        <FormLabel>{t("Sensitive-word violations")}</FormLabel>
+                        <div className="flex gap-2">
                           <FormControl>
                             <Input
-                              type='number'
+                              type="number"
                               min={0}
                               step={1}
                               value={field.value ?? 0}
                               onChange={(event) =>
                                 field.onChange(
-                                  Math.max(0, Number(event.target.value) || 0)
+                                  Math.max(0, Number(event.target.value) || 0),
                                 )
                               }
                             />
                           </FormControl>
                           <Button
-                            type='button'
-                            variant='outline'
+                            type="button"
+                            variant="outline"
                             onClick={() => field.onChange(0)}
                           >
-                            {t('Clear count')}
+                            {t("Clear count")}
                           </Button>
                         </div>
                         <FormDescription>
                           {t(
-                            'Enabling a banned account clears the current count but keeps historical audits, balance, and usage records.'
+                            "Enabling a banned account clears the current count but keeps historical audits, balance, and usage records.",
                           )}
                         </FormDescription>
                         <FormMessage />
@@ -564,14 +580,14 @@ export function UsersMutateDrawer({
 
                   <FormField
                     control={form.control}
-                    name='sensitive_word_whitelist'
+                    name="sensitive_word_whitelist"
                     render={({ field }) => (
-                      <FormItem className='flex items-center justify-between gap-4 rounded-md border p-3'>
+                      <FormItem className="flex items-center justify-between gap-4 rounded-md border p-3">
                         <span>
-                          <FormLabel>{t('Sensitive-word whitelist')}</FormLabel>
+                          <FormLabel>{t("Sensitive-word whitelist")}</FormLabel>
                           <FormDescription>
                             {t(
-                              'Keep recording matches without blocking or counting violations.'
+                              "Keep recording matches without blocking or counting violations.",
                             )}
                           </FormDescription>
                         </span>
@@ -579,7 +595,7 @@ export function UsersMutateDrawer({
                           <Switch
                             checked={field.value === true}
                             onCheckedChange={field.onChange}
-                            aria-label={t('Sensitive-word whitelist')}
+                            aria-label={t("Sensitive-word whitelist")}
                           />
                         </FormControl>
                       </FormItem>
@@ -592,22 +608,22 @@ export function UsersMutateDrawer({
                 targetIsAdmin &&
                 permissionCatalog.resources.length > 0 && (
                   <SideDrawerSection>
-                    <h3 className='text-sm font-medium'>
-                      {t('Admin Permissions')}
+                    <h3 className="text-sm font-medium">
+                      {t("Admin Permissions")}
                     </h3>
-                    <p className='text-muted-foreground text-xs'>
+                    <p className="text-muted-foreground text-xs">
                       {t(
-                        'Default administrator permissions can be overridden for this user.'
+                        "Default administrator permissions can be overridden for this user.",
                       )}
                     </p>
                     <FormField
                       control={form.control}
-                      name='admin_permissions'
+                      name="admin_permissions"
                       render={({ field }) => {
                         const selected = normalizeAdminPermissions(
                           field.value,
-                          permissionCatalog
-                        )
+                          permissionCatalog,
+                        );
                         return (
                           <FormItem>
                             <PermissionMatrix
@@ -617,21 +633,21 @@ export function UsersMutateDrawer({
                             />
                             <FormMessage />
                           </FormItem>
-                        )
+                        );
                       }}
                     />
                     {currentUser && (
-                      <p className='text-muted-foreground text-xs'>
+                      <p className="text-muted-foreground text-xs">
                         {hasPermission(
                           currentUser,
                           ADMIN_PERMISSION_RESOURCES.CHANNEL,
-                          ADMIN_PERMISSION_ACTIONS.SENSITIVE_WRITE
+                          ADMIN_PERMISSION_ACTIONS.SENSITIVE_WRITE,
                         )
                           ? t(
-                              'Your account can edit sensitive channel settings.'
+                              "Your account can edit sensitive channel settings.",
                             )
                           : t(
-                              'Your account cannot edit sensitive channel settings.'
+                              "Your account cannot edit sensitive channel settings.",
                             )}
                       </p>
                     )}
@@ -641,27 +657,27 @@ export function UsersMutateDrawer({
               {/* Binding Information (Read-only) */}
               {isUpdate && (
                 <SideDrawerSection>
-                  <h3 className='text-sm font-medium'>
-                    {t('Binding Information')}
+                  <h3 className="text-sm font-medium">
+                    {t("Binding Information")}
                   </h3>
-                  <p className='text-muted-foreground text-xs'>
+                  <p className="text-muted-foreground text-xs">
                     {t(
-                      'Third-party account bindings (read-only, managed by user in Security & Access)'
+                      "Third-party account bindings (read-only, managed by user in Security & Access)",
                     )}
                   </p>
 
-                  <div className='flex flex-col gap-3'>
+                  <div className="flex flex-col gap-3">
                     {BINDING_FIELDS.map(({ key, label }) => (
                       <div key={key}>
-                        <Label className='text-muted-foreground text-xs'>
+                        <Label className="text-muted-foreground text-xs">
                           {t(label)}
                         </Label>
                         <Input
                           value={
-                            (currentRow?.[key as keyof User] as string) || '-'
+                            (currentRow?.[key as keyof User] as string) || "-"
                           }
                           disabled
-                          className='mt-1'
+                          className="mt-1"
                         />
                       </div>
                     ))}
@@ -671,11 +687,11 @@ export function UsersMutateDrawer({
             </form>
           </Form>
           <SheetFooter className={sideDrawerFooterClassName()}>
-            <SheetClose render={<Button variant='outline' />}>
-              {t('Close')}
+            <SheetClose render={<Button variant="outline" />}>
+              {t("Close")}
             </SheetClose>
-            <Button form='user-form' type='submit' disabled={isSubmitting}>
-              {isSubmitting ? t('Saving...') : t('Save changes')}
+            <Button form="user-form" type="submit" disabled={isSubmitting}>
+              {isSubmitting ? t("Saving...") : t("Save changes")}
             </Button>
           </SheetFooter>
         </SheetContent>
@@ -692,5 +708,5 @@ export function UsersMutateDrawer({
         />
       )}
     </>
-  )
+  );
 }

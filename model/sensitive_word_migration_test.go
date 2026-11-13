@@ -100,6 +100,19 @@ func TestMigrateSensitiveWordsWithoutWordsAndInvalidWords(t *testing.T) {
 		requireOptionMissing(t, DB, request_plugin_setting.InstancesOption)
 	})
 
+	t.Run("word list without saved enable switches stays disabled", func(t *testing.T) {
+		useSensitiveWordMigrationDB(t)
+		require.NoError(t, DB.Create(&Option{Key: "SensitiveWords", Value: "legacy-word"}).Error)
+		require.NoError(t, MigrateSensitiveWords())
+		policy := GetSensitiveWordPolicy()
+		assert.False(t, policy.Enabled)
+		assert.False(t, policy.CheckPrompt)
+		rules, err := ListSensitiveWordRules()
+		require.NoError(t, err)
+		require.Len(t, rules, 1)
+		assert.Equal(t, SensitiveWordModeBlock, rules[0].Mode)
+	})
+
 	t.Run("invalid legacy data remains available for repair", func(t *testing.T) {
 		useSensitiveWordMigrationDB(t)
 		legacy := strings.Repeat("超长旧词", 80)
