@@ -7,7 +7,10 @@ import (
 	"github.com/QuantumNous/new-api/setting/model_setting"
 )
 
-var chatResponsesRegexCache sync.Map
+// Chat→Responses upgrade policy is host routing logic (it decides *whether*
+// to convert, reading host settings), so it lives here, not in relayconvert.
+
+var chatResponsesRegexCache sync.Map // map[string]*regexp.Regexp
 
 func matchAnyModelPattern(patterns []string, model string) bool {
 	if len(patterns) == 0 || model == "" {
@@ -21,6 +24,7 @@ func matchAnyModelPattern(patterns []string, model string) bool {
 		if !ok {
 			compiled, err := regexp.Compile(pattern)
 			if err != nil {
+				// Treat invalid patterns as non-matching to avoid breaking runtime traffic.
 				continue
 			}
 			re = compiled
@@ -41,8 +45,10 @@ func ShouldChatCompletionsUseResponsesPolicy(policy model_setting.ChatCompletion
 }
 
 func ShouldChatCompletionsUseResponsesGlobal(channelID int, channelType int, model string) bool {
-	_ = channelID
-	_ = channelType
-	_ = model
-	return false
+	return ShouldChatCompletionsUseResponsesPolicy(
+		model_setting.GetGlobalSettings().ChatCompletionsToResponsesPolicy,
+		channelID,
+		channelType,
+		model,
+	)
 }

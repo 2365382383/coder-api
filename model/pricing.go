@@ -150,21 +150,6 @@ func GetModelMetadataEndpointTypes(model string) ([]constant.EndpointType, bool)
 	return append([]constant.EndpointType(nil), endpoints...), true
 }
 
-func getPricingEndpointTypesForAbility(ability AbilityWithChannel, advancedCustomConfigs map[int]*dto.AdvancedCustomConfig) []constant.EndpointType {
-	if !pricingUsesRelayRoutes(ability.ChannelType) {
-		return common.GetEndpointTypesByChannelType(ability.ChannelType, ability.Model)
-	}
-	if config := advancedCustomConfigs[ability.ChannelId]; config != nil {
-		endpoints := config.SupportedEndpointTypesForModel(ability.Model)
-		// A task plugin channel also serves the task models of its plugin,
-		// which its relay routes may leave out.
-		if len(endpoints) > 0 || ability.ChannelType == constant.ChannelTypeAdvancedCustom {
-			return endpoints
-		}
-	}
-	return common.GetEndpointTypesByChannelType(ability.ChannelType, ability.Model)
-}
-
 func ModelDeclaresEndpoint(model string, endpoint constant.EndpointType) bool {
 	endpoints, declared := GetModelMetadataEndpointTypes(model)
 	return declared && slices.Contains(endpoints, endpoint)
@@ -360,7 +345,6 @@ func updatePricing() {
 	groupPlugins := make(map[string]map[string][]string)
 	groupImages := make(map[string]map[string]imageAggregate)
 	advancedCustomConfigs := loadPricingAdvancedCustomConfigs(enableAbilities)
-	pluginGeneration := jsplugin.DefaultRegistry.Generation()
 	metadataEndpointTypes := make(map[string][]constant.EndpointType)
 	for modelName, meta := range metaMap {
 		declared := catalogMetadataEndpoints(meta.Endpoints)
