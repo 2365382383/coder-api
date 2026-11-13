@@ -101,6 +101,10 @@ async function renderPolicies(path: string) {
     }),
     createRoute({
       getParentRoute: () => authenticated,
+      path: '/request-processing',
+    }),
+    createRoute({
+      getParentRoute: () => authenticated,
       path: '/system-settings/operations/$section',
       beforeLoad: OperationsRoute.options.beforeLoad as PolicyBeforeLoad,
     }),
@@ -361,9 +365,21 @@ describe('request policy settings', () => {
   })
 
   it.each([
+    '/system-settings/security/sensitive-words',
+    '/system-settings/request-policies/filtering',
+  ])(
+    '%s opens request processing, where sensitive words live now',
+    async (path) => {
+      const router = await renderPolicies(path)
+      await waitFor(() =>
+        expect(router.state.location.pathname).toBe('/request-processing')
+      )
+    }
+  )
+
+  it.each([
     ['/system-settings/models/channel-affinity', 'routing'],
     ['/system-settings/models/routing-reliability', 'routing'],
-    ['/system-settings/security/sensitive-words', 'filtering'],
     ['/system-settings/operations/monitoring', 'health'],
     ['/system-settings/request-policies/', 'routing'],
     ['/system-settings/request-policies/unknown', 'routing'],

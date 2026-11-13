@@ -10,6 +10,14 @@ import (
 	"gorm.io/gorm"
 )
 
+var retiredSensitiveOptionKeys = []string{
+	"CheckSensitiveEnabled",
+	"CheckSensitiveOnPromptEnabled",
+	"StopOnSensitiveEnabled",
+	"SensitiveWords",
+	"SensitiveWordConfig",
+}
+
 // legacySensitiveWordWhitelist exists only to import the historical local
 // P-30 table into users.sensitive_word_whitelist. It is deliberately excluded
 // from AutoMigrate and is never consulted by request handling.
@@ -150,8 +158,23 @@ func migrateSensitiveWordPolicy() error {
 		policy.FullPromptRetentionDays = config.FullPromptRetentionDays
 		policy.MaxPromptRunes = config.MaxPromptRunes
 		policy.Version = config.RuleVersion
-	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return err
+	} else {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		var enabledOption, promptOption Option
+		enabledErr := DB.Where(&Option{Key: "CheckSensitiveEnabled"}).First(&enabledOption).Error
+		if enabledErr != nil && !errors.Is(enabledErr, gorm.ErrRecordNotFound) {
+			return enabledErr
+		}
+		promptErr := DB.Where(&Option{Key: "CheckSensitiveOnPromptEnabled"}).First(&promptOption).Error
+		if promptErr != nil && !errors.Is(promptErr, gorm.ErrRecordNotFound) {
+			return promptErr
+		}
+		if enabledErr == nil || promptErr == nil {
+			policy.Enabled = enabledErr == nil && enabledOption.Value == "true"
+			policy.CheckPrompt = promptErr == nil && promptOption.Value == "true"
+		}
 	}
 	policy = normalizeSensitiveWordPolicy(policy)
 	return DB.Create(&policy).Error
@@ -239,4 +262,50 @@ func migrateLegacySensitiveWordOption() (bool, error) {
 		}
 	}
 	return true, nil
+}
+
+// MigrateSensitiveWords retires upstream's former sensitive-word switches
+// after the richer local rules, policy, audit and whitelist migration has
+// completed. StreamCacheQueueLength is a separate feature and remains active.
+func MigrateSensitiveWords() error {
+	if DB == nil {
+		return errors.New("database is not initialized")
+	}
+	if err := MigrateSensitiveWordData(); err != nil {
+		return fmt.Errorf("migrate local sensitive-word policy: %w", err)
+	}
+	var marker Option
+	if err := DB.Where(&Option{Key: sensitiveWordMigrationKey}).First(&marker).Error; err != nil {
+		return fmt.Errorf("local sensitive-word migration is incomplete; legacy settings retained: %w", err)
+	}
+	if marker.Value != sensitiveWordMigrationValue {
+		return errors.New("local sensitive-word migration is incomplete; legacy settings retained")
+	}
+	var found []string
+	for _, key := range retiredSensitiveOptionKeys {
+		var option Option
+		err := DB.Where(&Option{Key: key}).First(&option).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("read retired option %s: %w", key, err)
+		}
+		found = append(found, key)
+	}
+	if len(found) == 0 {
+		return nil
+	}
+	if err := DB.Transaction(func(tx *gorm.DB) error {
+		for _, key := range found {
+			if err := tx.Where(&Option{Key: key}).Delete(&Option{}).Error; err != nil {
+				return fmt.Errorf("delete retired option %s: %w", key, err)
+			}
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	BumpSyncTopic(SyncTopicOptions)
+	return nil
 }

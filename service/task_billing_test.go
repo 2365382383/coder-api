@@ -304,9 +304,12 @@ func TestRealtimePreChargesOnlySettleRemainingDelta(t *testing.T) {
 	usage := &dto.RealtimeUsage{TotalTokens: 10, InputTokens: 10,
 		InputTokenDetails: dto.InputTokenDetails{TextTokens: 10}}
 	ctx := newBillingTestContext(0)
-	require.NoError(t, PreWssConsumeQuota(ctx, info, usage))
-	require.NoError(t, PreWssConsumeQuota(ctx, info, usage))
+	firstCharge, err := PreWssConsumeQuota(ctx, info, usage)
+	require.NoError(t, err)
+	secondCharge, err := PreWssConsumeQuota(ctx, info, usage)
+	require.NoError(t, err)
 	require.Positive(t, info.RealtimePreChargedQuota)
+	assert.Equal(t, firstCharge+secondCharge, info.RealtimePreChargedQuota)
 	require.Equal(t, 2, info.LegacyBillingSequence)
 	var pending model.BillingOperation
 	require.NoError(t, model.DB.Where("request_id = ? AND phase = ?", info.RequestId, "initial").First(&pending).Error)

@@ -85,18 +85,20 @@ func calculateAudioQuota(info QuotaInfo) (int, *common.QuotaClamp) {
 	return common.QuotaFromDecimalChecked(quota)
 }
 
-func PreWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage *dto.RealtimeUsage) error {
+// PreWssConsumeQuota charges the usage of one Realtime response and returns
+// the quota it charged.
+func PreWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage *dto.RealtimeUsage) (int, error) {
 	if relayInfo.UsePrice {
-		return nil
+		return 0, nil
 	}
 	userQuota, err := model.GetUserQuota(relayInfo.UserId, false)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	token, err := model.GetTokenById(relayInfo.TokenId)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	modelName := relayInfo.OriginModelName
@@ -138,24 +140,24 @@ func PreWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usag
 	quota, clamp := calculateAudioQuota(quotaInfo)
 	noteQuotaClamp(relayInfo, clamp)
 	if quota > math.MaxInt32-relayInfo.RealtimePreChargedQuota {
-		return errors.New("realtime request charge exceeds int32 quota boundary")
+		return 0, errors.New("realtime request charge exceeds int32 quota boundary")
 	}
 
 	if userQuota < int64(quota) {
-		return fmt.Errorf("user quota is not enough, user quota: %s, need quota: %s", logger.FormatQuota64(userQuota), logger.FormatQuota(quota))
+		return 0, fmt.Errorf("user quota is not enough, user quota: %s, need quota: %s", logger.FormatQuota64(userQuota), logger.FormatQuota(quota))
 	}
 
 	if !token.UnlimitedQuota && token.RemainQuota < int64(quota) {
-		return fmt.Errorf("token quota is not enough, token remain quota: %s, need quota: %s", logger.FormatQuota64(token.RemainQuota), logger.FormatQuota(quota))
+		return 0, fmt.Errorf("token quota is not enough, token remain quota: %s, need quota: %s", logger.FormatQuota64(token.RemainQuota), logger.FormatQuota(quota))
 	}
 
 	err = PostConsumeQuota(relayInfo, quota, 0, false, true)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	relayInfo.RealtimePreChargedQuota += quota
 	logger.LogInfo(ctx, common.LogText("realtime streaming consume quota success, quota: %d", quota))
-	return nil
+	return quota, nil
 }
 
 func PostWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, modelName string,

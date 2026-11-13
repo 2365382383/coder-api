@@ -232,26 +232,29 @@ func InitOptionMap() {
 	maps.Copy(common.OptionMap, modelConfigs)
 
 	common.OptionMapRWMutex.Unlock()
-	loadOptionsFromDatabase()
+	if err := LoadOptionsFromDatabase(); err != nil {
+		common.SysError(common.LogText("failed to load options from database: %s", err.Error()))
+	}
 }
 
-func loadOptionsFromDatabase() {
+// LoadOptionsFromDatabase applies stored options while preserving in-memory
+// values if the database read fails.
+func LoadOptionsFromDatabase() error {
 	groupTypeOptionsUpdateMutex.Lock()
 	defer groupTypeOptionsUpdateMutex.Unlock()
 	requestPolicyOptionMutex.Lock()
 	defer requestPolicyOptionMutex.Unlock()
+	passkeyOptionMutex.Lock()
+	defer passkeyOptionMutex.Unlock()
+	options, err := AllOption()
+	if err != nil {
+		return err
+	}
 	defer func() {
 		if err := refreshRequestPolicySnapshot(); err != nil {
 			common.SysError(common.LogText("invalid request policy: %s", err.Error()))
 		}
 	}()
-	passkeyOptionMutex.Lock()
-	defer passkeyOptionMutex.Unlock()
-	options, err := AllOption()
-	if err != nil {
-		common.SysError("failed to load options from database: " + err.Error())
-		return
-	}
 	passkeyOptions := make(map[string]string)
 	groupTypesJSON, groupTypeMapJSON := "{}", "{}"
 	for _, option := range options {
@@ -292,13 +295,16 @@ func loadOptionsFromDatabase() {
 	if err := operation_setting.RefreshAmountDiscountPolicy(); err != nil {
 		common.SysError("failed to refresh amount discount policy: " + err.Error())
 	}
+	return nil
 }
 
 func SyncOptions(frequency int) {
 	for {
 		time.Sleep(time.Duration(frequency) * time.Second)
 		common.SysLog(common.LogText("syncing options from database"))
-		loadOptionsFromDatabase()
+		if err := LoadOptionsFromDatabase(); err != nil {
+			common.SysError(common.LogText("failed to load options from database: %s", err.Error()))
+		}
 	}
 }
 
@@ -319,6 +325,9 @@ func validateOptionValue(key string, value string) error {
 	}
 	if key == operation_setting.AmountDiscountEligibleGroupsOptionKey {
 		return operation_setting.ValidateAmountDiscountEligibleGroupsJSON(value)
+	}
+	if err := operation_setting.ValidateEpaySignOption(key, value); err != nil {
+		return err
 	}
 	if key == "EmailProvider" || key == "ResendApiKey" || key == "ResendFrom" {
 		if key == "EmailProvider" && value != "smtp" && value != "resend" {
@@ -349,6 +358,9 @@ func validateOptionValue(key string, value string) error {
 	}
 	if key == operation_setting.LogMaxRangeDaysOptionKey {
 		return operation_setting.ValidateLogMaxRangeDays(value)
+	}
+	if key == operation_setting.SystemTaskRetentionDaysOptionKey {
+		return operation_setting.ValidateSystemTaskRetentionDays(value)
 	}
 	if key == "MaxTokenAutoGroups" {
 		return setting.ValidateMaxTokenAutoGroups(value)
@@ -443,6 +455,7 @@ func UpdateOption(key string, value string) error {
 	// If save value does not contain primary key, it will execute Create,
 	// otherwise it will execute Update (with all fields).
 	DB.Save(&option)
+	BumpSyncTopic(SyncTopicOptions)
 	// Update OptionMap
 	return updateOptionMap(key, value)
 }
@@ -514,6 +527,7 @@ func UpdateOptionsBulk(values map[string]string) error {
 	if err != nil {
 		return err
 	}
+	BumpSyncTopic(SyncTopicOptions)
 	for k, v := range normalizedValues {
 		if err := updateOptionMap(k, v); err != nil {
 			return err

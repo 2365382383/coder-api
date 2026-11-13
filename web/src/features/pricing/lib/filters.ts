@@ -24,23 +24,24 @@ import {
   ENDPOINT_TYPES,
   type QuotaTypeOption,
   type SortOption,
-} from '../constants'
-import type { PricingGroup, PricingModel } from '../types'
-import { compileBillingExpression } from './billing-expression/parser'
-import { visitExpression } from './billing-expression/types'
+} from "../constants";
+import type { PricingGroup, PricingModel } from "../types";
+import { compileBillingExpression } from "./billing-expression/parser";
+import { visitExpression } from "./billing-expression/types";
 import {
   getCardExamplePrice,
   getDynamicPricingSummary,
   hasTaskUsageSchema,
   isUnconfiguredTaskUsageModel,
-} from './dynamic-price'
+} from "./dynamic-price";
 import {
   getCategoryGroupNames,
   modelBelongsToCategory,
   scopePricingModel,
-} from './group-categories'
-import { getDisplayGroupRatio, isTokenBasedModel } from './model-helpers'
-import { calculateTokenPrice } from './price'
+} from "./group-categories";
+import { getDisplayGroupRatio, isTokenBasedModel } from "./model-helpers";
+import { withBasePricing } from "./plugin-pricing";
+import { calculateTokenPrice } from "./price";
 
 // ----------------------------------------------------------------------------
 // Filter Utilities
@@ -52,12 +53,12 @@ import { calculateTokenPrice } from './price'
 export function filterBySearch(
   models: PricingModel[],
   query: string,
-  groups: PricingGroup[] = []
+  groups: PricingGroup[] = [],
 ): PricingModel[] {
-  if (!query) return models
+  if (!query) return models;
 
-  const lowerQuery = query.toLowerCase()
-  const groupByName = new Map(groups.map((group) => [group.name, group]))
+  const lowerQuery = query.toLowerCase();
+  const groupByName = new Map(groups.map((group) => [group.name, group]));
   return models.filter(
     (m) =>
       m.model_name?.toLowerCase().includes(lowerQuery) ||
@@ -65,28 +66,28 @@ export function filterBySearch(
       m.tags?.toLowerCase().includes(lowerQuery) ||
       m.vendor_name?.toLowerCase().includes(lowerQuery) ||
       m.supported_endpoint_types?.some((endpoint) =>
-        endpoint.toLowerCase().includes(lowerQuery)
+        endpoint.toLowerCase().includes(lowerQuery),
       ) ||
       (m.enable_groups ?? []).some((groupName) => {
-        const group = groupByName.get(groupName)
+        const group = groupByName.get(groupName);
         return (
           groupName.toLowerCase().includes(lowerQuery) ||
           group?.description.toLowerCase().includes(lowerQuery) === true ||
           group?.type_name?.toLowerCase().includes(lowerQuery) === true
-        )
-      })
-  )
+        );
+      }),
+  );
 }
 
 export function filterByCategory(
   models: PricingModel[],
   category: string,
-  groups: PricingGroup[] = []
+  groups: PricingGroup[] = [],
 ): PricingModel[] {
-  if (category === FILTER_ALL) return models
+  if (category === FILTER_ALL) return models;
   return models.filter((model) =>
-    modelBelongsToCategory(model, category, groups)
-  )
+    modelBelongsToCategory(model, category, groups),
+  );
 }
 
 /**
@@ -94,10 +95,10 @@ export function filterByCategory(
  */
 export function filterByVendor(
   models: PricingModel[],
-  vendor: string
+  vendor: string,
 ): PricingModel[] {
-  if (vendor === FILTER_ALL) return models
-  return models.filter((m) => m.vendor_name === vendor)
+  if (vendor === FILTER_ALL) return models;
+  return models.filter((m) => m.vendor_name === vendor);
 }
 
 /**
@@ -105,45 +106,46 @@ export function filterByVendor(
  */
 export function filterByGroup(
   models: PricingModel[],
-  group: string
+  group: string,
 ): PricingModel[] {
-  if (group === FILTER_ALL) return models
+  if (group === FILTER_ALL) return models;
   return models.filter(
-    (m) => m.enable_groups?.includes(group) || m.enable_groups?.includes('all')
-  )
+    (m) => m.enable_groups?.includes(group) || m.enable_groups?.includes("all"),
+  );
 }
 
 /** Pricing category of the active configuration, shared by filters and counts. */
 export function getModelQuotaType(
-  model: PricingModel
-): Exclude<QuotaTypeOption, 'all'> | undefined {
+  listedModel: PricingModel,
+): Exclude<QuotaTypeOption, "all"> | undefined {
+  const model = withBasePricing(listedModel);
   // Task-usage models retain their own category.
-  if (hasTaskUsageSchema(model)) return QUOTA_TYPES.TASK
+  if (hasTaskUsageSchema(model)) return QUOTA_TYPES.TASK;
 
-  if (model.billing_mode === 'tiered_expr' && model.billing_expr) {
-    const compiled = compileBillingExpression(model.billing_expr)
-    if (compiled.status === 'ready') {
-      if (!compiled.functions.has('fixed')) return QUOTA_TYPES.TOKEN
+  if (model.billing_mode === "tiered_expr" && model.billing_expr) {
+    const compiled = compileBillingExpression(model.billing_expr);
+    if (compiled.status === "ready") {
+      if (!compiled.functions.has("fixed")) return QUOTA_TYPES.TOKEN;
 
       // Only models whose pricing leaves are all fixed count as per-request.
-      let hasTokenPricing = false
+      let hasTokenPricing = false;
       visitExpression(compiled.ast, (node) => {
-        if (node.kind !== 'call' || node.name !== 'tier') return
-        const price = node.args[1]
-        if (price.kind !== 'call' || price.name !== 'fixed') {
-          hasTokenPricing = true
+        if (node.kind !== "call" || node.name !== "tier") return;
+        const price = node.args[1];
+        if (price.kind !== "call" || price.name !== "fixed") {
+          hasTokenPricing = true;
         }
-      })
-      return hasTokenPricing ? QUOTA_TYPES.TOKEN : QUOTA_TYPES.REQUEST
+      });
+      return hasTokenPricing ? QUOTA_TYPES.TOKEN : QUOTA_TYPES.REQUEST;
     }
   }
 
   // Preserve legacy classification when the expression cannot be parsed.
-  if (model.quota_type === QUOTA_TYPE_VALUES.TOKEN) return QUOTA_TYPES.TOKEN
+  if (model.quota_type === QUOTA_TYPE_VALUES.TOKEN) return QUOTA_TYPES.TOKEN;
   if (model.quota_type === QUOTA_TYPE_VALUES.REQUEST) {
-    return QUOTA_TYPES.REQUEST
+    return QUOTA_TYPES.REQUEST;
   }
-  return undefined
+  return undefined;
 }
 
 /**
@@ -151,10 +153,10 @@ export function getModelQuotaType(
  */
 export function filterByQuotaType(
   models: PricingModel[],
-  quotaType: string
+  quotaType: string,
 ): PricingModel[] {
-  if (quotaType === QUOTA_TYPES.ALL) return models
-  return models.filter((model) => getModelQuotaType(model) === quotaType)
+  if (quotaType === QUOTA_TYPES.ALL) return models;
+  return models.filter((model) => getModelQuotaType(model) === quotaType);
 }
 
 /**
@@ -162,26 +164,26 @@ export function filterByQuotaType(
  */
 export function filterByEndpointType(
   models: PricingModel[],
-  endpointType: string
+  endpointType: string,
 ): PricingModel[] {
-  if (endpointType === ENDPOINT_TYPES.ALL) return models
+  if (endpointType === ENDPOINT_TYPES.ALL) return models;
   return models.filter((m) =>
-    m.supported_endpoint_types?.includes(endpointType)
-  )
+    m.supported_endpoint_types?.includes(endpointType),
+  );
 }
 
-type SortPriceKind = 'input' | 'output' | 'request'
+type SortPriceKind = "input" | "output" | "request";
 
 const PRICE_SORTS: Partial<
   Record<SortOption, { kind: SortPriceKind; dir: 1 | -1 }>
 > = {
-  [SORT_OPTIONS.INPUT_PRICE_LOW]: { kind: 'input', dir: 1 },
-  [SORT_OPTIONS.INPUT_PRICE_HIGH]: { kind: 'input', dir: -1 },
-  [SORT_OPTIONS.OUTPUT_PRICE_LOW]: { kind: 'output', dir: 1 },
-  [SORT_OPTIONS.OUTPUT_PRICE_HIGH]: { kind: 'output', dir: -1 },
-  [SORT_OPTIONS.REQUEST_PRICE_LOW]: { kind: 'request', dir: 1 },
-  [SORT_OPTIONS.REQUEST_PRICE_HIGH]: { kind: 'request', dir: -1 },
-}
+  [SORT_OPTIONS.INPUT_PRICE_LOW]: { kind: "input", dir: 1 },
+  [SORT_OPTIONS.INPUT_PRICE_HIGH]: { kind: "input", dir: -1 },
+  [SORT_OPTIONS.OUTPUT_PRICE_LOW]: { kind: "output", dir: 1 },
+  [SORT_OPTIONS.OUTPUT_PRICE_HIGH]: { kind: "output", dir: -1 },
+  [SORT_OPTIONS.REQUEST_PRICE_LOW]: { kind: "request", dir: 1 },
+  [SORT_OPTIONS.REQUEST_PRICE_HIGH]: { kind: "request", dir: -1 },
+};
 
 /**
  * Base USD price shown on the model card: input/output per 1M tokens, request
@@ -189,47 +191,52 @@ const PRICE_SORTS: Partial<
  * model has no price of that kind.
  */
 function getSortPrice(
-  model: PricingModel,
+  listedModel: PricingModel,
   kind: SortPriceKind,
   categoryGroups?: string[],
-  selectedGroup?: string
+  selectedGroup?: string,
 ): number | undefined {
-  const ratio = getDisplayGroupRatio(model, selectedGroup, categoryGroups)
-  if (!Number.isFinite(ratio)) return undefined
-  if (kind === 'request') {
-    const example = getCardExamplePrice(model, { tokenUnit: 'M' })
-    if (example) return example.effectiveTotal ?? example.total * ratio
+  const model = withBasePricing(listedModel);
+  const ratio = getDisplayGroupRatio(
+    listedModel,
+    selectedGroup,
+    categoryGroups,
+  );
+  if (!Number.isFinite(ratio)) return undefined;
+  if (kind === "request") {
+    const example = getCardExamplePrice(model, { tokenUnit: "M" });
+    if (example) return example.effectiveTotal ?? example.total * ratio;
   }
   const summary = getDynamicPricingSummary(model, {
-    tokenUnit: 'M',
+    tokenUnit: "M",
     groupRatioMultiplier: ratio,
-  })
-  if (kind === 'request') {
+  });
+  if (kind === "request") {
     if (summary) {
       const value = summary.entries.find(
-        (entry) => entry.field === 'fixedPrice' || entry.field === 'modelPrice'
-      )?.value
+        (entry) => entry.field === "fixedPrice" || entry.field === "modelPrice",
+      )?.value;
       return value === undefined || !Number.isFinite(value)
         ? undefined
-        : value * (summary.groupRatiosApplied ? 1 : ratio)
+        : value * (summary.groupRatiosApplied ? 1 : ratio);
     }
     return isTokenBasedModel(model) || model.model_price === undefined
       ? undefined
-      : model.model_price * ratio
+      : model.model_price * ratio;
   }
   if (summary) {
-    const field = kind === 'input' ? 'inputPrice' : 'outputPrice'
+    const field = kind === "input" ? "inputPrice" : "outputPrice";
     const value = summary.entries.find(
-      (entry) => entry.field === field && entry.unit === 'token'
-    )?.value
+      (entry) => entry.field === field && entry.unit === "token",
+    )?.value;
     return value === undefined || !Number.isFinite(value)
       ? undefined
-      : value * (summary.groupRatiosApplied ? 1 : ratio)
+      : value * (summary.groupRatiosApplied ? 1 : ratio);
   }
   if (!isTokenBasedModel(model) || isUnconfiguredTaskUsageModel(model)) {
-    return undefined
+    return undefined;
   }
-  return calculateTokenPrice(model, kind, ratio)
+  return calculateTokenPrice(model, kind, ratio);
 }
 
 /**
@@ -239,40 +246,40 @@ export function sortModels(
   models: PricingModel[],
   sortBy: string,
   categoryGroups?: string[],
-  selectedGroup?: string
+  selectedGroup?: string,
 ): PricingModel[] {
-  const sorted = [...models]
+  const sorted = [...models];
 
-  const priceSort = PRICE_SORTS[sortBy as SortOption]
+  const priceSort = PRICE_SORTS[sortBy as SortOption];
   if (priceSort) {
     // Extracting the price parses the billing expression, so compute once
     const price = new Map(
       sorted.map((m) => [
         m,
         getSortPrice(m, priceSort.kind, categoryGroups, selectedGroup),
-      ])
-    )
+      ]),
+    );
     // Models without this kind of price stay last in both directions
     sorted.sort((a, b) => {
-      const priceA = price.get(a)
-      const priceB = price.get(b)
+      const priceA = price.get(a);
+      const priceB = price.get(b);
       if (priceA === undefined || priceB === undefined) {
-        return Number(priceA === undefined) - Number(priceB === undefined)
+        return Number(priceA === undefined) - Number(priceB === undefined);
       }
-      return priceSort.dir * (priceA - priceB)
-    })
-    return sorted
+      return priceSort.dir * (priceA - priceB);
+    });
+    return sorted;
   }
 
   switch (sortBy) {
     case SORT_OPTIONS.NAME:
       sorted.sort((a, b) =>
-        (a.model_name || '').localeCompare(b.model_name || '')
-      )
-      break
+        (a.model_name || "").localeCompare(b.model_name || ""),
+      );
+      break;
   }
 
-  return sorted
+  return sorted;
 }
 
 /**
@@ -281,64 +288,64 @@ export function sortModels(
 export function filterAndSortModels(
   models: PricingModel[],
   filters: {
-    search: string
-    category?: string
-    vendor: string
-    group: string
-    quotaType: string
-    endpointType: string
-    tag: string
-    sortBy: string
+    search: string;
+    category?: string;
+    vendor: string;
+    group: string;
+    quotaType: string;
+    endpointType: string;
+    tag: string;
+    sortBy: string;
   },
-  groups: PricingGroup[] = []
+  groups: PricingGroup[] = [],
 ): PricingModel[] {
-  const category = filters.category ?? FILTER_ALL
+  const category = filters.category ?? FILTER_ALL;
   const categoryGroups =
     category === FILTER_ALL
       ? undefined
-      : getCategoryGroupNames(category, groups)
+      : getCategoryGroupNames(category, groups);
   const scopeGroups =
-    filters.group === FILTER_ALL ? categoryGroups : [filters.group]
-  let result = filterByCategory(models, category, groups)
-  result = result.map((model) => scopePricingModel(model, scopeGroups))
-  result = filterBySearch(result, filters.search, groups)
-  result = filterByVendor(result, filters.vendor)
-  result = filterByGroup(result, filters.group)
-  result = filterByQuotaType(result, filters.quotaType)
-  result = filterByEndpointType(result, filters.endpointType)
-  result = filterByTag(result, filters.tag)
-  result = sortModels(result, filters.sortBy, categoryGroups, filters.group)
+    filters.group === FILTER_ALL ? categoryGroups : [filters.group];
+  let result = filterByCategory(models, category, groups);
+  result = result.map((model) => scopePricingModel(model, scopeGroups));
+  result = filterBySearch(result, filters.search, groups);
+  result = filterByVendor(result, filters.vendor);
+  result = filterByGroup(result, filters.group);
+  result = filterByQuotaType(result, filters.quotaType);
+  result = filterByEndpointType(result, filters.endpointType);
+  result = filterByTag(result, filters.tag);
+  result = sortModels(result, filters.sortBy, categoryGroups, filters.group);
 
-  return result
+  return result;
 }
 
 /**
  * Parse tags from comma-separated string
  */
 export function parseTags(tagsString?: string): string[] {
-  if (!tagsString) return []
+  if (!tagsString) return [];
   return tagsString
     .split(/[,;|\s]+/)
     .map((t) => t.trim())
-    .filter(Boolean)
+    .filter(Boolean);
 }
 
 /**
  * Extract all unique tags from models
  */
 export function extractAllTags(models: PricingModel[]): string[] {
-  const tagSet = new Set<string>()
+  const tagSet = new Set<string>();
 
   models.forEach((model) => {
     if (model.tags) {
-      const tags = parseTags(model.tags)
+      const tags = parseTags(model.tags);
       tags.forEach((tag) => {
-        tagSet.add(tag.toLowerCase())
-      })
+        tagSet.add(tag.toLowerCase());
+      });
     }
-  })
+  });
 
-  return [...tagSet].sort((a, b) => a.localeCompare(b))
+  return [...tagSet].sort((a, b) => a.localeCompare(b));
 }
 
 /**
@@ -346,14 +353,14 @@ export function extractAllTags(models: PricingModel[]): string[] {
  */
 export function filterByTag(
   models: PricingModel[],
-  tag: string
+  tag: string,
 ): PricingModel[] {
-  if (tag === FILTER_ALL) return models
+  if (tag === FILTER_ALL) return models;
 
-  const tagLower = tag.toLowerCase()
+  const tagLower = tag.toLowerCase();
   return models.filter((m) => {
-    if (!m.tags) return false
-    const modelTags = parseTags(m.tags).map((t) => t.toLowerCase())
-    return modelTags.includes(tagLower)
-  })
+    if (!m.tags) return false;
+    const modelTags = parseTags(m.tags).map((t) => t.toLowerCase());
+    return modelTags.includes(tagLower);
+  });
 }

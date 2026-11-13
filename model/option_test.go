@@ -37,7 +37,7 @@ func TestGroupTypeOptionsReloadsLegacyAutomaticRoutingAssignment(t *testing.T) {
 			require.NoError(t, db.Create(&[]Option{{Key: groupTypesOptionKey, Value: typesJSON}, {Key: groupTypeMapOptionKey, Value: legacyMap}}).Error)
 			for range 2 {
 				require.NoError(t, ratio_setting.UpdateGroupTypeOptionsByJSONString(`{}`, `{}`))
-				loadOptionsFromDatabase()
+				LoadOptionsFromDatabase()
 				require.Equal(t, "标准类型", ratio_setting.GetGroupTypesCopy()["vendor"].Name)
 				require.Equal(t, map[string]string{"default": "vendor", "vip": "vendor"}, ratio_setting.GetGroupTypeMapCopy())
 				require.JSONEq(t, `{"default":"vendor","vip":"vendor"}`, common.OptionMap[groupTypeMapOptionKey])
@@ -132,14 +132,14 @@ func TestGroupTypeOptionsPersistAndReload(t *testing.T) {
 
 	for range 2 {
 		require.NoError(t, ratio_setting.UpdateGroupTypeOptionsByJSONString(`{}`, `{}`))
-		loadOptionsFromDatabase()
+		LoadOptionsFromDatabase()
 		require.Equal(t, "Vendor", ratio_setting.GetGroupTypesCopy()["vendor"].Name)
 		require.Equal(t, "vendor", ratio_setting.GetGroupTypeMapCopy()["default"])
 	}
 
 	// Retain the last valid runtime pair while exposing invalid stored values for repair.
 	require.NoError(t, db.Model(&Option{}).Where(&Option{Key: groupTypeMapOptionKey}).Update("value", `{"default":"missing"}`).Error)
-	loadOptionsFromDatabase()
+	LoadOptionsFromDatabase()
 	require.Equal(t, "vendor", ratio_setting.GetGroupTypeMapCopy()["default"])
 	require.Equal(t, `{"default":"missing"}`, common.OptionMap[groupTypeMapOptionKey])
 

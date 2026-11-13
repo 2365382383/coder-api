@@ -1,16 +1,43 @@
 package service
 
-import "github.com/QuantumNous/new-api/setting/model_setting"
+import (
+	"sync"
+
+	"github.com/MoeForge/moego/regexp"
+	"github.com/QuantumNous/new-api/setting/model_setting"
+)
+
+var chatResponsesRegexCache sync.Map
+
+func matchAnyModelPattern(patterns []string, model string) bool {
+	if len(patterns) == 0 || model == "" {
+		return false
+	}
+	for _, pattern := range patterns {
+		if pattern == "" {
+			continue
+		}
+		re, ok := chatResponsesRegexCache.Load(pattern)
+		if !ok {
+			compiled, err := regexp.Compile(pattern)
+			if err != nil {
+				continue
+			}
+			re = compiled
+			chatResponsesRegexCache.Store(pattern, re)
+		}
+		if re.(*regexp.Regexp).MatchString(model) {
+			return true
+		}
+	}
+	return false
+}
 
 func ShouldChatCompletionsUseResponsesPolicy(policy model_setting.ChatCompletionsToResponsesPolicy, channelID int, channelType int, model string) bool {
-	_ = policy
-	_ = channelID
-	_ = channelType
-	_ = model
-
-	// Public endpoints preserve the requested protocol and are never silently
-	// upgraded from Chat Completions to Responses.
-	return false
+	if !policy.IsChannelEnabled(channelID, channelType) {
+		return false
+	}
+	return matchAnyModelPattern(policy.ModelPatterns, model)
 }
 
 func ShouldChatCompletionsUseResponsesGlobal(channelID int, channelType int, model string) bool {
