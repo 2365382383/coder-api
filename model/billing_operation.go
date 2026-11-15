@@ -38,8 +38,8 @@ var ErrBillingTaskStateChanged = errors.New("task status changed before billing 
 type BillingOperation struct {
 	Id                     int64  `gorm:"primaryKey;autoIncrement"`
 	RequestId              string `gorm:"type:varchar(128);not null;uniqueIndex:idx_billing_operation_request_phase"`
-	Phase                  string `gorm:"type:varchar(40);not null;uniqueIndex:idx_billing_operation_request_phase"`
-	State                  string `gorm:"type:varchar(24);not null;index"`
+	Phase                  string `gorm:"type:varchar(40);not null;uniqueIndex:idx_billing_operation_request_phase;index:idx_billing_operations_phase_state,priority:1"`
+	State                  string `gorm:"type:varchar(24);not null;index;index:idx_billing_operations_phase_state,priority:2"`
 	UserId                 int    `gorm:"index"`
 	ChannelId              int
 	TokenId                int

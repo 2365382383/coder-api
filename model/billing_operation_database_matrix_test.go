@@ -200,6 +200,7 @@ func TestBillingOperationDatabaseMatrix(t *testing.T) {
 			require.True(t, db.Migrator().HasColumn(&Midjourney{}, "BillingRequestID"))
 			require.True(t, db.Migrator().HasColumn(&BillingOperation{}, "UpstreamTaskID"))
 			require.True(t, db.Migrator().HasColumn(&BillingOperation{}, "UpstreamResultRecorded"))
+			require.True(t, db.Migrator().HasIndex(&BillingOperation{}, "idx_billing_operations_phase_state"))
 			var migratedMidjourney Midjourney
 			require.NoError(t, db.First(&migratedMidjourney, legacyMidjourney.ID).Error)
 			require.Equal(t, "before-p32", migratedMidjourney.MjId)
