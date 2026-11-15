@@ -250,7 +250,8 @@
 - 必须保留：Playground 与画布图片模式共用全局 `aspect_ratio + resolution` 能力，模型是否
   属于图片工作台只由持久化模型元数据端点决定。旧的 `/data/image-capabilities.json`、
   `IMAGE_CAPABILITY_CONFIG_FILE` 和逐模型热加载规则属于历史方案，不得恢复为第二套事实源。
-- 必须保留：`gpt-image-2`、`gpt-image-2.5`、其变体和 `chatgpt-image-latest` 共享完整的
+- 必须保留：`gpt-image-2`、`gpt-image-2.5`、`gpt-image-2.6` 及其 Flare/Sunburst 变体和
+  `chatgpt-image-latest` 共享完整的
   GPT 图片分辨率能力，包括横竖 4K 规格；能力注册、前端模型选项和图片 relay 必须保持一致。
 - 当前位置：`pkg/imagecapability/**`、`service/image_capability.go`、
   `controller/playground.go`、`controller/user.go`、`router/api-router.go`、
@@ -275,6 +276,9 @@
 - 必须保留：原生图片参数沿用上游转发设计，不恢复 `gpt-image-2*` 的本地尺寸或
   输出格式白名单。工作台的画幅/分辨率转换只在对应渠道适配层执行，显式 `size`
   优先，并覆盖生图、JSON 编辑与 multipart 编辑。
+- 必须保留：GPT-Image-2.6 Flare/Sunburst 的 `complexity`、`markup`、`svg`、
+  `frame_count` 和 `frame_duration_ms` 等上游字段不能在模型扩展时被过滤或改写；
+  图片模型的编辑能力由已验证的模型能力 profile 决定，不得硬编码为单一模型名。
 - 当前位置：`relaykit/dto/openai_image.go`、`dto/image_capability.go`、
   `web/src/features/playground/components/playground-image-input.tsx`、
   `web/src/features/playground/hooks/use-playground-image-options.ts`、

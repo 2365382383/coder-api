@@ -529,3 +529,37 @@ node integrations/infinite-canvas/browser-startup-check.mjs
 - Vitest 桥接测试 7 项通过；浏览器产品 fixture 返回 `generationRequests=2`、`assetUploads=3`、`publishedAssetRequests=1`、`videoRequests=3`，分别覆盖 H3 无图、H3 本地图和 Sora 本地图；无页面错误。
 - `deploy/docker-compose.yml` 的 blue/green 槽位均只引用 `${CANVAS_IMAGE_UPLOAD_API_KEY}`。实际 Key 写在服务器本地 `deploy/.env`，不纳入本次提交；提交前执行源码和产物秘密扫描。
 - 未修改 Tools 项目源码、Tools 数据库或画布数据库结构；不直接公开 `/api/canvas/assets/.../content`。
+
+## 2026-11-14 GPT-Image-2.6 接入与文档同步复核
+
+### 项目整体分析
+
+本次复核针对 `gpt-image-2.6-flare` 和 `gpt-image-2.6-sunburst` 两个图片模型，
+分别检查模型元数据、渠道/映射、定价、图片能力、媒体 Skill catalog 和公开能力依据。
+图片能力继续由全局配置提供，模型名、价格和渠道分组不作为第二套能力事实源。
+
+### 线上与公开依据
+
+| 表面 | 复核结果 |
+| --- | --- |
+| 模型元数据 | Flare 为 ID `189`、Sunburst 为 ID `190`；均启用、`sync_official=0`、`supported_endpoints=["image-generation"]`，绑定渠道数均为 2。上游 metadata preview 将两者标记为 `missing_upstream`，因此保留本地人工元数据，不执行官方同步。 |
+| 渠道与分组 | `图片-1k`（渠道 `98`）和 `图片-4k`（渠道 `96`）均包含两个模型；映射为空，未新增或修改渠道。 |
+| 定价 | 两者读回 `ModelPrice=1.5`、`billing_details.image_count=true`；这是本站按图片数量使用的本地配置，不宣称与官方 token 价格等价。 |
+| 图片能力 | 两者复用 `aspect_ratio + resolution`、`1K/2K/4K` 及 OpenAI 全局能力；无需复制逐模型能力规则。 |
+| 客户端媒体 Skill | 2026-11-14 live catalog 返回 13 个已配置图片模型，`unconfigured_models=[]`；两个 2.6 模型均在 catalog、profile 和回归测试中。 |
+
+OpenAI 官方模型页确认两者均支持图片生成和编辑，并列出 `/v1/images/generations`、
+`/v1/images/edits`；官方 token 价格为文本输入 `$5.00`、缓存文本输入 `$1.25`、
+图片输入 `$8.00`、缓存图片输入 `$2.00`、图片输出 `$30.00`（每 1M tokens）。
+该官方价格只作为外部证据，不能覆盖上表已读回的本站按图片数量结算配置。来源：
+[Flare](https://developers.openai.com/api/docs/models/gpt-image-2.6-flare)、
+[Sunburst](https://developers.openai.com/api/docs/models/gpt-image-2.6-sunburst)，
+查询日期为 2026-11-14。
+
+### 阶段自检记录
+
+- 已补充图片能力契约、特性保留清单和本实施记录中的 2.6 型号、编辑字段及价格边界。
+- 已将媒体 Skill 的编辑判断改为读取模型 profile 的 `supports_editing`，并新增 Flare/Sunburst
+  multipart 编辑回归；Gemini 等未声明编辑能力的模型仍被拒绝。
+- 仅做文档和客户端本地实现变更；未写入 New API 线上 API，未修改渠道、价格、凭据或公开文章。
+- 待完成事项：本地 Git 提交/推送和任何公开文档发布必须单独核对，不由本记录自动推断已完成。

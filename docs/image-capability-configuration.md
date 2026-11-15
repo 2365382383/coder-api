@@ -17,6 +17,28 @@ New API 的图片工作台使用一份全局图片参数配置。Playground 与�
 
 模型名称、标签、价格和渠道默认端点都不能替代这条声明。新增图片模型时，先在模型管理中创建或更新元数据端点，再确认用户分组内的启用渠道提供该模型。
 
+## GPT-Image-2.6 模型核对
+
+当前接入的两个模型为 `gpt-image-2.6-flare` 和 `gpt-image-2.6-sunburst`。两者均使用
+OpenAI 图片协议，并通过持久化元数据的 `image-generation` 端点进入图片工作台；不能
+因为模型名称包含 `gpt-image-2.6` 就在客户端或服务端复制一套逐模型能力规则。
+
+两者共享当前 OpenAI 图片能力配置：`aspect_ratio + resolution`，默认 `1:1 + 1K`，
+分辨率为 `1K`、`2K`、`4K`。OpenAI 官方模型页同时声明了图片生成和编辑端点；New API
+的工作台发现仍以 `image-generation` 为入口，`/v1/images/edits` 继续沿用现有图片
+编辑 relay 和同一分组/渠道模型清单，不把编辑端点误当成另一条模型目录。
+
+Images 2.6 的原生字段 `complexity`、`markup`、`svg`、`frame_count`、
+`frame_duration_ms` 必须由 OpenAI 请求 DTO 和适配器原样保留；工作台的画幅/分辨率
+选项只负责预设转换，不构成公共 Images API 的字段白名单。官方能力依据：
+[GPT-Image-2.6 Flare](https://developers.openai.com/api/docs/models/gpt-image-2.6-flare)、
+[GPT-Image-2.6 Sunburst](https://developers.openai.com/api/docs/models/gpt-image-2.6-sunburst)
+（2026-11-14 查询）。
+
+价格与能力分开维护。官方页面列出的 2.6 token 价格不能直接替代本站图片数量结算；
+本站当前的 `ModelPrice=1.5` 与 `image_count` 计量属于 New API 本地配置，必须以定价
+快照和实际运行时读回为准，不能在本文件中表述为官方价格换算。
+
 ## 统一参数
 
 - 画幅与分辨率：`aspect_ratio + resolution`。
