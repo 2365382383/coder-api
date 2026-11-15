@@ -60,6 +60,11 @@ Images 2.6 的原生字段 `complexity`、`markup`、`svg`、`frame_count`、
 
 客户端显式提供 `size` 时保持原值，不使用工作台预设覆盖；没有提供尺寸或预设时，也不补写尺寸。公共 Images API 入口不按 `gpt-image-2` 前缀校验尺寸、输出格式或质量，不补写该模型族的默认值，具体参数合法性由上游判断。上游已有的模型必填、数量上限、旧 DALL-E 兼容与计费数量校验继续保留。
 
+multipart 编辑转发沿用上游原实现：`relay/channel/openai/adaptor.go` 的 `detectImageMimeType`
+按文件扩展名推断文件 `Content-Type`，未知扩展名默认 `image/png`（上游 `0647872c1` 引入，
+与 `upstream/main` 当前实现一致）。该行为属于上游逻辑，不做自研改动；文件格式合法性
+最终由上游判断。
+
 `complexity`、`markup`、`svg`、`frame_count`、`frame_duration_ms` 使用已合并的上游 DTO 与转发实现。工作台的选项列表不构成客户端 API 请求的参数白名单。
 
 ## 配置边界

@@ -563,3 +563,29 @@ OpenAI 官方模型页确认两者均支持图片生成和编辑，并列出 `/v
   multipart 编辑回归；Gemini 等未声明编辑能力的模型仍被拒绝。
 - 仅做文档和客户端本地实现变更；未写入 New API 线上 API，未修改渠道、价格、凭据或公开文章。
 - 待完成事项：本地 Git 提交/推送和任何公开文档发布必须单独核对，不由本记录自动推断已完成。
+
+## 2026-11-15 编辑上传格式限制来源核查与客户端恢复
+
+### 起因
+
+用户指出媒体 Skill 教程中“本地输入支持 PNG、JPEG、WebP”的格式限制应当去除，并要求按
+来源核查处置：上游原作者的实现予以保留，自研的限制逻辑视为错误并删除。
+
+### 来源核查与处置
+
+| 逻辑 | 位置 | 出身 | 处置 |
+| --- | --- | --- | --- |
+| 客户端编辑输入格式白名单（PNG/JPEG/WebP） | 媒体 Skill `generate_image.py` 的 `validate_edit_input`/`build_edit_multipart` | 自研：仓库初始重构 `f2dfd21`（作者 QLHazyCoder）引入，无上游版本 | 删除白名单；保留文件存在与 50 MiB 检查，本地文件按魔数/扩展名推断 MIME 后原样上传 |
+| 网关按扩展名改写 multipart `Content-Type`（未知扩展名默认 `image/png`） | `relay/channel/openai/adaptor.go` 的 `detectImageMimeType` | 上游原作者：QuantumNous 作者 CaIon 于 `0647872c1`（2025-04-24）引入，与 `upstream/main` 当前实现一致 | 保留上游原逻辑，不做自研改动 |
+| 视频参考图严格格式校验（PNG/JPEG/WebP、20 MiB） | 媒体 Skill `generate_video.py` 的 `validate_reference` | 自研校验：原先复用编辑入口白名单，本次解耦后自带严格检查 | 保留严格校验：视频上传端点要求真实图片文件，与本轮放开的编辑入口无关 |
+
+本轮曾按“透传客户端 Content-Type”短暂修改网关，核查来源后已完整恢复上游原实现；
+`go test ./relay/channel/openai ./relay/helper` 通过。
+
+### 文档同步
+
+- `docs/image-capability-configuration.md`：记录上游 MIME 推断行为与来源，防止后续被
+  误当自研缺陷再次“修复”。
+- 媒体 Skill `SKILL.md`、`references/api.md`、`references/design-and-verification.md`：
+  客户端格式白名单删除、文件原样上传说明。
+- 公开媒体 Skill 教程文章：去除格式限制表述，单独通过 Tools 发布流程更新。
