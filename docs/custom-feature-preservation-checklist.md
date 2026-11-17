@@ -234,8 +234,10 @@
 
 - 必须保留：日志异步清理不能删除保留期内的数据；`LogRetentionDays` 的上限校验同时
   在选项更新和实际系统任务中生效，不能只保留前端或管理接口校验。
-- 必须保留：普通用户日志视图不显示错误日志，管理员仍可以查看；这不是删除错误日志
-  数据，而是访问层过滤。
+- 必须保留：错误日志（type 5）在自助日志视图一律不可见——自己的日志列表、自助导出
+  流和 Token 日志对所有角色（含管理员）都排除 type 5，管理员通过全局日志视图查看；
+  敏感词审计（type 8）仍只对非管理员排除。这不是删除错误日志数据，而是访问层过滤，
+  前端同时对非管理范围隐藏 Error 类型筛选项。
 - 必须保留：工具调用附加费仍计入实际账务和日志数据，但当前用户界面不展示附加费
   标记。
 - 当前位置：`controller/option.go`、`model/option.go`、`model/log.go`、
@@ -860,6 +862,17 @@ GitHub Actions 的 amd64、arm64 与 manifest 均成功。
 
 ## 7. 维护记录
 
+- 2026-11-17：恢复 P-12 的错误日志访问层过滤，实现与来源提交 `d565eea6` 一致：
+  `GetUserLogsForRole`、`StreamUserLogsForRole`、`GetLogByTokenId` 对所有角色排除
+  type 5（type 8 的非管理员排除保持不变），管理员在全局日志视图查看错误日志；前端
+  `common-logs-filter-bar.tsx` 对非管理范围隐藏 Error 筛选项，并把已保存的
+  `type=5` 筛选归一为全部类型。回归测试为 `model/log_format_test.go` 的
+  `TestUserLogViewsHideErrorLogs`；同步调整依赖旧可见性的
+  `model/log_sensitive_visibility_test.go`、`controller/relay_error_log_test.go` 和
+  `controller/log_export_test.go`。该实现与 P-28 一样在 rc.39 合并 `fd74c42d9` 中
+  丢失。另修复两处与本项无关的既有测试编译错误（`controller/auth_flow_test.go`
+  的 `findOrCreateOAuthUser` 调用、`controller/plugin_native_e2e_test.go` 的 int64
+  额度转换），否则 `controller` 测试包无法编译。
 - 2026-11-17：按用户决定将 P-28「文本请求最终结果与成功率统一口径」标记为已删除、
   暂时不需要，从第 4 节现行保护项移出并转入第 5 节历史归档，来源提交 `b44e6971e`。
   核查事实：Go 侧 `classifyTextRequestOutcome`、消费日志 `other.request_outcome` 写入

@@ -103,14 +103,7 @@ it('marks only retired log types as deprecated while keeping historical filters 
       ).getByText('Deprecated')
     ).toBeVisible()
   }
-  for (const label of [
-    'All Types',
-    'Top-up',
-    'Consume',
-    'System',
-    'Error',
-    'Refund',
-  ]) {
+  for (const label of ['All Types', 'Top-up', 'Consume', 'System', 'Refund']) {
     expect(
       within(screen.getByRole('option', { name: label })).queryByText(
         'Deprecated'
@@ -146,4 +139,19 @@ it('offers sensitive audit filters only to administrators', async () => {
   expect(
     screen.getByRole('option', { name: 'Sensitive word audit' })
   ).toBeVisible()
+})
+
+it('offers the error log filter only to administrators', async () => {
+  await renderFilter(ROLE.USER)
+  await userEvent.click(screen.getByRole('combobox', { name: 'Type' }))
+  expect(
+    screen.queryByRole('option', { name: 'Error' })
+  ).not.toBeInTheDocument()
+  cleanup()
+
+  await renderFilter(ROLE.ADMIN)
+  await userEvent.click(screen.getByRole('combobox', { name: 'Type' }))
+  const errorOption = screen.getByRole('option', { name: 'Error' })
+  expect(errorOption).toBeVisible()
+  expect(within(errorOption).queryByText('Deprecated')).not.toBeInTheDocument()
 })

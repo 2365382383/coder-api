@@ -46,7 +46,7 @@ type nativeRouteBilling struct {
 func (b *nativeRouteBilling) Settle(quota int) error {
 	b.events = append(b.events, "settle")
 	if quota > b.preConsumed {
-		if err := model.DecreaseUserQuota(b.userID, quota-b.preConsumed, true); err != nil {
+		if err := model.DecreaseUserQuota(b.userID, int64(quota-b.preConsumed), true); err != nil {
 			return err
 		}
 	}
@@ -529,7 +529,7 @@ export function egress(ctx, req) {
 	quota := func() int {
 		var user model.User
 		require.NoError(t, database.First(&user, 7).Error)
-		return user.Quota
+		return int(user.Quota)
 	}
 
 	// An ingress rejection answers in the task error format before anything

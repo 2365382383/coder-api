@@ -84,16 +84,10 @@ func TestProcessChannelErrorUsesSnapshotWithoutLeakingChannelMetadata(t *testing
 	require.True(t, ok)
 	assert.Equal(t, []any{"101"}, adminInfo["use_channel"])
 
+	// P-12: the self log view never exposes error logs, not even for the owner.
+	// The admin-side visibility of this row is covered in the model tests.
 	logs, total, err := model.GetUserLogs(7, model.LogFilter{Type: model.LogTypeError}, 0, 10)
 	require.NoError(t, err)
-	require.Equal(t, int64(1), total)
-	require.Len(t, logs, 1)
-	assert.Equal(t, channelSnapshot.ChannelId, logs[0].ChannelId)
-	assert.Empty(t, logs[0].ChannelName)
-	userOther, err := common.StrToMap(logs[0].Other)
-	require.NoError(t, err)
-	assert.NotContains(t, userOther, "admin_info")
-	for _, key := range []string{"channel_id", "channel_name", "channel_type"} {
-		assert.NotContains(t, userOther, key)
-	}
+	require.Zero(t, total)
+	require.Empty(t, logs)
 }

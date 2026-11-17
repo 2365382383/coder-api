@@ -160,7 +160,9 @@ func GetLogByTokenId(tokenId int) (logs []*Log, err error) {
 	if common.UsingLogDatabase(common.DatabaseTypeClickHouse) {
 		order = clickHouseLogOrder("")
 	}
-	err = LOG_DB.Model(&Log{}).Where("token_id = ? AND type <> ?", tokenId, LogTypeSensitiveWordBlock).
+	// P-12: a token's own recent logs never expose error logs or sensitive-word
+	// audit rows; administrators read those through the global log view.
+	err = LOG_DB.Model(&Log{}).Where("token_id = ? AND type NOT IN (?, ?)", tokenId, LogTypeError, LogTypeSensitiveWordBlock).
 		Order(order).Limit(common.MaxRecentItems).Find(&logs).Error
 	formatUserLogs(logs, 0)
 	return logs, err
@@ -618,12 +620,15 @@ func GetUserLogs(userId int, filter LogFilter, startIdx int, num int) (logs []*L
 }
 
 // GetUserLogsForRole returns one user's logs. Dashboard administrators retain
-// admin-scoped diagnostics even when they choose the self-only view.
+// admin-scoped diagnostics even when they choose the self-only view, but error
+// logs are never part of a self view (P-12): administrators read them through
+// the global log view instead.
 func GetUserLogsForRole(userId int, viewerRole int, filter LogFilter, startIdx int, num int) (logs []*Log, total int64, err error) {
 	tx, err := filter.apply(LOG_DB.Where("logs.user_id = ?", userId))
 	if err != nil {
 		return nil, 0, err
 	}
+	tx = tx.Where("logs.type <> ?", LogTypeError)
 	if viewerRole < common.RoleAdminUser {
 		tx = tx.Where("logs.type <> ?", LogTypeSensitiveWordBlock)
 	}
@@ -685,12 +690,14 @@ func StreamUserLogs(ctx context.Context, userId int, filter LogFilter, fn func(*
 	return StreamUserLogsForRole(ctx, userId, common.RoleCommonUser, filter, fn)
 }
 
-// StreamUserLogsForRole applies the same visibility policy as the self log list.
+// StreamUserLogsForRole applies the same visibility policy as the self log list,
+// including the P-12 rule that error logs are excluded from every self view.
 func StreamUserLogsForRole(ctx context.Context, userId int, viewerRole int, filter LogFilter, fn func(*Log) error) error {
 	tx, err := filter.apply(LOG_DB.WithContext(ctx).Where("logs.user_id = ?", userId))
 	if err != nil {
 		return err
 	}
+	tx = tx.Where("logs.type <> ?", LogTypeError)
 	if viewerRole < common.RoleAdminUser {
 		tx = tx.Where("logs.type <> ?", LogTypeSensitiveWordBlock)
 	}
