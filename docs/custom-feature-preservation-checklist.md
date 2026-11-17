@@ -35,6 +35,9 @@
   `drain_result` 可观测性和本地估算为 1 时的临时 30--90 输出计费规则，来源提交为
   `d90827ab6`、`0c0d1c8a0`、`697e4f7d8`。当前第 4 节有 31 项现行保护项；本项不把
   其他协议路径中已有的 `completion_tokens=1` 误归入 Responses 临时规则。
+- 2026-11-17 按用户决定将 P-28 移出现行保护项，理由与核查事实见第 5 节历史归档和
+  第 7 节维护记录。当前第 4 节有 30 项现行保护项；RC-42、RC-44 章节中的历史核对表
+  保持各自合并时的快照，不随本次移出回写。
 - 在第 8、9 节的历史审计时点，RC-40 尚未合并；当时“已吸收”仅指作者侧语义等价。
   当前合并前 `main` 已包含 RC-40 及后续维护提交，不能再把两侧历史差异重复计成功能。
 
@@ -454,26 +457,6 @@
   `web/src/features/rankings/access.test.ts`。
 - 来源提交：`f3236ab4`、`705070a8`、`3642fd14`。
 
-### P-28 文本请求最终结果与成功率统一口径
-
-- 必须保留：Chat Completions/Completions、Responses/Compact、Claude Messages 和
-  Gemini 文本生成使用同一最终结果判定；最终结算额度大于 0 即成功，即使流有异常；
-  结算为 0 时只有明确免费配置且正常完成才成功，其余为 `failed / no_billable_result`。
-- 必须保留：非文本接口不改变现有统计；渠道重试只按外层用户请求的最终结果计一个
-  性能样本；成功后退款不改原消费日志或成功率。新 `type=2` 消费日志在 `other` 写入
-  `request_outcome`，历史日志、历史性能桶和账务/退款行为不回填或迁移。
-- 当前位置：`service/text_quota.go`、`pkg/perf_metrics/metrics.go`、
-  `web/src/features/usage-logs/types.ts`、`web/src/features/usage-logs/lib/format.ts`、
-  `web/src/features/usage-logs/components/columns/common-logs-columns.tsx`、
-  `web/src/features/usage-logs/components/usage-logs-mobile-card.tsx`、
-  `web/src/features/usage-logs/components/dialogs/details-dialog.tsx`。
-- 验证入口：`service/text_quota_test.go`、`pkg/perf_metrics/metrics_test.go`、
-  `web/src/features/usage-logs/lib/__tests__/request-outcome.test.ts`；已通过
-  `go build ./service ./pkg/perf_metrics`、性能指标测试、前端 typecheck/build/lint/format
-  检查。完整 `go test ./service` 仍受既有 `service/task_billing_test.go` 中
-  `dto.UserSetting` 编译错误阻断。
-- 来源提交：`b44e6971e` (`fix(logs): align text request success rate`)。
-
 ### P-29 按用户分组的支付金额折扣与充值定价快照
 
 - 必须保留：精确充值金额折扣仍使用正整数金额到 `0 < rate <= 1` 的映射；只有管理员
@@ -839,7 +822,6 @@
 | P-22 | `8ccd7a17`, `393aec79` |
 | P-23 | `ec15c8e23` |
 | P-24 | `f3236ab4`, `705070a8`, `3642fd14` |
-| P-28 | `b44e6971e` |
 | P-29 | `e1765fd8e`, `4173af597`, `964c8dbe6`, `0059f64bd` |
 | P-30 | `21cc64f46`, `7f17b6307`, `ab37d8b51`, `384e4988c`, `416fabe52`, `b24c6ad95`, `52d68cb40`, `9e5e31632`, `6c72aebf5`, `3d9c70e8a`, `a09489b80`, `25e5f87a4`, `54da177f7` |
 | P-31 | `b2e905185` |
@@ -861,6 +843,7 @@
 | P-23（上游等价子契约） | 标准 BCP-47 语言码及 `Intl` 归一化已由 RC-40 覆盖；本地 `sync-i18n` 规则仍列在现行 P-23。 | `5832779f`, `ea08ee94` |
 | P-25 | RC-40 通用数据表已覆盖该行为；不再作为本地独有保护项。 | `e079ae13` |
 | P-26 | 测试隔离属于工程治理，不是产品自研功能；保留测试本身。 | `271be484`, `4d972671` |
+| P-28 | 2026-11-17 按用户决定删除，暂时不需要；Go 侧实现已在 rc.39 合并提交 `fd74c42d9` 中丢失。 | `b44e6971e` |
 | P-33 | 旧分层定价编辑器实现已按用户决定退休并删除。 | `66759ee72` |
 
 ## 6. 本次及以后维护记录模板
@@ -877,6 +860,14 @@ GitHub Actions 的 amd64、arm64 与 manifest 均成功。
 
 ## 7. 维护记录
 
+- 2026-11-17：按用户决定将 P-28「文本请求最终结果与成功率统一口径」标记为已删除、
+  暂时不需要，从第 4 节现行保护项移出并转入第 5 节历史归档，来源提交 `b44e6971e`。
+  核查事实：Go 侧 `classifyTextRequestOutcome`、消费日志 `other.request_outcome` 写入
+  以及 `RecordRelaySample(relayInfo, 成功标记, ...)` 已在 rc.39 合并提交 `fd74c42d9`
+  中丢失，当前性能样本由 `RecordRelayResult` 与 `ClassifyRelayOutcome` 判定；
+  `web/src/features/usage-logs/lib/format.ts` 的 `request_outcome` 读取分支仍保留，
+  但新日志不再写入该字段。本次只更新本清单，未改动任何 Go/前端代码，第 11、12 节的
+  历史核对表与 `upstream-merge-v1.0.0-rc.*.md` 按历史快照保留原文。
 - 2026-10-31：收窄 P-38 的 Responses 估算边界。明确 `response.failed`、`response.error`、
   `error` 或失败状态事件不再触发本地 prompt/output 估算：有上游 usage 只保留已报告值，
   无 usage 按 0 token 结算；无明确失败的 client gone/EOF/timeout 仍保留临时 30--90 规则。
