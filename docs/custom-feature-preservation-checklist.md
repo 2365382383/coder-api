@@ -38,6 +38,9 @@
 - 2026-11-17 按用户决定将 P-28 移出现行保护项，理由与核查事实见第 5 节历史归档和
   第 7 节维护记录。当前第 4 节有 30 项现行保护项；RC-42、RC-44 章节中的历史核对表
   保持各自合并时的快照，不随本次移出回写。
+- 2026-11-17 审计补录 P-39 至 P-42：Infinite Canvas、分组类型管理、动态分组定价目录和
+  系统通知确认对话框。视频任务 `usage.total_tokens` 作为 P-32 的任务账务子契约登记。
+  当前第 4 节有 34 项现行保护项；此前 RC-42、RC-44 章节中的历史核对表仍不回写。
 - 在第 8、9 节的历史审计时点，RC-40 尚未合并；当时“已吸收”仅指作者侧语义等价。
   当前合并前 `main` 已包含 RC-40 及后续维护提交，不能再把两侧历史差异重复计成功能。
 
@@ -139,6 +142,9 @@
 - 当前位置：`.github/workflows/docker-build.yml`。
 - 合并检查：确认 owner、小写 GHCR 路径、`main-<short-sha>` 标签、`latest`、两个架构
   和 manifest Job 均仍存在；以 GitHub Actions 为构建验收，不在本机做 Docker 构建替代。
+- 验证入口：推送 `main` 后由 GitHub Actions 自动运行；需要追溯时使用
+  `gh run view <head-sha> --repo QLHazyCoder/new-api` 确认 amd64、arm64 和 manifest Job。
+  本轮只登记入口，不等待或重复执行 Actions。
 - 来源提交：`8c813336`、`7b887e44`、`0c315d4a`。
 
 ### P-03 钱包默认自定义充值金额
@@ -148,6 +154,8 @@
 - 当前位置：`setting/operation_setting/payment_setting.go`、`controller/topup.go`、
   `web/src/features/wallet/lib/payment.ts`、`web/src/features/wallet/index.tsx`。
 - 数据/配置：现有支付设置中的 `default_topup_amount` 必须兼容保留。
+- 验证入口：`setting/operation_setting/payment_setting_test.go`、
+  `web/src/features/wallet/lib/payment.test.ts`。
 - 来源提交：`711a0315`、`bf162983`、`1a704ad1`。
 
 ### P-04 支付回跳后的钱包刷新
@@ -167,6 +175,10 @@
 - 当前位置：`web/src/features/wallet/**`。
 - 合并检查：在改动钱包布局时保留订阅卡、充值表单、邀请奖励卡和支付返回状态的
   可达性；不要以旧 Classic 样式覆盖当前单前端实现。
+- 验证入口：`web/src/features/wallet/__tests__/copy.test.tsx`、
+  `web/src/features/wallet/components/dialogs/__tests__/billing-history-pricing-audit.test.tsx`；
+  390px、768px 和桌面宽度的响应式可见性由用户自行人工/浏览器 smoke 验收，本轮不作为
+  代理完成门禁。
 - 来源提交：`b415a3f1`、`9a3826d4`、`6be657a2`。
 
 ### P-06 性能指标的分组可见性、聚合与失败归类
@@ -211,6 +223,8 @@
 - 数据/配置：`GroupRatio`、`GroupGroupRatio`、`UserUsableGroups`、
   `group_ratio_setting.group_descriptions`、
   `group_ratio_setting.group_special_usable_group` 都是已有生产配置，不能在迁移中归零。
+- 验证入口：`web/src/features/system-settings/models/__tests__/group-settings.test.tsx`、
+  `service/group_test.go`。
 - 来源提交：`bbdeb35d`、`057f635e`。
 
 ### P-11 分组可见性、定价接口脱敏与使用日志分组选择
@@ -313,8 +327,9 @@
 
 ### P-16 Playground 图片历史、删除与任务卡交互
 
-- 必须保留：图片结果按用户保留上限 50 条；超额时同时清理文件和数据库行。删除是硬删除，
-  不允许旧任务历史在页面刷新后复活。
+- 必须保留：图片结果按用户保留上限 200 条；终态结果默认保留 24 小时，超额或到期时
+  同时清理文件和数据库行。前端图片模式显示可关闭的保留提示；删除是硬删除，不允许旧
+  任务历史在页面刷新后复活。
 - 必须保留：前端快速重复点击同一删除按钮时先同步锁定任务、禁用重复动作并保留成功
   tombstone；后端 DELETE 幂等，重复删除返回成功而不是 `image task not found`。这不影响
   不同任务的独立删除。
@@ -332,7 +347,7 @@
   前端 Playground 图片库测试。
 - 来源提交：`72c401ed`、`f042ea22`、`fe04dbd2`、`0f00ee3a`、`1df5a78d`、
   `78364808`、`325726da`、`3df68604`、`4284ca06`、`089f7e9a`、`6347b97e`、
-  `d39cc0bc`、`5c6cfd85`、`6a978443`、`51cd6ec4`、`889436b78`。
+  `d39cc0bc`、`5c6cfd85`、`6a978443`、`51cd6ec4`、`889436b78`、`1435da952`。
 
 ### P-17 邀请奖励账本与额度换算
 
@@ -365,6 +380,9 @@
   表示开启；只有显式 `false` 才关闭。通知设置保存不得从前端默认值重新注入该字段，避免覆盖安全设置。
 - 合并检查：分别验证设置缺失、显式 `true` 和显式 `false`；错误日志与消费日志使用一致规则；
   前端缺省显示为开启，通知设置独立保存不改变 IP 记录设置。
+- 验证入口：`controller/user_manage_test.go`、`model/log_other_test.go`、
+  `web/src/features/profile/__tests__/settings.test.tsx`、
+  `web/src/features/security/components/__tests__/privacy-card.test.tsx`。
 - 2026-09-29 修复：前端归一化和隐私卡统一采用缺省开启语义，设置请求改为指针字段并按 presence
   合并；回归覆盖 `controller/user_manage_test.go`、`model/log_other_test.go` 及对应前端测试。
 - 来源提交：`db10c428`。
@@ -440,6 +458,8 @@
   同步前合并所有 locale 已有键，缺少英文源值时以 key 本身补齐，并将旧根命名空间键迁入
   `translation` 而不覆盖现有值，避免同步丢弃本地翻译或键。
 - 当前位置：`web/scripts/sync-i18n.mjs`。
+- 验证入口：`cd web && bun run i18n:sync`；检查英文基准键、七种 locale JSON 可解析且
+  静态键集合无回退删除。
 - 合并检查：对比同步前后的各 locale 键和值；标准 BCP-47 语言码和 `Intl` 归一化属于
   RC-40 已有的上游行为，不是本项的保护内容。保护对象是本地同步规则与自研功能翻译，
   不要求恢复上游随退休界面一并删除、且没有自研调用的翻译键。
@@ -550,8 +570,9 @@
 ### P-31 CC Switch 多来源导入
 
 - 必须保留：密钥页面的 CC Switch 导入支持由集中来源注册表驱动；当前支持 Claude、Codex、
-  Gemini、Grok Build、OpenCode、OpenClaw、Hermes 七个来源，并保留 Claude Desktop 的
-  不支持说明，不生成错误的深链。
+  Claude Desktop、Gemini、Antigravity CLI、Grok Build、OpenCode、OpenClaw、Hermes、Pi、
+  MiniMax Code、Kimi Code、DeepSeek Harness 和 Oh My Pi 共十四个来源；Claude Desktop
+  使用 Anthropic 格式，不再显示旧的“不支持”分支。
 - 必须保留：来源专属 endpoint、模型字段和默认名称保持独立；服务地址规范化会去除尾部
   `/v1` 和斜杠，深链参数必须进行 URL 编码，缺少必填模型时不能生成导入链接。
 - 当前位置：`web/src/features/keys/lib/cc-switch-sources.ts`、
@@ -560,7 +581,7 @@
   构造测试，不能把来源配置重新散落回弹窗组件。
 - 验证入口：`web/src/features/keys/lib/__tests__/cc-switch-sources.test.ts`、
   `web/src/features/keys/components/__tests__/cc-switch-dialog.test.tsx`。
-- 来源提交：`b2e905185`。
+- 来源提交：`b2e905185`、`ea569b999`、`c509b2ede`、`608ba31ec`。
 
 ### P-32 钱包额度 int64 与计费额度边界分离
 
@@ -589,6 +610,9 @@
 - 必须保留：`GET /api/usage/token/` 使用认证中间件身份，现有额度字段仍为 JSON number，
   `total_granted_raw`、`total_used_raw`、`total_available_raw` 提供精确十进制字符串；
   总额允许超过 `int64`，以大整数计算。旧 billing 展示接口在查询失败时返回原有错误结构。
+- 必须保留：成功的视频任务查询响应可从任务的持久账务快照投影 `usage.total_tokens`；
+  没有 token usage、任务失败或数值超出 charge domain 时省略该字段，不伪造 usage。插件
+  adaptor 必须原样保留该响应字段。
 - 必须保留：用户余额提醒的阈值运算继续处于钱包 `int64` 域，不能通过 `int` 窄化或
   未检查的浮点转整数溢出；极大阈值必须按钱包上限安全限制。
 - 当前位置：`common/wallet_quota.go`、`common/quota_math.go`、`model/wallet_quota.go`、
@@ -599,7 +623,8 @@
   `service/billing_recovery.go`、`service/midjourney.go`、`relay/mjproxy_handler.go`、
   `controller/token.go`、`controller/billing.go`、
   `controller/misc.go`、`controller/user.go`、`service/quota.go`、
-  `relaykit/dto/user_settings.go`、`web/src/lib/format.ts`。
+  `relaykit/dto/user_settings.go`、`relaykit/dto/openai_video.go`、
+  `relay/channel/task/jsplugin/adaptor.go`、`web/src/lib/format.ts`。
 - 数据/迁移：钱包字段迁移必须保留默认值、索引、空值行为和历史 raw quota；写入大额度后不能
   回滚到仍带有旧钱包 int32 校验的版本。`billing_operations` 与 `midjourneys` 只追加账务状态、
   请求关联及上游结果列；操作唯一键为 `(request_id, phase)`，既有行不回填、不改账；发布必须
@@ -609,8 +634,9 @@
   `model/quota_reserve_test.go`、`model/billing_operation_database_matrix_test.go`、
   `controller/token_quota_int64_test.go`、`service/task_billing_test.go`、
   `controller/midjourney_billing_test.go`、`controller/user_manage_test.go`、
-  `controller/topup_quota_limit_test.go`、相关前端额度格式化测试。
-- 来源提交：`afab95b53`。
+  `controller/topup_quota_limit_test.go`、`model/task_openai_video_test.go`、
+  `relay/channel/task/jsplugin/adaptor_test.go`、相关前端额度格式化测试。
+- 来源提交：`afab95b53`、`d1688dddc`、`3343b7c5d`。
 
 #### P-32 本次实施记录（发布独立授权）
 
@@ -795,6 +821,76 @@
   修复后删除 helper、测试和本保护项中的临时分支。
 - 来源提交：`d90827ab6`、`0c0d1c8a0`、`697e4f7d8`。
 
+### P-39 Infinite Canvas 免 Key 子应用与持久媒体
+
+- 必须保留：Infinite Canvas 作为登录后的独立子应用运行，不接收 API Key、PAT 或其他
+  登录凭据；服务器会话负责身份、分组、权限和计费。`/api/canvas/*` 统一经过 Canvas
+  session、用户归属和能力检查，项目、资产、偏好、运行记录及私有媒体按 `user_id`
+  隔离，不能退回浏览器本地存储或复用任意用户任务。
+- 必须保留：Canvas 的 Responses、图片、编辑、音频、视频和任务 artifact 路径继续复用
+  既有 relay/plugin 结算链；项目 CAS、引用保护、私有文件原子写入、运行归档/取消、
+  过期清理和 opaque-origin sandbox 行为保持。静态 `/canvas-app` 入口不得重新引入旧
+  FileServer 重定向循环或把 session Authorization 传给子应用。
+- 当前位置：`router/canvas-router.go`、`middleware/canvas.go`、`middleware/canvas_static.go`、
+  `model/canvas.go`、`service/canvas_catalog.go`、`service/canvas_storage.go`、
+  `service/canvas_image_publish.go`、`controller/canvas.go`、`controller/canvas_run.go`、
+  `web/src/features/canvas/**`、`web/src/routes/_authenticated/canvas/**`、
+  `integrations/infinite-canvas/**`。
+- 验证入口：`model/canvas_test.go`、`controller/canvas_test.go`、`service/canvas_test.go`、
+  `middleware/canvas_test.go`、`web/src/features/canvas/__tests__/bridge.test.ts`、
+  `web/src/features/canvas/__tests__/host.test.tsx`；真实浏览器验收使用
+  `integrations/infinite-canvas/browser-product-check.mjs`，由用户自行执行，本轮只登记入口
+  且不替代后端测试。
+- 来源提交：`08e2500b8`、`0c3874f8c`、`b1375eeda`、`0858fac13`、`5a6799792`、
+  `bdda1c97b`、`71763b654`、`c9819e731`、`482c1a462`、`013187f92`。
+
+### P-40 分组类型配置、路由和授权选择
+
+- 必须保留：`group_ratio_setting.group_types` 与 `group_ratio_setting.group_type_map` 是
+  成对持久化的配置；更新必须经过名称、保留 ID、倍率和分组归属校验，在同一事务写入，
+  成功后再替换运行时快照。自动分组 `__auto__` 不是普通类型，旧 `auto` assignment
+  只允许按兼容规则归一化。
+- 必须保留：`/api/option/group-types`、`/api/user/groups.group_types`、API Key 分组类型
+  选择、可用分组路由和系统设置编辑器保持同一份类型/映射事实源；部分更新不得清空另一
+  张表或留下数据库与内存不一致。
+- 当前位置：`model/option.go`、`setting/ratio_setting/group_ratio.go`、`service/group.go`、
+  `controller/group.go`、`controller/option.go`、`router/api-router.go`、
+  `web/src/features/keys/**`、`web/src/features/system-settings/models/group-type.ts`、
+  `web/src/features/system-settings/models/group-type-manager-dialog.tsx`。
+- 验证入口：`controller/billing_option_test.go`、`model/option_test.go`、
+  `service/group_test.go`、`web/src/features/system-settings/models/__tests__/group-type.test.tsx`、
+  `web/src/features/keys/components/__tests__/api-keys-mutate-drawer.test.tsx`。
+- 来源提交：`4da7a937b`、`0bab0308b`、`12441adcc`。
+
+### P-41 动态分组定价目录与类型分类
+
+- 必须保留：`/api/pricing` 返回的 `groups`、`group_types` 和 `group_catalog_version` 只由
+  当前用户可见分组、配置类型和启用渠道能力生成；模型的 `group_type_ids` 使用稳定类型
+  ID，不能以显示名称猜测或把隐藏分组泄露给普通用户。旧 `usable_group/group_ratio`
+  响应继续兼容，`auto` 仍作为独立的旧数值入口处理。
+- 必须保留：前端定价页按类型和分组筛选、模型卡/详情展示、动态/固定/任务价格排序及
+  删除或移动类型后的归一化保持；分类目录不得改变共享模型对象或绕过后端可见性裁剪。
+- 当前位置：`controller/pricing.go`、`model/pricing.go`、`model/pricing_endpoint_resolver.go`、
+  `service/group.go`、`setting/ratio_setting/group_ratio.go`、`web/src/features/pricing/**`。
+- 验证入口：`controller/pricing_test.go`、`service/group_test.go`、
+  `model/pricing_endpoint_test.go`、`web/src/features/pricing/lib/__tests__/group-categories.test.ts`、
+  `web/src/features/pricing/__tests__/pricing-navigation.test.tsx`。
+- 来源提交：`f1f1ba3d4`、`c486fc41e`、`6b7fecdcd`、`686702d9b`。
+
+### P-42 系统通知居中确认与版本快照
+
+- 必须保留：系统 Notice 和 Announcements 通过居中 Dialog 展示，内容区域可滚动、宽度受
+  约束，外部点击不能在用户确认前关闭；通知铃铛、tab 更新徽标和关闭按钮保持可访问。
+- 必须保留：通知版本按实际内容快照计算；打开期间冻结快照，只有显式关闭时才确认当前
+  Notice/Timeline 版本。旧 localStorage 状态迁移到版本字段，不因请求竞态、登出、重新
+  聚焦或用户切换而把另一账户的内容标记为已读。
+- 当前位置：`web/src/components/notification-popover.tsx`、`web/src/hooks/use-notifications.ts`、
+  `web/src/stores/notification-store.ts`、`web/src/components/layout/components/app-header.tsx`、
+  `web/src/components/layout/components/public-header.tsx`。
+- 验证入口：`web/src/components/__tests__/notification-popover.test.tsx`、
+  `web/src/hooks/__tests__/notifications.test.tsx`。
+- 来源提交：`0ec5bda77`。
+
 ## 5. 提交映射完整性
 
 以下现行保护项映射用于机械核对。未来合并前，应从历史基线列出本地非合并提交并与本节
@@ -807,32 +903,36 @@
 | P-03 | `711a0315`, `bf162983`, `1a704ad1` |
 | P-04 | `50f25187`, `ade4551d` |
 | P-05 | `b415a3f1`, `9a3826d4`, `6be657a2` |
-| P-06 | `2d8a8fde`, `7cf40dba`, `250bde67`, `cc70f2c3c` |
+| P-06 | `2d8a8fde`, `7cf40dba`, `250bde67`, `cc70f2c3c`, `8f639edbd` |
 | P-07 | `c54a1d55`, `cb7ad647`, `4066e54f`, `fc08d7e5` |
 | P-08 | `bbdeb35d`, `057f635e` |
 | P-11 | `cf386058`, `51e0b058`, `d81c294f` |
-| P-12 | `89c2d59a`, `45f4e67f`, `d565eea6`, `504e193f` |
-| P-13 | `a7b870b0`, `f3018f4f`, `99f171da`, `fce66558`, `31dce377`, `dfe64ed2`, `cc64bf3b`, `4e40cd8a`, `3ea4788d`, `2209a200`, `734b60163`, `4cd9c9460` |
-| P-14 | `30515cc6`, `99853f90`, `a934a149`, `2c9a61cb`, `f3a181fb`, `93aaa3c2` |
+| P-12 | `89c2d59a`, `45f4e67f`, `d565eea6`, `504e193f`, `80595135f` |
+| P-13 | `a7b870b0`, `f3018f4f`, `99f171da`, `fce66558`, `31dce377`, `dfe64ed2`, `cc64bf3b`, `4e40cd8a`, `3ea4788d`, `2209a200`, `734b60163`, `4cd9c9460`, `2844d9198`, `f17fc83a7` |
+| P-14 | `30515cc6`, `99853f90`, `a934a149`, `2c9a61cb`, `f3a181fb`, `93aaa3c2`, `7f8726130` |
 | P-15 | `19d9bb7e`, `ae0dc6be`, `8ce14f79`, `9b7fd1ca`, `441ea707` |
-| P-16 | `72c401ed`, `f042ea22`, `fe04dbd2`, `0f00ee3a`, `1df5a78d`, `78364808`, `325726da`, `3df68604`, `4284ca06`, `089f7e9a`, `6347b97e`, `d39cc0bc`, `5c6cfd85`, `6a978443`, `51cd6ec4`, `889436b78` |
+| P-16 | `72c401ed`, `f042ea22`, `fe04dbd2`, `0f00ee3a`, `1df5a78d`, `78364808`, `325726da`, `3df68604`, `4284ca06`, `089f7e9a`, `6347b97e`, `d39cc0bc`, `5c6cfd85`, `6a978443`, `51cd6ec4`, `889436b78`, `1435da952` |
 | P-17 | `b5fb25e1`, `4190de6e`, `ba3b9be6`, `6adf6ffb` |
 | P-18 | `db10c428` |
 | P-19 | `3c7df8f5`, `46423a16`, `3219bde1`, `3eb2c6ed` |
-| P-20 | `460b36a8`, `1779060b`, `525ecf72` |
+| P-20 | `460b36a8`, `1779060b`, `525ecf72`, `d25c06a15` |
 | P-21 | `693494a0`, `8aaede90`, `9773de9e`, `3707af0c4`; 已批准退休：`bca83882`; 退休实施：`88ff1c7cd` |
 | P-22 | `8ccd7a17`, `393aec79` |
 | P-23 | `ec15c8e23` |
 | P-24 | `f3236ab4`, `705070a8`, `3642fd14` |
 | P-29 | `e1765fd8e`, `4173af597`, `964c8dbe6`, `0059f64bd` |
 | P-30 | `21cc64f46`, `7f17b6307`, `ab37d8b51`, `384e4988c`, `416fabe52`, `b24c6ad95`, `52d68cb40`, `9e5e31632`, `6c72aebf5`, `3d9c70e8a`, `a09489b80`, `25e5f87a4`, `54da177f7` |
-| P-31 | `b2e905185` |
-| P-32 | `afab95b53` |
+| P-31 | `b2e905185`, `ea569b999`, `c509b2ede`, `608ba31ec` |
+| P-32 | `afab95b53`, `d1688dddc`, `3343b7c5d` |
 | P-34 | `5e5c79c1`, `f0a62f2c` |
 | P-35 | `9b0238b83` |
 | P-36 | `0a758e1d7` |
-| P-37 | `2980da538` |
-| P-38 | `d90827ab6`, `0c0d1c8a0`, `697e4f7d8` |
+| P-37 | `2980da538`, `89035dca1` |
+| P-38 | `d90827ab6`, `0c0d1c8a0`, `697e4f7d8`, `9bf85d969` |
+| P-39 | `08e2500b8`, `0c3874f8c`, `b1375eeda`, `0858fac13`, `5a6799792`, `bdda1c97b`, `71763b654`, `c9819e731`, `482c1a462`, `013187f92` |
+| P-40 | `4da7a937b`, `0bab0308b`, `12441adcc` |
+| P-41 | `f1f1ba3d4`, `c486fc41e`, `6b7fecdcd`, `686702d9b` |
+| P-42 | `0ec5bda77` |
 
 ### 已移出或剥离的历史映射（不计入现行保护项）
 
@@ -862,6 +962,16 @@ GitHub Actions 的 amd64、arm64 与 manifest 均成功。
 
 ## 7. 维护记录
 
+- 2026-11-17：完成自研功能丢失/未登记审计。确认 RC-19 至 RC-51 上游合并没有新增
+  P-12/P-28 之外的确凿合并丢失；补录 P-39 至 P-42，并将视频任务 `usage.total_tokens`
+  纳入 P-32。P-16 固化为每用户最多 200 张、默认保留 24 小时；P-31 固化当前十四个
+  CC Switch 来源及 Claude Desktop Anthropic 格式。第 5 节同步补入近期行为性提交；
+  P-01/P-03/P-05/P-08/P-18/P-23 增加明确验证入口。历史第 8–12 节保持原快照。
+  审计证据包括 `git diff --check`、merge 前后符号扫描、根模块 build、定向 Go 测试、
+  `web/node_modules/.bin/tsgo -b` 和候选前端 Vitest；完整数据库矩阵、Actions、生产发布
+  和真实 Canvas 浏览器验收仍是独立门禁。
+- 2026-11-17：按用户决定，P-01 的 GitHub Actions、P-05 的 390/768/桌面响应式 smoke、
+  P-39 的 Canvas 真实浏览器验收只保留为用户/发布流程入口，不作为本轮代理完成阻塞条件。
 - 2026-11-17：恢复 P-12 的错误日志访问层过滤，实现与来源提交 `d565eea6` 一致：
   `GetUserLogsForRole`、`StreamUserLogsForRole`、`GetLogByTokenId` 对所有角色排除
   type 5（type 8 的非管理员排除保持不变），管理员在全局日志视图查看错误日志；前端
