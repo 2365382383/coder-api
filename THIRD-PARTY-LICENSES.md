@@ -11,8 +11,8 @@ Transitive dependencies should be audited before a final external release.
 The embedded Infinite Canvas application is based on
 [basketikun/infinite-canvas v0.19.0](https://github.com/basketikun/infinite-canvas/tree/e856c878e0a34651bb828e28f0af20d71016a7d4).
 It is MIT licensed, copyright (c) 2026 basketikun. Its license is preserved at
-`integrations/infinite-canvas/LICENSE` and included at `/canvas-app/LICENSE`.
-The exact source revision and adaptation are maintained under `integrations/infinite-canvas/`.
+`infinite-canvas/LICENSE` and included at `/canvas-app/LICENSE`.
+The exact source revision and New-API integration are maintained under `infinite-canvas/`.
 
 | Area     | Scope       | Ecosystem | Dependency                                              | Version                              | License                 |
 |----------|-------------|-----------|---------------------------------------------------------|--------------------------------------|-------------------------|

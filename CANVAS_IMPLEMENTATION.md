@@ -15,7 +15,7 @@
 3. 项目、引用、运行与用户偏好分别存储。JSON 在 MySQL 使用 LONGTEXT，其余使用 TEXT，避免 TEXT 的 64KiB 上限截断文档；API 仍限制文档为 10MiB。
 4. AI 调用状态与响应归档状态分开。完整响应写入私有文件；中断、超限或文件失败不能标成归档成功。生成记录可读取原响应，异步任务可按原 task_id 读取视频/产物；只重试媒体读取，不能重新提交生成或二次扣费。没有持久任务的请求在进程崩溃时不承诺恢复未收到的上游结果。
 5. 所有项目和资产查询同时带 user_id；管理员个人画布不继承任意用户任务读取权限。保存冲突返回 409 并保留待保存内容。
-6. 构建锁定上游 SHA，适配 patch 和新文件在本仓库维护。CI 在全新目录获取源代码并应用适配；开发机并列仓库不是发布依赖。
+6. 上游源码和 New-API 画布实现已完整内置到 `infinite-canvas/`，由 `UPSTREAM_REVISION` 记录上游来源；构建从仓库内复制到临时目录，不依赖网络检出、外部补丁或开发机并列仓库。
 7. 分组模型选择项以分组名称和能力生成稳定 ID，目录顺序变化不能让已保存的选择落到其他分组；启动时项目和资产状态读取失败进入宿主重试，不能显示为新账户。
 8. 引用检查覆盖节点 storageKey 和参考图列表；文档校验覆盖节点、连线、会话和视口，防止导入损坏下一次加载。生成入口移除内部 group 字段与请求幂等头，会话 Authorization、Cookie 在认证后移除。
 9. 持久任务在统一提交完成位置关联运行记录，覆盖图像、Responses 与视频；清理仅在主节点启动。生成记录分页读取；取消接口只在确实找到本地观察时报告取消成功。
@@ -40,11 +40,11 @@
 | `router/canvas-router.go` | 白名单接口和既有中继/插件链 |
 | `web/src/features/canvas/` | 沙箱容器、固定操作消息桥、加载与错误恢复 |
 | `web/src/routes/_authenticated/canvas/` | 登录后的独立控制台导航页 |
-| `integrations/infinite-canvas/` | 精确版本锁、上游适配、构建脚本与许可 |
-| `integrations/infinite-canvas/overlay/` | 通信、存储、会话配置、传输、布局、提示词和禁扩展适配 |
-| `integrations/infinite-canvas/browser-host.ts` / `build-browser-host.mjs` | 浏览器测试入口，使用生产消息桥，仅替换测试身份头 |
-| `integrations/infinite-canvas/browser-check.mjs` | Chromium 项目/图片持久化、页面跳转、生成记录和回收站验收 |
-| `integrations/infinite-canvas/browser-startup-check.mjs` | 完整控制台与画布生产构建的启动、模块失败、初始化挂起/失败和重试回归；仅使用本机临时 HTTP 服务及假 API，不访问生产账户或数据库 |
+| `infinite-canvas/` | 完整画布源码、New-API 运行时桥、构建脚本与许可 |
+| `infinite-canvas/web/src/embedded/` | 通信、存储、会话配置、传输、布局、提示词和禁扩展适配 |
+| `infinite-canvas/browser-host.ts` / `build-browser-host.mjs` | 浏览器测试入口，使用生产消息桥，仅替换测试身份头 |
+| `infinite-canvas/browser-check.mjs` | Chromium 项目/图片持久化、页面跳转、生成记录和回收站验收 |
+| `infinite-canvas/browser-startup-check.mjs` | 完整控制台与画布生产构建的启动、模块失败、初始化挂起/失败和重试回归；仅使用本机临时 HTTP 服务及假 API，不访问生产账户或数据库 |
 | `Dockerfile` | 镜像构建在打包控制台之前执行完整类型检查，并复制既有测试引用的跨目录 fixture；画布继续使用独立 builder 的类型检查与构建 |
 | `web/package.json` / `web/bun.lock` | 将现有测试已使用的 `happy-dom` 固定为本机已有的 20.11.1 开发依赖，保证冻结安装可重复 |
 | `web/src/features/docs/__tests__/reading.test.tsx` | 使用等价的复制后排序断言，兼容现有 ES2022 类型库，保持请求列表不被修改 |
@@ -59,7 +59,7 @@
 | 1 数据与存储 | 已审查 | SQLite 3.50.4、MySQL 8.2.0、PostgreSQL 18.4；重复迁移、大文档、CAS、owner check、软删除/恢复与引用保护通过 |
 | 2 会话与中继 | 已审查 | 真实会话认证、PAT/匿名拒绝、会话撤销、服务端开关、规范 URL.Path/RequestURI、插件会话限流通过；钱包/订阅混合结算且不创建 Token 已验证 |
 | 3 画布适配 | 已审查 | Chromium 使用 opaque sandbox 和生产桥；项目重载、图片生成/归档/重载、四页跳转、生成记录和回收站还原通过，无控制台错误 |
-| 4 导航与构建 | 已审查 | Chat 分组 Playground 后“无限画布”；管理员/用户模块配置；上游 SHA 全新网络检出、类型检查、双前端生产构建与 Bun 1.4.0 Docker 画布 builder 通过 |
+| 4 导航与构建 | 已审查 | Chat 分组 Playground 后“无限画布”；管理员/用户模块配置；内置上游源码、类型检查、双前端生产构建与 Bun Docker 画布 builder 通过 |
 | 5 完整审查 | 已审查，有明确验证边界 | 全量 Go、vet、独立子模块、Go 二进制、受影响前端 31 项、流取消与 UTF-8 检查通过；全量前端受既有测试卡点和服务器资源约束未完成，见下文 |
 
 容量采用已设计值：项目 10MiB，图像输入 20MiB、归档 50MiB，其余媒体复用现有下载上限；超限拒绝写入。回收站 30 天，运行元数据 180 天。运行与文件清理均不能删除仍被引用的资产。
@@ -80,7 +80,7 @@
 
 模型目录直接按用户可用分组查询启用渠道能力，不从价格推断、不合并其他分组能力。文字走 Responses，图像和视频走现有主机协议；语音要求模型元数据明确声明 /v1/audio/speech。缺少能力返回 422，管理员需正确配置元数据或渠道，不猜测模型名称。
 
-构建命令：在仓库根执行 sh integrations/infinite-canvas/build.sh，它使用精确 SHA 全新检出、冻结依赖锁、类型检查、Vite 生产构建，复制到 web/dist/canvas-app/。new-api 控制台需先构建，画布后构建；Docker 使用独立 builder，再把两套产物合并到 Go embed。MIT 许可随产物保留。首次集成阶段只推代码；本轮已获用户授权，在 Actions 成功、镜像身份与候选业务验收一致后执行蓝绿发布，结果见文末。
+构建命令：在仓库根执行 `sh infinite-canvas/build.sh`，它从本地源码复制、冻结安装、类型检查、Vite 生产构建，并复制到 `web/dist/canvas-app/`。new-api 控制台需先构建，画布后构建；Docker 使用独立 builder，再把两套产物合并到 Go embed。MIT 许可随产物保留。
 
 ## 可重现验证
 
@@ -88,7 +88,7 @@
 - GOWORK=off go test ./...：分别在 relaykit、tokenkit 执行，均通过。
 - TEST_CANVAS_MYSQL_DSN=... TEST_CANVAS_POSTGRES_DSN=... go test ./model -run '^TestCanvas' -count=1 -v：隔离的真实三数据库，创建、迁移两次、保留既有用户、中文大文档、CAS、归属、引用、清理验证；测试库自动删除。
 - bun run typecheck 与画布/侧栏/既有 Playground SSE、图片能力和请求构造六个测试文件：最终 31 项通过，包含流式 UTF-8、取消后迟到消息、未知操作拒绝、路径穿越、multipart、无凭据消息、账号切换销毁、沙箱权限、握手失败重试、导航与模块开关。
-- sh integrations/infinite-canvas/build.sh：已在无并列源码依赖的全新网络检出中通过；Docker canvas-builder 亦在 Bun 1.4.0 中完成冻结安装、typecheck 和 Vite 生产构建。
+- sh infinite-canvas/build.sh：使用仓库内完整源码，完成冻结安装、typecheck 和 Vite 生产构建；Docker canvas-builder 不需要 git 或外部源码检出。
 - 项目 shadcn-ui 技能用于复用 Main、LoadingState、ErrorState。iframe/消息桥是既有组件无法承担的能力，保持在 canvas feature，不新增通用加载/错误 UI。
 - CANVAS_BROWSER_TEST=1 go test ./controller -run '^TestCanvasBrowserHarness$'：仅启动临时测试 DB 的 HTTP harness；不启动开发服务，不读取生产用户/渠道。先用 build-browser-host.mjs 打包生产桥测试入口，再以 browser-check.mjs 验证沙箱、项目创建/重载、中文 emoji 图片生成/归档/重载、页面切换、生成记录和回收站还原，无控制台错误。测试使用 1px PNG 假上游，不调用付费模型；文字/视频/语音真实渠道输出尚未实测。
 - 修改文件均以严格 UTF-8 解码；七语言九个新增键齐全，无替换字符、NUL 或冲突标记；git diff --check 通过。浏览器已核对中文和 emoji。新增 Web 文件保留现有许可证头，上游 MIT 随产物分发。
@@ -125,7 +125,7 @@
 CANVAS_STATIC_ORIGIN=http://<候选容器IP>:3000 \
 CANVAS_PLAYWRIGHT_MODULE=/绝对路径/playwright-core/index.mjs \
 CANVAS_CHROMIUM_PATH=/绝对路径/headless_shell \
-node integrations/infinite-canvas/browser-startup-check.mjs
+node infinite-canvas/browser-startup-check.mjs
 ```
 
 实际结果：`cached-redirect`、`success`、`module-failure`、`bootstrap-stall`、`bootstrap-failure` 全部 PASS；后 3 项均验证错误状态出现后点击重试可以重新显示画布库。只有缓存用例不安装路由拦截器，以保留浏览器真实 HTTP 缓存。候选容器及公网的 API 均不参与这些测试，避免改动生产用户数据。
@@ -150,8 +150,8 @@ node integrations/infinite-canvas/browser-startup-check.mjs
 
 - 线上活动蓝槽仍为 `0858fac13bcd8f8845141496030edce2c5ba650a` / `main-0858fac`，镜像与上述部署记录一致、Docker healthy。
 - 本地 new-api 已前进到 `0bab0308bc31ad912f07b27e934837b151a5eb66`，该提交为其他分组设置工作；本次所检查的 canvas 控制器、中间件、消息桥和 overlay 与生产提交一致。
-- 构建使用 Infinite Canvas `v0.19.0` 的精确提交 `e856c878e0a34651bb828e28f0af20d71016a7d4`，不能把并列仓库最新 main 自动当作发布版本。
-- 确实已经改造无限画布：new-api 在构建时叠加 overlay、别名与补丁，替换认证/传输/存储/布局等边界，禁用独立 Key、Agent、用户脚本、WebDAV 等入口。画布节点编辑器主体仍来自上游；并列上游仓库没有本轮修改。
+- 构建使用 Infinite Canvas `v0.19.0` 的精确提交 `e856c878e0a34651bb828e28f0af20d71016a7d4`，源码快照位于 `infinite-canvas/`，不能把并列仓库最新 main 自动带入发布。
+- 无限画布源码、运行时桥和宿主集成均已进入 new-api 仓库：源码直接包含认证/传输/存储/布局边界，禁用独立 Key、Agent、用户脚本、WebDAV 等入口，构建不再叠加外部 patch。
 - 初始集成提交影响 new-api 的 70 个文件、增加 4509 行、删除 14 行，包含 Go API/数据模型、测试、文档、翻译及构建集成，不能将这些数字误认为全部都是对上游画布编辑器的重写。
 - Tools 线上 revision 为 `789b6b1b60ac07dd25e90d314c5360b5dff0f988`。本次检查的图床、媒体床和上传认证文件与本地 Tools HEAD 无差异；其他 Tools 工作区修改不在本次范围。
 
@@ -270,14 +270,15 @@ node integrations/infinite-canvas/browser-startup-check.mjs
 
 | 文件／目录 | 当前职责及后续调整范围 |
 | --- | --- |
-| `integrations/infinite-canvas/source.lock` | 保留上游精确版本；升级必须另行验证补丁边界 |
-| `integrations/infinite-canvas/prepare.mjs` | 在一次性构建目录应用受控适配；补标签、图标和必要组件边界，禁止静默 patch 失败 |
-| `integrations/infinite-canvas/overlay/config.ts` | 账户模型配置、旧偏好解析、分组编码、能力数据；去掉独立主题持久化 |
-| `integrations/infinite-canvas/overlay/transport.ts` | Axios/fetch 传输、HTTP 错误、期限与返回格式；不再从被过滤的中文头恢复路由身份 |
-| `integrations/infinite-canvas/overlay/bridge.ts` | 字节流与主题事件；维护 end/error/cancel 状态和请求关联 |
-| `integrations/infinite-canvas/overlay/start.tsx` | 首次主题应用、初始化和渲染；不加载私有凭据 |
-| `integrations/infinite-canvas/overlay/layout.tsx` | 移除独立主题按钮，明确历史/归档界面语义 |
-| `integrations/infinite-canvas/overlay/storage.ts` / `localforage-storage.ts` | 项目与资产持久化；处理重试保存、来源关联、待保存内容和按需加载 |
+| `infinite-canvas/` | New-API 维护的完整画布源码、运行时桥和构建工具；保留上游许可和来源记录 |
+| `infinite-canvas/UPSTREAM_REVISION` | 记录内置源码最初对应的上游精确版本；升级必须另行验证完整构建和浏览器边界 |
+| `infinite-canvas/build.sh` | 从本地画布源码执行冻结安装、类型检查和生产构建，不再应用外部 patch |
+| `infinite-canvas/web/src/embedded/config.ts` | 账户模型配置、旧偏好解析、分组编码、能力数据；去掉独立主题持久化 |
+| `infinite-canvas/web/src/embedded/transport.ts` | Axios/fetch 传输、HTTP 错误、期限与返回格式；不再从被过滤的中文头恢复路由身份 |
+| `infinite-canvas/web/src/embedded/bridge.ts` | 字节流与主题事件；维护 end/error/cancel 状态和请求关联 |
+| `infinite-canvas/web/src/embedded/start.tsx` | 首次主题应用、初始化和渲染；不加载私有凭据 |
+| `infinite-canvas/web/src/embedded/layout.tsx` | 移除独立主题按钮，明确历史/归档界面语义 |
+| `infinite-canvas/web/src/embedded/storage.ts` / `localforage-storage.ts` | 项目与资产持久化；处理重试保存、来源关联、待保存内容和按需加载 |
 | `web/src/features/canvas/index.tsx` / `bridge.ts` | 会话宿主、主题下发、固定 API 操作及响应排障信息；保留沙箱隔离 |
 | `middleware/canvas.go` | 分组单次解码、逐请求权限与模型能力检查、结构化拒绝；不改为自动挑选分组 |
 | `service/canvas_catalog.go` / `controller/canvas.go` | 复用既有能力数据并提供 bootstrap；保留组/模型身份及资产所有权 |
@@ -344,18 +345,18 @@ node integrations/infinite-canvas/browser-startup-check.mjs
 | `middleware/canvas.go` | 对 `X-Canvas-Group` 执行 ASCII 检查、单次百分号解码和 UTF-8 校验；无效值返回 `canvas_invalid_group`，越权返回 `canvas_group_forbidden`，不自动改用其他分组。 |
 | `middleware/canvas_test.go` | 覆盖 ASCII、中文编码、编码百分号、残缺 UTF-8、原始 Unicode 和控制字符。 |
 | `service/canvas_catalog.go` / `controller/canvas.go` | 2026-11-06 起，bootstrap 直接从分组内渠道和模型元数据端点生成工作台目录；图片控件使用画布统一的单一配置，不再要求逐模型图片能力。分组保留为权限和路由身份，视频适配仍依据真实渠道类型或已绑定插件，不猜公开模型别名。 |
-| `integrations/infinite-canvas/overlay/config.ts` | 分组 channel 名改为真实分组名；模型 ID 仍保留分组用于授权和计费；画布请求头只在 HTTP 边界执行 `encodeURIComponent`；旧的独立主题偏好不再读取或写回。 |
-| `integrations/infinite-canvas/overlay/bridge.ts` / `transport.ts` | 增加宿主主题消息、空/非 JSON 响应安全解析、结构化 HTTP 错误、Axios timeout 和 AbortSignal；桥转发 `X-Request-ID`/`X-Oneapi-Request-Id`。 |
-| `integrations/infinite-canvas/overlay/start.tsx` / `layout.tsx` | 首次渲染使用宿主主题，运行中接收主题变化；删除画布内部独立浅色/深色按钮。 |
-| `integrations/infinite-canvas/prepare.mjs` | 精确上游 SHA 的一次性构建补丁；复制当前仓库游乐场 types、normalizer、payload builder，保持实际请求语义共用；补节点和工作台保存重试、受限并发、历史关联、导出及背景工具栏。关键上游边界变化使构建失败。 |
-| `integrations/infinite-canvas/overlay/model-picker.tsx` | 基于子应用现有 Ant Design Select 组合独立分组/模型选择，保留旧模型 ID。宿主 ModelGroupSelector 属于另一 React 树及组件库，不能直接插入沙箱；复用它的选择语义，不修改宿主公共控件。 |
-| `integrations/infinite-canvas/overlay/image-settings-panel.tsx` / `image-api.ts` | 控件和实际调用共用画布唯一的默认图片配置，并通过 bootstrap 传入子应用；实际请求继续复用游乐场的归一化/请求构造。单次 n=1，子应用图片请求最多并发 2；已生成结果的保存失败保留内存副本和 Run-ID，重试不提交生成。 |
-| `integrations/infinite-canvas/overlay/image-settings.ts` / `video-settings.ts` | 组件与原有辅助函数的完整导出入口；与 TSX 面板分离，保留所有上游调用方使用的公开接口。 |
-| `integrations/infinite-canvas/overlay/video-request.ts` / `video-settings-panel.tsx` | 画布标准视频插件使用统一 JSON 字段 `duration`、`resolution`、`aspect_ratio` 和公开参考 URL；Sora 保留已验证的本地 multipart，豆包保留 JSON `content` 角色转换。URL-only 模型不会把私有画布素材伪装成 multipart 或自动公开。视频下载仍走既有 owner-check 内容端点。 |
-| `integrations/infinite-canvas/overlay/project.tsx` / `storage.ts` | 项目目录摘要、按需打开、失败重试；列表重命名和导出读取完整原文档，避免空摘要覆盖项目。资产上传携带来源运行并由服务器检查 owner。 |
-| `integrations/infinite-canvas/overlay/messages.ts` | 子应用原有中英文两语言的新增界面和失败消息；不另加语言或外部运行依赖。 |
+| `infinite-canvas/web/src/embedded/config.ts` | 分组 channel 名改为真实分组名；模型 ID 仍保留分组用于授权和计费；画布请求头只在 HTTP 边界执行 `encodeURIComponent`；旧的独立主题偏好不再读取或写回。 |
+| `infinite-canvas/web/src/embedded/bridge.ts` / `transport.ts` | 增加宿主主题消息、空/非 JSON 响应安全解析、结构化 HTTP 错误、Axios timeout 和 AbortSignal；桥转发 `X-Request-ID`/`X-Oneapi-Request-Id`。 |
+| `infinite-canvas/web/src/embedded/start.tsx` / `layout.tsx` | 首次渲染使用宿主主题，运行中接收主题变化；删除画布内部独立浅色/深色按钮。 |
+| `infinite-canvas/build.sh` | 精确上游 SHA 的一次性构建补丁；复制当前仓库游乐场 types、normalizer、payload builder，保持实际请求语义共用；补节点和工作台保存重试、受限并发、历史关联、导出及背景工具栏。关键上游边界变化使构建失败。 |
+| `infinite-canvas/web/src/embedded/model-picker.tsx` | 基于子应用现有 Ant Design Select 组合独立分组/模型选择，保留旧模型 ID。宿主 ModelGroupSelector 属于另一 React 树及组件库，不能直接插入沙箱；复用它的选择语义，不修改宿主公共控件。 |
+| `infinite-canvas/web/src/embedded/image-settings-panel.tsx` / `image-api.ts` | 控件和实际调用共用画布唯一的默认图片配置，并通过 bootstrap 传入子应用；实际请求继续复用游乐场的归一化/请求构造。单次 n=1，子应用图片请求最多并发 2；已生成结果的保存失败保留内存副本和 Run-ID，重试不提交生成。 |
+| `infinite-canvas/web/src/embedded/image-settings.ts` / `video-settings.ts` | 组件与原有辅助函数的完整导出入口；与 TSX 面板分离，保留所有上游调用方使用的公开接口。 |
+| `infinite-canvas/web/src/embedded/video-request.ts` / `video-settings-panel.tsx` | 画布标准视频插件使用统一 JSON 字段 `duration`、`resolution`、`aspect_ratio` 和公开参考 URL；Sora 保留已验证的本地 multipart，豆包保留 JSON `content` 角色转换。URL-only 模型不会把私有画布素材伪装成 multipart 或自动公开。视频下载仍走既有 owner-check 内容端点。 |
+| `infinite-canvas/web/src/embedded/project.tsx` / `storage.ts` | 项目目录摘要、按需打开、失败重试；列表重命名和导出读取完整原文档，避免空摘要覆盖项目。资产上传携带来源运行并由服务器检查 owner。 |
+| `infinite-canvas/web/src/embedded/messages.ts` | 子应用原有中英文两语言的新增界面和失败消息；不另加语言或外部运行依赖。 |
 | `controller/canvas_run.go` | 对归档 JSON / SSE 识别业务错误、成功终态和截断，不改变既有账单结算；保存状态仍与生成状态独立。 |
-| `integrations/infinite-canvas/browser-product-check.mjs` | 可复现的隔离业务浏览器验收：真实生产桥、中文组、主题、私有持久化/恢复、参数和视频参考字段；不访问生产账号或付费渠道。 |
+| `infinite-canvas/browser-product-check.mjs` | 可复现的隔离业务浏览器验收：真实生产桥、中文组、主题、私有持久化/恢复、参数和视频参考字段；不访问生产账号或付费渠道。 |
 | `Dockerfile` | canvas builder 复制共享游乐场源文件，使 CI 从全新目录构建时也使用同一参数规则。 |
 | `web/src/features/canvas/index.tsx` / `bridge.ts` | 握手携带宿主 `resolvedTheme`，主题变化不重载 iframe；桥保留排障 request ID。 |
 | `web/src/features/canvas/__tests__/host.test.tsx` | 增加宿主主题握手断言。 |
@@ -363,7 +364,7 @@ node integrations/infinite-canvas/browser-startup-check.mjs
 ### 阶段自检结果
 
 1. `gofmt`、`go test ./middleware ./service -run 'TestCanvas|TestCanvasCatalog' -count=1` 通过；中文分组解码测试覆盖了非法 UTF-8，服务目录现有分组隔离测试仍通过。
-2. 画布精确上游 SHA `e856c878e0a34651bb828e28f0af20d71016a7d4` 在临时全新检出中完成 `tsc --noEmit` 和 Vite 生产构建。Vite 使用单核、2GB 内存封顶和显式 Node 堆上限；首次默认堆构建 OOM 后未被当作代码通过，第二次构建成功。
+2. 内置画布源码对应上游 SHA `e856c878e0a34651bb828e28f0af20d71016a7d4`，在临时构建副本中完成 `tsc --noEmit` 和 Vite 生产构建。Vite 使用单核、2GB 内存封顶和显式 Node 堆上限；首次默认堆构建 OOM 后未被当作代码通过，第二次构建成功。
 3. 画布宿主桥与主题测试 2 个文件、9 项测试通过。测试覆盖流式字节、取消后迟到消息、握手失败、账号切换、沙箱属性和深色宿主主题握手。
 4. 受限本地浏览器 fixture 使用中文分组 `Codex特惠`、假 1px 图片和一次故意 503 的资产保存：服务端收到 `Codex%E7%89%B9%E6%83%A0`，模型标签为 `gpt-image-2`，保存重试后资产上传次数为 2，而生图 POST 仍为 1；未访问生产账号、数据库或真实付费模型。
 
@@ -517,9 +518,9 @@ node integrations/infinite-canvas/browser-startup-check.mjs
 | `controller/canvas.go` | 新增发布 URL 控制器及配置缺失、上游失败、超限的结构化状态 |
 | `router/canvas-router.go` | 注册 `/assets/:asset_id/public-url` 会话路由 |
 | `web/src/features/canvas/bridge.ts` | 仅增加固定 `assets.publish_image` 映射，不开放代理能力 |
-| `integrations/infinite-canvas/overlay/video-request.ts` | URL-only 模型遇到本地 `storageKey` 时请求服务端发布；公开 HTTPS 仍透传 |
-| `integrations/infinite-canvas/overlay/bridge.ts` | `canvasData` 支持取消信号，视频取消时同步终止发布请求 |
-| `integrations/infinite-canvas/browser-product-check.mjs` | fixture 验收本地参考图发布、H3 JSON 和 Sora multipart |
+| `infinite-canvas/web/src/embedded/video-request.ts` | URL-only 模型遇到本地 `storageKey` 时请求服务端发布；公开 HTTPS 仍透传 |
+| `infinite-canvas/web/src/embedded/bridge.ts` | `canvasData` 支持取消信号，视频取消时同步终止发布请求 |
+| `infinite-canvas/browser-product-check.mjs` | fixture 验收本地参考图发布、H3 JSON 和 Sora multipart |
 | `service/canvas_image_publish_test.go` / `web/src/features/canvas/__tests__/bridge.test.ts` | 上传认证/multipart/URL 契约与固定桥操作单测 |
 
 ### 阶段自检

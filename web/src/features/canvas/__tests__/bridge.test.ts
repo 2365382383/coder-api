@@ -186,7 +186,7 @@ describe('Canvas bridge operations', () => {
       'https://console.test/canvas'
     )
     const child =
-      await import('../../../../../integrations/infinite-canvas/overlay/bridge')
+      await import('../../../../../infinite-canvas/web/src/embedded/bridge')
     const send = vi.fn()
     const port = {
       postMessage: send,

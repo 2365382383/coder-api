@@ -835,11 +835,11 @@
   `model/canvas.go`、`service/canvas_catalog.go`、`service/canvas_storage.go`、
   `service/canvas_image_publish.go`、`controller/canvas.go`、`controller/canvas_run.go`、
   `web/src/features/canvas/**`、`web/src/routes/_authenticated/canvas/**`、
-  `integrations/infinite-canvas/**`。
+  `infinite-canvas/**`。
 - 验证入口：`model/canvas_test.go`、`controller/canvas_test.go`、`service/canvas_test.go`、
   `middleware/canvas_test.go`、`web/src/features/canvas/__tests__/bridge.test.ts`、
   `web/src/features/canvas/__tests__/host.test.tsx`；真实浏览器验收使用
-  `integrations/infinite-canvas/browser-product-check.mjs`，由用户自行执行，本轮只登记入口
+  `infinite-canvas/browser-product-check.mjs`，由用户自行执行，本轮只登记入口
   且不替代后端测试。
 - 来源提交：`08e2500b8`、`0c3874f8c`、`b1375eeda`、`0858fac13`、`5a6799792`、
   `bdda1c97b`、`71763b654`、`c9819e731`、`482c1a462`、`013187f92`。

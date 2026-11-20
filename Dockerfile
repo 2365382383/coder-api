@@ -5,18 +5,17 @@ COPY web/package.json web/bun.lock ./
 RUN bun install --frozen-lockfile
 COPY ./web ./
 COPY ./VERSION /build/VERSION
-COPY ./integrations/infinite-canvas/overlay/bridge.ts /build/integrations/infinite-canvas/overlay/bridge.ts
+COPY ./infinite-canvas/web/src/embedded/bridge.ts /build/infinite-canvas/web/src/embedded/bridge.ts
 COPY ./pkg/billingexpr/testdata/frontend_simulation.json /build/pkg/billingexpr/testdata/frontend_simulation.json
 RUN bun run typecheck
 RUN DISABLE_ESLINT_PLUGIN='true' VITE_REACT_APP_VERSION=$(cat /build/VERSION) bun run build
 
 FROM oven/bun:1.4.4@sha256:1d22548f177f4ff38e0c15baa3c2c46c6c2060ba2d1bc573bb4720b407548f1d AS canvas-builder
 WORKDIR /build
-RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates && rm -rf /var/lib/apt/lists/*
-COPY integrations/infinite-canvas ./integrations/infinite-canvas
+COPY infinite-canvas ./infinite-canvas
 COPY web/src/features/playground/types.ts web/src/features/playground/constants.ts ./web/src/features/playground/
 COPY web/src/features/playground/lib/image-generation-capabilities.ts web/src/features/playground/lib/image-payload-builder.ts ./web/src/features/playground/lib/
-RUN sh integrations/infinite-canvas/build.sh
+RUN sh infinite-canvas/build.sh
 
 FROM golang:1.26.10-alpine@sha256:9ce231b28998b32e116927c61aa5c406183061d4f3f2d61b292c88e7f6bdf7ca AS builder2
 ENV GO111MODULE=on CGO_ENABLED=0 GOWORK=off
