@@ -117,10 +117,19 @@ func HandleStreamResponseData(c *gin.Context, info *relaycommon.RelayInfo, claud
 				info.UpstreamModelName = claudeResponse.Message.Model
 			}
 		} else if claudeResponse.Type == "message_delta" {
-			// 确保 message_delta 的 usage 包含完整的 input_tokens 和 cache 相关字段
-			// 解决 AWS Bedrock 等上游返回的 message_delta 缺少这些字段的问题
+			// Fill missing input/cache fields and relay locally estimated output usage.
 			if !shouldSkipClaudeMessageDeltaUsagePatch(info) {
-				data = patchClaudeMessageDeltaUsageData(data, buildMessageDeltaPatchUsage(&claudeResponse, claudeInfo))
+				usage := buildMessageDeltaPatchUsage(&claudeResponse, claudeInfo)
+				if claudeInfo.Usage.CompletionTokens == 0 && claudeInfo.ResponseText.Len() > 0 {
+					fallback := estimateClaudeStreamUsage(c, info, claudeInfo)
+					if fallback.CompletionTokens > 0 {
+						claudeInfo.Usage.CompletionTokens = fallback.CompletionTokens
+						claudeInfo.Usage.TotalTokens = claudeInfo.Usage.PromptTokens + fallback.CompletionTokens
+						claudeInfo.UsageEstimated = true
+						usage.OutputTokens = fallback.CompletionTokens
+					}
+				}
+				data = patchClaudeMessageDeltaUsageData(data, usage)
 			}
 		}
 		countClaudeStreamBillableTools(info, &claudeResponse)
@@ -236,6 +245,14 @@ func countClaudeStreamBillableTools(info *relaycommon.RelayInfo, claudeResponse 
 	}
 }
 
+func estimateClaudeStreamUsage(c *gin.Context, info *relaycommon.RelayInfo, claudeInfo *ClaudeResponseInfo) *dto.Usage {
+	fallback := service.ResponseText2Usage(c, claudeInfo.ResponseText.String(), info.UpstreamModelName, info.GetEstimatePromptTokens())
+	// Each tool_use block costs about 40 output tokens beyond its name and JSON
+	// input (measured on Claude Haiku 4.5 and Sonnet 5 agent turns).
+	fallback.CompletionTokens += claudeInfo.ToolUseCount * 40
+	return fallback
+}
+
 // countClaudeContentBlockTools counts the billable tool calls of one content
 // block. On a channel whose upstream prices search itself
 // (WebSearchBillingKey), every web_search_tool_result that carries results
@@ -285,16 +302,15 @@ func HandleStreamFinalResponse(c *gin.Context, info *relaycommon.RelayInfo, clau
 			common.SysLog(common.LogText("claude response usage is not complete, maybe upstream error"))
 		}
 		// 只补缺失字段，不整份覆盖——保留 message_start 已拿到的 cache 字段
-		fallback := service.ResponseText2Usage(c, claudeInfo.ResponseText.String(), info.UpstreamModelName, info.GetEstimatePromptTokens())
-		// Each tool_use block costs about 40 output tokens beyond its name and JSON
-		// input (measured on Claude Haiku 4.5 and Sonnet 5 agent turns).
-		fallback.CompletionTokens += claudeInfo.ToolUseCount * 40
+		fallback := estimateClaudeStreamUsage(c, info, claudeInfo)
 		if missingOutputUsage ||
 			(!claudeInfo.Done && fallback.CompletionTokens > claudeInfo.Usage.CompletionTokens) {
 			claudeInfo.Usage.CompletionTokens = fallback.CompletionTokens
+			claudeInfo.UsageEstimated = fallback.CompletionTokens > 0
 		}
 		if missingInputUsage {
 			claudeInfo.Usage.PromptTokens = fallback.PromptTokens
+			claudeInfo.UsageEstimated = fallback.PromptTokens > 0 || claudeInfo.UsageEstimated
 		}
 		claudeInfo.Usage.TotalTokens = claudeInfo.Usage.PromptTokens + claudeInfo.Usage.CompletionTokens
 	}

@@ -22,6 +22,8 @@ type ClaudeResponseInfo struct {
 	ToolUseCount int
 	Usage        *dto.Usage
 	Done         bool
+	// UsageEstimated marks counts filled from streamed content instead of upstream usage.
+	UsageEstimated bool
 
 	// Only snapshots synthesized from partial display usage may be refreshed by
 	// later display deltas. Serialized BillingUsage always remains authoritative.
@@ -452,7 +454,7 @@ func FinalizeClaudeStreamBillingUsage(claudeInfo *ClaudeResponseInfo) {
 	}
 
 	billingUsage := claudeBillingUsageFromSemanticUsage(claudeInfo.Usage)
-	if billingUsage != nil && !claudeInfo.Done {
+	if billingUsage != nil && (!claudeInfo.Done || claudeInfo.UsageEstimated) {
 		billingUsage.Estimated = true
 	}
 	claudeInfo.Usage.BillingUsage = billingUsage
@@ -465,6 +467,7 @@ func PatchClaudeMessageDeltaUsageData(data string, usage *dto.ClaudeUsage) strin
 	}
 
 	data = setMessageDeltaUsageInt(data, "usage.input_tokens", usage.InputTokens)
+	data = setMessageDeltaUsageInt(data, "usage.output_tokens", usage.OutputTokens)
 	data = setMessageDeltaUsageInt(data, "usage.cache_read_input_tokens", usage.CacheReadInputTokens)
 	data = setMessageDeltaUsageInt(data, "usage.cache_creation_input_tokens", usage.CacheCreationInputTokens)
 
