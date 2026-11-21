@@ -6,12 +6,15 @@ import (
 	"strings"
 	"time"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/go-sql-driver/mysql"
 	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
 )
 
 const billingTransactionAttempts = 5
+
+const billingLockWaitTimeoutEnv = "BILLING_LOCK_WAIT_TIMEOUT_SECONDS"
 
 // withRetryableDatabaseTransaction retries the complete database transaction
 // after a transient deadlock or serialization failure. Retrying the whole
@@ -49,7 +52,40 @@ func withRetryableDatabaseTransaction(ctx context.Context, fn func(*gorm.DB) err
 }
 
 func withBillingTransaction(ctx context.Context, fn func(*gorm.DB) error) error {
-	return withRetryableDatabaseTransaction(ctx, fn)
+	return withRetryableDatabaseTransaction(ctx, func(tx *gorm.DB) error {
+		return withBillingLockWaitTimeout(tx, fn)
+	})
+}
+
+// withBillingLockWaitTimeout bounds each MySQL billing attempt before the
+// existing whole-transaction retry path runs. The session value is restored
+// before the transaction is committed so pooled connections do not leak the
+// billing-specific timeout into unrelated queries.
+func withBillingLockWaitTimeout(tx *gorm.DB, fn func(*gorm.DB) error) (err error) {
+	if fn == nil {
+		return errors.New("billing transaction callback is nil")
+	}
+	if !common.UsingMainDatabase(common.DatabaseTypeMySQL) {
+		return fn(tx)
+	}
+	timeoutSeconds := common.GetEnvOrDefault(billingLockWaitTimeoutEnv, 10)
+	if timeoutSeconds <= 0 {
+		return fn(tx)
+	}
+
+	var previousTimeout int
+	if err = tx.Raw("SELECT @@SESSION.innodb_lock_wait_timeout").Scan(&previousTimeout).Error; err != nil {
+		return err
+	}
+	if err = tx.Exec("SET SESSION innodb_lock_wait_timeout = ?", timeoutSeconds).Error; err != nil {
+		return err
+	}
+	defer func() {
+		if restoreErr := tx.Exec("SET SESSION innodb_lock_wait_timeout = ?", previousTimeout).Error; err == nil && restoreErr != nil {
+			err = restoreErr
+		}
+	}()
+	return fn(tx)
 }
 
 func isRetryableDatabaseTransactionError(err error) bool {
