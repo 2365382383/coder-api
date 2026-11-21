@@ -106,6 +106,24 @@ func CanvasModelCatalog(userGroup string) ([]CanvasModelOption, error) {
 			}
 			endpoints := metadata[ability.Model]
 			if len(endpoints) == 0 {
+				// Task/plugin video models can publish their public /v1/videos
+				// route through the active channel binding without having a
+				// separate models.endpoints record. Keep metadata authoritative
+				// when it exists, but do not hide a route that the actual channel
+				// resolver has already declared. This is intentionally limited to
+				// video; images and text still require their explicit metadata.
+				if slices.Contains(model.ResolveAbilityEndpointTypes(ability, generation, nil), constant.EndpointTypeOpenAIVideo) {
+					adapter := canvasVideoAdapter(ability, generation)
+					if current, ok := videoAdapters[ability.Model]; ok && current != adapter {
+						adapter = "unsupported"
+					}
+					videoAdapters[ability.Model] = adapter
+					key := ability.Model + "\x00video"
+					if !seen[key] {
+						options = append(options, CanvasModelOption{Name: ability.Model, Group: group, Capability: "video", VideoAdapter: adapter})
+						seen[key] = true
+					}
+				}
 				continue
 			}
 			for _, endpoint := range endpoints {

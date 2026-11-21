@@ -63,3 +63,34 @@ func TestCanvasCatalogUsesGroupScopedRoutingAndExplicitEndpointMetadata(t *testi
 	assert.Equal(t, "aspect_ratio_resolution", imageGroups[0].Models[0].Capabilities.SizeMode)
 	assert.Equal(t, []string{"1K", "2K", "4K"}, imageGroups[0].Models[0].Capabilities.Resolutions)
 }
+
+func TestCanvasCatalogIncludesResolvedVideoRoutesWithoutModelMetadata(t *testing.T) {
+	truncate(t)
+	model.InitColumnNamesForTest()
+	require.NoError(t, model.DB.AutoMigrate(&model.Ability{}, &model.Channel{}))
+	t.Cleanup(func() {
+		require.NoError(t, model.DB.Where("channel_id = ?", 906).Delete(&model.Ability{}).Error)
+		require.NoError(t, model.DB.Where("id = ?", 906).Delete(&model.Channel{}).Error)
+	})
+	require.NoError(t, model.DB.Create(&model.Channel{
+		Id:     906,
+		Type:   constant.ChannelTypeSora,
+		Status: common.ChannelStatusEnabled,
+		Name:   "video-route-without-metadata",
+	}).Error)
+	require.NoError(t, model.DB.Create(&model.Ability{
+		Group:     "video-route",
+		Model:     "video-route-without-metadata",
+		ChannelId: 906,
+		Enabled:   true,
+	}).Error)
+
+	options, err := CanvasModelCatalog("video-route")
+	require.NoError(t, err)
+	assert.Contains(t, options, CanvasModelOption{
+		Name:         "video-route-without-metadata",
+		Group:        "video-route",
+		Capability:   "video",
+		VideoAdapter: "sora",
+	})
+}
