@@ -162,7 +162,7 @@ export function Canvas() {
             key={`${String(userID)}:${String(sid)}`}
             ref={iframe}
             title={t('Infinite Canvas')}
-            sandbox='allow-scripts allow-downloads'
+            sandbox='allow-scripts allow-forms allow-downloads'
             className={cn(
               'h-full min-h-0 w-full flex-1 border-0',
               status === 'loading' && 'invisible',

@@ -229,7 +229,9 @@ describe('Canvas host lifecycle', () => {
   it('restricts the iframe and closes the former account channel on account switch', () => {
     render(<Canvas />)
     const frame = screen.getByTitle('Infinite Canvas') as HTMLIFrameElement
-    expect(frame.getAttribute('sandbox')).toBe('allow-scripts allow-downloads')
+    expect(frame.getAttribute('sandbox')).toBe(
+      'allow-scripts allow-forms allow-downloads'
+    )
     const frameURL = new URL(frame.src)
     expect(frameURL.pathname).toBe('/canvas-app/index.html')
     expect(frameURL.searchParams.get('v')).toBeTruthy()
