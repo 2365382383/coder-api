@@ -7,7 +7,7 @@ import (
 )
 
 // GetUserImageModelGroups builds Playground image options from the same
-// metadata-only model catalog used by the embedded canvas.
+// group-type-driven model catalog used by the embedded canvas.
 func GetUserImageModelGroups(userGroup string) ([]dto.UserImageGroupOption, error) {
 	usableGroups := GetUserUsableGroups(userGroup)
 	catalog, err := CanvasModelCatalog(userGroup)

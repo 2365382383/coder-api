@@ -72,8 +72,9 @@ func canvasVideoAdapter(ability model.AbilityWithChannel, generation *jsplugin.R
 	return "openai"
 }
 
-// Canvas media capabilities follow the configured media group types. Other
-// groups retain endpoint metadata discovery for text and legacy compatibility.
+// Canvas capabilities follow the configured media group types. A group mapped
+// to 图片, 视频, or 音频 is assigned that capability for every enabled model;
+// every other group is a text group. Endpoint metadata is not consulted.
 func CanvasModelCatalog(userGroup string) ([]CanvasModelOption, error) {
 	options := []CanvasModelOption{}
 	groups := GetUserUsableGroups(userGroup)
@@ -94,14 +95,6 @@ func CanvasModelCatalog(userGroup string) ([]CanvasModelOption, error) {
 	if err != nil {
 		return nil, err
 	}
-	names := make([]string, 0, len(abilities))
-	for _, ability := range abilities {
-		names = append(names, ability.Model)
-	}
-	metadata, err := model.CanvasMetadataEndpoints(names)
-	if err != nil {
-		return nil, err
-	}
 	groupTypeDefinitions, groupTypeAssignments := ratio_setting.GetGroupTypeOptionsCopy()
 	generation := jsplugin.DefaultRegistry.Generation()
 	for _, group := range groupNames {
@@ -115,67 +108,23 @@ func CanvasModelCatalog(userGroup string) ([]CanvasModelOption, error) {
 			if !slices.Contains(queryGroups, ability.Group) {
 				continue
 			}
-			if capability := canvasMediaCapabilityForGroup(ability.Group, groupTypeDefinitions, groupTypeAssignments); capability != "" {
-				key := ability.Model + "\x00" + capability
-				if !seen[key] {
-					option := CanvasModelOption{Name: ability.Model, Group: group, Capability: capability}
-					if capability == "video" {
-						adapter := canvasVideoAdapter(ability, generation)
-						if current, ok := videoAdapters[ability.Model]; ok && current != adapter {
-							adapter = "unsupported"
-						}
-						videoAdapters[ability.Model] = adapter
-						option.VideoAdapter = adapter
-					}
-					options = append(options, option)
-					seen[key] = true
-				}
-				continue
+			capability := canvasMediaCapabilityForGroup(ability.Group, groupTypeDefinitions, groupTypeAssignments)
+			if capability == "" {
+				capability = "text"
 			}
-			endpoints := metadata[ability.Model]
-			if len(endpoints) == 0 {
-				// Task/plugin video models can publish their public /v1/videos
-				// route through the active channel binding without having a
-				// separate models.endpoints record. Keep metadata authoritative
-				// when it exists, but do not hide a route that the actual channel
-				// resolver has already declared. This is intentionally limited to
-				// video; images and text still require their explicit metadata.
-				if slices.Contains(model.ResolveAbilityEndpointTypes(ability, generation, nil), constant.EndpointTypeOpenAIVideo) {
+			key := ability.Model + "\x00" + capability
+			if !seen[key] {
+				option := CanvasModelOption{Name: ability.Model, Group: group, Capability: capability}
+				if capability == "video" {
 					adapter := canvasVideoAdapter(ability, generation)
 					if current, ok := videoAdapters[ability.Model]; ok && current != adapter {
 						adapter = "unsupported"
 					}
 					videoAdapters[ability.Model] = adapter
-					key := ability.Model + "\x00video"
-					if !seen[key] {
-						options = append(options, CanvasModelOption{Name: ability.Model, Group: group, Capability: "video", VideoAdapter: adapter})
-						seen[key] = true
-					}
+					option.VideoAdapter = adapter
 				}
-				continue
-			}
-			for _, endpoint := range endpoints {
-				capability := ""
-				switch endpoint.Path {
-				case "/v1/responses":
-					capability = "text"
-				case "/v1/images/generations", "/v1/images/edits":
-					capability = "image"
-				case "/v1/videos":
-					capability = "video"
-					adapter := canvasVideoAdapter(ability, generation)
-					if current, ok := videoAdapters[ability.Model]; ok && current != adapter {
-						adapter = "unsupported"
-					}
-					videoAdapters[ability.Model] = adapter
-				case "/v1/audio/speech":
-					capability = "audio"
-				}
-				key := ability.Model + "\x00" + capability
-				if capability != "" && !seen[key] {
-					options = append(options, CanvasModelOption{Name: ability.Model, Group: group, Capability: capability})
-					seen[key] = true
-				}
+				options = append(options, option)
+				seen[key] = true
 			}
 		}
 		for i := range options {

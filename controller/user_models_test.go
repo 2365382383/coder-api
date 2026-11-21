@@ -9,6 +9,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
@@ -137,6 +138,14 @@ func TestGetUserModelsWithEndpointTypesReturnsModelOptions(t *testing.T) {
 }
 
 func TestGetUserImageModelsReturnsConfiguredImageGroups(t *testing.T) {
+	previousTypes, previousAssignments := ratio_setting.GroupTypeOptions2JSONString()
+	t.Cleanup(func() {
+		require.NoError(t, ratio_setting.UpdateGroupTypeOptionsByJSONString(previousTypes, previousAssignments))
+	})
+	require.NoError(t, ratio_setting.UpdateGroupTypeOptionsByJSONString(
+		`{"image-type":{"name":"图片","order":1}}`,
+		`{"default":"image-type"}`,
+	))
 	db := setupModelListControllerTestDB(t)
 	require.NoError(t, db.Create(&model.User{
 		Id:       2004,
