@@ -1196,6 +1196,7 @@ func TestTaskReportsOnceAtTheFinalState(t *testing.T) {
 	seedUser(t, userID, 10_000)
 	seedToken(t, tokenID, userID, "sk-poll-report", 7_000)
 	ch := &model.Channel{Id: channelID, Type: constant.ChannelTypeKling, Name: "poll", Key: "sk-test", Status: common.ChannelStatusEnabled}
+	require.NoError(t, model.DB.Create(ch).Error)
 
 	var reported []string
 	previous := ReportTaskFunc

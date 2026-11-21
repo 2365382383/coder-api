@@ -43,46 +43,100 @@ const (
 	canvasImagePublicURLDefault  = "https://coderapi.vip/image-upload/"
 	canvasImagePublishMaxBytes   = int64(20 << 20)
 	canvasImageUploadTimeout     = 2 * time.Minute
+	canvasVideoUploadEndpoint    = "https://wcf.coderapi.vip/media-upload/upload"
+	canvasVideoPublicURLDefault  = "https://coderapi.vip/media-upload/"
+	canvasVideoPublishMaxBytes   = int64(512 << 20)
+	canvasVideoUploadTimeout     = time.Hour
 	canvasImageUploadResponseMax = int64(1 << 20)
 )
 
 var (
-	// These variables keep the production destination fixed while allowing an
-	// isolated HTTP fixture to exercise the upload protocol without real media.
+	// These variables keep production destinations fixed while allowing
+	// isolated HTTP fixtures to exercise the upload protocol without media.
 	canvasImageUploadURL       = canvasImageUploadEndpoint
 	canvasImagePublicURLPrefix = canvasImagePublicURLDefault
+	canvasVideoUploadURL       = canvasVideoUploadEndpoint
+	canvasVideoPublicURLPrefix = canvasVideoPublicURLDefault
 )
 
 var (
 	ErrCanvasImagePublishNotConfigured = errors.New("canvas image publishing is not configured")
 	ErrCanvasImagePublishFailed        = errors.New("canvas image publishing failed")
 	ErrCanvasImagePublishTooLarge      = errors.New("canvas image is too large for public upload")
+	ErrCanvasVideoPublishNotConfigured = errors.New("canvas video publishing is not configured")
+	ErrCanvasVideoPublishFailed        = errors.New("canvas video publishing failed")
+	ErrCanvasVideoPublishTooLarge      = errors.New("canvas video is too large for public upload")
 )
 
-type toolsImageUploadResponse struct {
+type toolsMediaUploadResponse struct {
 	Success bool `json:"success"`
 	Data    struct {
 		URL string `json:"url"`
 	} `json:"data"`
 }
 
+type canvasPublishErrors struct {
+	notConfigured error
+	failed        error
+	tooLarge      error
+}
+
 // PublishCanvasAssetImage makes an owner-checked canvas asset temporarily
 // public through the fixed Tools image-upload endpoint. The credential is
 // read only on the server and never becomes part of a browser request.
 func PublishCanvasAssetImage(ctx context.Context, userID int, assetID string) (string, error) {
-	if userID <= 0 || !model.ValidCanvasID(assetID) {
-		return "", model.ErrCanvasInvalid
-	}
-	if strings.TrimSpace(os.Getenv(canvasImageUploadKeyEnv)) == "" {
-		return "", ErrCanvasImagePublishNotConfigured
-	}
-	var asset model.CanvasAsset
-	if err := model.DB.Where("user_id = ? AND asset_id = ? AND deleted_at = 0", userID, assetID).First(&asset).Error; err != nil {
+	asset, err := canvasAssetForPublishing(userID, assetID)
+	if err != nil {
 		return "", err
 	}
 	if asset.Kind != "image" {
 		return "", model.ErrCanvasInvalid
 	}
+	return publishCanvasImageAsset(ctx, asset)
+}
+
+// PublishCanvasAssetVideo makes an owner-checked canvas video available through
+// the public media host, using the server-only New API key.
+func PublishCanvasAssetVideo(ctx context.Context, userID int, assetID string) (string, error) {
+	asset, err := canvasAssetForPublishing(userID, assetID)
+	if err != nil {
+		return "", err
+	}
+	if asset.Kind != "video" {
+		return "", model.ErrCanvasInvalid
+	}
+	return publishCanvasVideoAsset(ctx, asset)
+}
+
+// PublishCanvasAsset publishes an owner-checked image or video asset according
+// to its stored media kind.
+func PublishCanvasAsset(ctx context.Context, userID int, assetID string) (string, error) {
+	asset, err := canvasAssetForPublishing(userID, assetID)
+	if err != nil {
+		return "", err
+	}
+	switch asset.Kind {
+	case "image":
+		return publishCanvasImageAsset(ctx, asset)
+	case "video":
+		return publishCanvasVideoAsset(ctx, asset)
+	default:
+		return "", model.ErrCanvasInvalid
+	}
+}
+
+func canvasAssetForPublishing(userID int, assetID string) (model.CanvasAsset, error) {
+	if userID <= 0 || !model.ValidCanvasID(assetID) {
+		return model.CanvasAsset{}, model.ErrCanvasInvalid
+	}
+	var asset model.CanvasAsset
+	if err := model.DB.Where("user_id = ? AND asset_id = ? AND deleted_at = 0", userID, assetID).First(&asset).Error; err != nil {
+		return model.CanvasAsset{}, err
+	}
+	return asset, nil
+}
+
+func publishCanvasImageAsset(ctx context.Context, asset model.CanvasAsset) (string, error) {
 	contentType, err := canvasImageContentType(asset.MIME)
 	if err != nil {
 		return "", model.ErrCanvasInvalid
@@ -102,6 +156,26 @@ func PublishCanvasAssetImage(ctx context.Context, userID int, assetID string) (s
 	return uploadCanvasImageToTools(ctx, file, canvasImageFilename(contentType), contentType, asset.Size)
 }
 
+func publishCanvasVideoAsset(ctx context.Context, asset model.CanvasAsset) (string, error) {
+	contentType, err := canvasVideoContentType(asset.MIME)
+	if err != nil {
+		return "", model.ErrCanvasInvalid
+	}
+	if asset.Size <= 0 || asset.Size > canvasVideoPublishMaxBytes {
+		return "", ErrCanvasVideoPublishTooLarge
+	}
+	path, err := CanvasStoragePath(asset.StorageKey)
+	if err != nil {
+		return "", err
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return "", ErrCanvasVideoPublishFailed
+	}
+	defer file.Close()
+	return uploadCanvasVideoToMediaHost(ctx, file, canvasVideoFilename(contentType), contentType, asset.Size)
+}
+
 func canvasImageContentType(declared string) (string, error) {
 	parsed, _, err := mime.ParseMediaType(strings.TrimSpace(declared))
 	if err != nil {
@@ -115,6 +189,19 @@ func canvasImageContentType(declared string) (string, error) {
 	}
 }
 
+func canvasVideoContentType(declared string) (string, error) {
+	parsed, _, err := mime.ParseMediaType(strings.TrimSpace(declared))
+	if err != nil {
+		return "", err
+	}
+	switch strings.ToLower(parsed) {
+	case "video/mp4", "video/webm", "video/quicktime":
+		return strings.ToLower(parsed), nil
+	default:
+		return "", fmt.Errorf("unsupported canvas video type")
+	}
+}
+
 func canvasImageFilename(contentType string) string {
 	extension := map[string]string{
 		"image/jpeg": ".jpg",
@@ -124,29 +211,55 @@ func canvasImageFilename(contentType string) string {
 	return "canvas-reference" + extension
 }
 
+func canvasVideoFilename(contentType string) string {
+	extension := map[string]string{
+		"video/mp4":       ".mp4",
+		"video/webm":      ".webm",
+		"video/quicktime": ".mov",
+	}[contentType]
+	return "canvas-reference" + extension
+}
+
 func uploadCanvasImageToTools(ctx context.Context, source io.Reader, filename, contentType string, expectedSize int64) (string, error) {
+	return uploadCanvasFileToTools(ctx, source, filename, contentType, expectedSize, canvasImageUploadURL, canvasImagePublicURLPrefix, canvasImagePublishMaxBytes, canvasImageUploadTimeout, canvasImageContentType, canvasPublishErrors{
+		notConfigured: ErrCanvasImagePublishNotConfigured,
+		failed:        ErrCanvasImagePublishFailed,
+		tooLarge:      ErrCanvasImagePublishTooLarge,
+	})
+}
+
+func uploadCanvasVideoToMediaHost(ctx context.Context, source io.Reader, filename, contentType string, expectedSize int64) (string, error) {
+	return uploadCanvasFileToTools(ctx, source, filename, contentType, expectedSize, canvasVideoUploadURL, canvasVideoPublicURLPrefix, canvasVideoPublishMaxBytes, canvasVideoUploadTimeout, canvasVideoContentType, canvasPublishErrors{
+		notConfigured: ErrCanvasVideoPublishNotConfigured,
+		failed:        ErrCanvasVideoPublishFailed,
+		tooLarge:      ErrCanvasVideoPublishTooLarge,
+	})
+}
+
+func uploadCanvasFileToTools(ctx context.Context, source io.Reader, filename, contentType string, expectedSize int64, endpoint, publicURLPrefix string, maxBytes int64, timeout time.Duration, validateContentType func(string) (string, error), publishErrors canvasPublishErrors) (string, error) {
 	key := strings.TrimSpace(os.Getenv(canvasImageUploadKeyEnv))
 	if key == "" {
-		return "", ErrCanvasImagePublishNotConfigured
+		return "", publishErrors.notConfigured
 	}
-	if expectedSize <= 0 || expectedSize > canvasImagePublishMaxBytes {
-		return "", ErrCanvasImagePublishTooLarge
+	if expectedSize <= 0 || expectedSize > maxBytes {
+		return "", publishErrors.tooLarge
 	}
-	if _, err := canvasImageContentType(contentType); err != nil {
+	contentType, err := validateContentType(contentType)
+	if err != nil {
 		return "", model.ErrCanvasInvalid
 	}
-	if strings.TrimSpace(canvasImageUploadURL) == "" {
-		return "", ErrCanvasImagePublishFailed
+	if strings.TrimSpace(endpoint) == "" {
+		return "", publishErrors.failed
 	}
 
-	uploadContext, cancel := context.WithTimeout(ctx, canvasImageUploadTimeout)
+	uploadContext, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	reader, writer := io.Pipe()
 	form := multipart.NewWriter(writer)
-	request, err := http.NewRequestWithContext(uploadContext, http.MethodPost, canvasImageUploadURL, reader)
+	request, err := http.NewRequestWithContext(uploadContext, http.MethodPost, endpoint, reader)
 	if err != nil {
 		_ = reader.CloseWithError(err)
-		return "", ErrCanvasImagePublishFailed
+		return "", publishErrors.failed
 	}
 	request.Header.Set("Authorization", "Bearer "+key)
 	request.Header.Set("Content-Type", form.FormDataContentType())
@@ -155,13 +268,13 @@ func uploadCanvasImageToTools(ctx context.Context, source io.Reader, filename, c
 	go func() {
 		part, writeErr := form.CreateFormFile("file", filepath.Base(filename))
 		if writeErr == nil {
-			written, copyErr := io.Copy(part, io.LimitReader(source, canvasImagePublishMaxBytes+1))
+			written, copyErr := io.Copy(part, io.LimitReader(source, maxBytes+1))
 			if copyErr != nil {
 				writeErr = copyErr
-			} else if written > canvasImagePublishMaxBytes {
-				writeErr = ErrCanvasImagePublishTooLarge
+			} else if written > maxBytes {
+				writeErr = publishErrors.tooLarge
 			} else if written != expectedSize {
-				writeErr = ErrCanvasImagePublishFailed
+				writeErr = publishErrors.failed
 			}
 		}
 		if closeErr := form.Close(); writeErr == nil && closeErr != nil {
@@ -173,41 +286,41 @@ func uploadCanvasImageToTools(ctx context.Context, source io.Reader, filename, c
 
 	client := GetHttpClient()
 	if client == nil {
-		_ = reader.CloseWithError(ErrCanvasImagePublishFailed)
+		_ = reader.CloseWithError(publishErrors.failed)
 		<-writeDone
-		return "", ErrCanvasImagePublishFailed
+		return "", publishErrors.failed
 	}
 	response, err := client.Do(request)
 	if err != nil {
 		_ = reader.CloseWithError(err)
 		<-writeDone
-		return "", ErrCanvasImagePublishFailed
+		return "", publishErrors.failed
 	}
 	defer response.Body.Close()
 	body, readErr := io.ReadAll(io.LimitReader(response.Body, canvasImageUploadResponseMax+1))
 	writeErr := <-writeDone
 	if writeErr != nil {
-		if errors.Is(writeErr, ErrCanvasImagePublishTooLarge) {
+		if errors.Is(writeErr, publishErrors.tooLarge) {
 			return "", writeErr
 		}
-		return "", ErrCanvasImagePublishFailed
+		return "", publishErrors.failed
 	}
 	if readErr != nil || int64(len(body)) > canvasImageUploadResponseMax || response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
-		return "", ErrCanvasImagePublishFailed
+		return "", publishErrors.failed
 	}
-	var envelope toolsImageUploadResponse
+	var envelope toolsMediaUploadResponse
 	if err := json.Unmarshal(body, &envelope); err != nil || !envelope.Success {
-		return "", ErrCanvasImagePublishFailed
+		return "", publishErrors.failed
 	}
 	publicURL := strings.TrimSpace(envelope.Data.URL)
-	if !validCanvasPublicImageURL(publicURL) {
-		return "", ErrCanvasImagePublishFailed
+	if !validCanvasPublicURL(publicURL, publicURLPrefix) {
+		return "", publishErrors.failed
 	}
 	return publicURL, nil
 }
 
-func validCanvasPublicImageURL(raw string) bool {
-	if !strings.HasPrefix(raw, canvasImagePublicURLPrefix) {
+func validCanvasPublicURL(raw, prefix string) bool {
+	if !strings.HasPrefix(raw, prefix) {
 		return false
 	}
 	parsed, err := url.ParseRequestURI(raw)

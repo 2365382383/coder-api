@@ -112,6 +112,7 @@ export function canvasEndpoint(
         body: payload.blob,
       }
     case 'assets.publish_image':
+    case 'assets.publish_video':
       return {
         path: `/assets/${resource(payload)}/public-url`,
         method: 'POST',
@@ -169,7 +170,10 @@ export function canvasEndpoint(
     case 'responses.retrieve':
       return { path: `/v1/responses/${resource(payload)}`, method: 'GET' }
     case 'artifacts.list':
-      return { path: `/v1/tasks/${resource(payload)}/artifacts`, method: 'GET' }
+      return {
+        path: `/v1/tasks/${resource(payload)}/artifacts`,
+        method: 'GET',
+      }
     case 'artifacts.content':
       return {
         path: `/v1/tasks/${resource(payload)}/artifacts/${resource(
@@ -221,7 +225,7 @@ export function createCanvasBridge(
   const acknowledgements = new Map<string, () => void>()
   const usedIDs = new Set<string>()
   let disposed = false
-  port.onmessage = async (
+  const receiveMessage = async (
     event: MessageEvent<
       | CanvasRequest
       | { type: 'cancel' | 'ack'; id: string }
@@ -355,10 +359,14 @@ export function createCanvasBridge(
       acknowledgements.delete(message.id)
     }
   }
-  port.onmessageerror = closed
+  const receiveMessageError = () => closed()
+  port.addEventListener('message', receiveMessage)
+  port.addEventListener('messageerror', receiveMessageError)
   port.start()
   return () => {
     disposed = true
+    port.removeEventListener('message', receiveMessage)
+    port.removeEventListener('messageerror', receiveMessageError)
     for (const controller of requests.values()) controller.abort()
     requests.clear()
     usedIDs.clear()

@@ -10,6 +10,8 @@ const { CanvasNodeType } = await import("../src/types/canvas");
 const { defaultConfig } = await import("../src/stores/use-config-store");
 const { buildNodeGenerationContext } = await import("../src/components/canvas/canvas-node-generation");
 const { buildGenerationConfig, generationReferenceUrls, hydrateCanvasImages } = await import("../src/lib/canvas/canvas-generation-helpers");
+const { canvasImageConfig } = await import("../src/embedded/image-api");
+const { buildImageGenerationPayload } = await import("../src/embedded/playground/image-payload-builder");
 
 test("new config nodes fit the grouped model picker and settings control", () => {
     const node = createCanvasNode(CanvasNodeType.Config, { x: 0, y: 0 });
@@ -44,6 +46,48 @@ test("image generation uses image settings saved on the canvas node", () => {
         quality: "low",
         count: "1",
     });
+});
+
+test("image compression is preserved in the serialized generation request", () => {
+    const selection = "g-image-image::gpt-image-2";
+    const capabilities = {
+        provider: "openai",
+        size_mode: "aspect_ratio_resolution",
+        sizes: [],
+        aspect_ratios: ["3:2"],
+        resolutions: ["1K"],
+        qualities: ["low"],
+        output_formats: ["jpeg"],
+        supports_editing: true,
+        supports_moderation: true,
+        supports_output_compression: true,
+        max_images: 10,
+    };
+    const config = {
+        ...defaultConfig,
+        model: selection,
+        imageModel: selection,
+        models: [selection],
+        channels: [
+            {
+                id: "g-image-image",
+                name: "image",
+                baseUrl: "",
+                apiKey: "",
+                apiFormat: "openai",
+                models: [{ name: "gpt-image-2", capability: "image" }],
+            },
+        ],
+        imageAspectRatio: "3:2",
+        imageResolution: "1K",
+        imageOutputFormat: "jpeg",
+        imageOutputCompression: "72",
+        quality: "low",
+    };
+    const imageConfig = canvasImageConfig(config, selection, capabilities);
+    const request = buildImageGenerationPayload("prompt", imageConfig, capabilities);
+
+    expect(request).toMatchObject({ aspect_ratio: "3:2", resolution: "1K", output_format: "jpeg", output_compression: 72 });
 });
 
 test("restores canvas images from their stored asset keys when inline content is empty", async () => {

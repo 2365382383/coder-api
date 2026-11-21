@@ -47,7 +47,7 @@ func canvasControllerFixture(t *testing.T) *gin.Engine {
 	engine.PUT("/api/canvas/state/:namespace/:entry_key", CanvasSettings)
 	engine.DELETE("/api/canvas/state/:namespace/:entry_key", CanvasSettings)
 	engine.GET("/api/canvas/assets", ListCanvasAssets)
-	engine.POST("/api/canvas/assets/:asset_id/public-url", PublishCanvasImage)
+	engine.POST("/api/canvas/assets/:asset_id/public-url", PublishCanvasAsset)
 	engine.PUT("/api/canvas/assets/:asset_id/content", UploadCanvasAsset)
 	engine.GET("/api/canvas/assets/:asset_id/content", CanvasAsset)
 	engine.DELETE("/api/canvas/assets/:asset_id", CanvasAsset)
@@ -99,8 +99,15 @@ func TestCanvasProjectsAssetsAndConflicts(t *testing.T) {
 	assert.NotContains(t, response.Body.String(), "blob:temporary")
 	response = perform(http.MethodPut, "/api/canvas/state/app_state/config", `{"revision":0,"value":"{\"apiKey\":\"secret-canary\"}"}`, "application/json", "")
 	assert.Equal(t, http.StatusUnprocessableEntity, response.Code)
+	t.Setenv("CANVAS_IMAGE_UPLOAD_API_KEY", "")
 	response = perform(http.MethodPost, "/api/canvas/assets/image:one/public-url", "", "", "")
 	assert.Equal(t, http.StatusServiceUnavailable, response.Code, response.Body.String())
+	assert.Contains(t, response.Body.String(), "Canvas media publishing is not configured")
+	response = perform(http.MethodPut, "/api/canvas/assets/video:one/content", "video-bytes", "video/mp4", "")
+	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+	response = perform(http.MethodPost, "/api/canvas/assets/video:one/public-url", "", "", "")
+	assert.Equal(t, http.StatusServiceUnavailable, response.Code, response.Body.String())
+	assert.Contains(t, response.Body.String(), "Canvas media publishing is not configured")
 }
 
 func TestCanvasGenerationIdempotencyAndArchive(t *testing.T) {

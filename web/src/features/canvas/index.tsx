@@ -80,7 +80,7 @@ export function Canvas() {
       channel = new MessageChannel()
       const activeChannel = channel
       const nonce = crypto.randomUUID()
-      channel.port1.onmessage = (event: MessageEvent) => {
+      const receiveReady = (event: MessageEvent) => {
         if (
           !active ||
           channel !== activeChannel ||
@@ -89,6 +89,7 @@ export function Canvas() {
         ) {
           return
         }
+        activeChannel.port1.removeEventListener('message', receiveReady)
         dispose = createCanvasBridge(
           activeChannel.port1,
           fail,
@@ -112,6 +113,7 @@ export function Canvas() {
           theme: themeRef.current,
         })
       }
+      channel.port1.addEventListener('message', receiveReady)
       channel.port1.start()
       frame.contentWindow?.postMessage(
         { type: 'canvas:init', protocol: 1, nonce, theme: themeRef.current },

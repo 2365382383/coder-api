@@ -30,6 +30,46 @@ vi.mock('@/lib/auth-session', () => ({
 
 afterEach(() => vi.unstubAllGlobals())
 
+type BridgeMessageHandler = (event: MessageEvent) => Promise<void>
+
+function createMessagePort(send: ReturnType<typeof vi.fn>) {
+  const state: {
+    handler: ((event: MessageEvent) => Promise<void>) | null
+  } = { handler: null }
+  const port = {
+    postMessage: send,
+    start: vi.fn(),
+    close: vi.fn(),
+    addEventListener: vi.fn(
+      (type: string, listener: EventListenerOrEventListenerObject) => {
+        if (type === 'message' && typeof listener === 'function') {
+          state.handler = listener as unknown as (
+            event: MessageEvent
+          ) => Promise<void>
+        }
+      }
+    ),
+    removeEventListener: vi.fn(
+      (type: string, listener: EventListenerOrEventListenerObject) => {
+        if (
+          type === 'message' &&
+          typeof listener === 'function' &&
+          state.handler === (listener as unknown as BridgeMessageHandler)
+        ) {
+          state.handler = null
+        }
+      }
+    ),
+  } as unknown as MessagePort
+  const receive = (event: MessageEvent) => {
+    if (!state.handler) {
+      throw new Error('Canvas message handler is not installed')
+    }
+    return state.handler(event)
+  }
+  return { port, receive }
+}
+
 describe('Canvas bridge operations', () => {
   it('rejects arbitrary targets and path traversal', () => {
     expect(() =>
@@ -62,6 +102,12 @@ describe('Canvas bridge operations', () => {
   it('publishes only an owner-scoped asset identifier', () => {
     const target = canvasEndpoint('assets.publish_image', { id: 'image:one' })
     expect(target.path).toBe('/assets/image%3Aone/public-url')
+    expect(
+      canvasEndpoint('assets.publish_video', { id: 'video:one' })
+    ).toMatchObject({
+      path: '/assets/video%3Aone/public-url',
+      method: 'POST',
+    })
     expect(target.method).toBe('POST')
     expect(target).not.toHaveProperty('body')
     expect(target).not.toHaveProperty('Authorization')
@@ -75,26 +121,21 @@ describe('Canvas bridge operations', () => {
   })
   it('streams bytes with backpressure and never sends session auth to the child', async () => {
     const first = new TextEncoder().encode('中文🙂')
-    let receive: (event: MessageEvent) => Promise<void>
+    const channel: { receive?: (event: MessageEvent) => Promise<void> } = {}
     const replies: unknown[] = []
     const send = vi.fn((message: { type: string; id: string }) => {
       replies.push(message)
       if (message.type === 'chunk') {
         queueMicrotask(
           () =>
-            void receive({
+            void channel.receive?.({
               data: { type: 'ack', id: message.id },
             } as MessageEvent)
         )
       }
     })
-    const port = {
-      postMessage: send,
-      start: vi.fn(),
-      close: vi.fn(),
-      onmessage: undefined,
-      onmessageerror: undefined,
-    } as unknown as MessagePort
+    const { port, receive } = createMessagePort(send)
+    channel.receive = receive
     const fetcher = vi.fn().mockResolvedValue(
       new Response(first, {
         headers: { 'Content-Type': 'text/event-stream' },
@@ -102,7 +143,6 @@ describe('Canvas bridge operations', () => {
     )
     vi.stubGlobal('fetch', fetcher)
     const dispose = createCanvasBridge(port, vi.fn())
-    receive = port.onmessage as unknown as typeof receive
     await receive({
       data: {
         type: 'request',
@@ -140,31 +180,26 @@ describe('Canvas bridge operations', () => {
   })
 
   it('loads the public prompt catalog without session credentials', async () => {
-    let receive: (event: MessageEvent) => Promise<void>
-    const port = {
-      postMessage: vi.fn((message: { type: string; id: string }) => {
-        if (message.type === 'chunk') {
-          queueMicrotask(
-            () =>
-              void receive({
-                data: { type: 'ack', id: message.id },
-              } as MessageEvent)
-          )
-        }
-      }),
-      start: vi.fn(),
-      close: vi.fn(),
-      onmessage: undefined,
-      onmessageerror: undefined,
-    } as unknown as MessagePort
+    const channel: { receive?: (event: MessageEvent) => Promise<void> } = {}
+    const send = vi.fn((message: { type: string; id: string }) => {
+      if (message.type === 'chunk') {
+        queueMicrotask(
+          () =>
+            void channel.receive?.({
+              data: { type: 'ack', id: message.id },
+            } as MessageEvent)
+        )
+      }
+    })
     const fetcher = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ items: [], total: 0 }), {
         headers: { 'Content-Type': 'application/json' },
       })
     )
     vi.stubGlobal('fetch', fetcher)
+    const { port, receive } = createMessagePort(send)
+    channel.receive = receive
     const dispose = createCanvasBridge(port, vi.fn())
-    receive = port.onmessage as unknown as typeof receive
     await receive({
       data: {
         type: 'request',

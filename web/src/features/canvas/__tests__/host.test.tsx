@@ -25,15 +25,17 @@ import { useAuthStore } from '@/stores/auth-store'
 
 import { Canvas } from '..'
 
-const channels: Array<{
-  port1: {
-    onmessage: ((event: MessageEvent) => void) | null
-    start: ReturnType<typeof vi.fn>
-    close: ReturnType<typeof vi.fn>
-    postMessage: ReturnType<typeof vi.fn>
-  }
-  port2: object
-}> = []
+type FakeCanvasPort = {
+  listeners: Map<string, Set<(event: MessageEvent) => void>>
+  dispatchMessage: (event: MessageEvent) => void
+  addEventListener: ReturnType<typeof vi.fn>
+  removeEventListener: ReturnType<typeof vi.fn>
+  start: ReturnType<typeof vi.fn>
+  close: ReturnType<typeof vi.fn>
+  postMessage: ReturnType<typeof vi.fn>
+}
+
+const channels: Array<{ port1: FakeCanvasPort; port2: object }> = []
 
 function signIn(id: number) {
   useAuthStore.getState().auth.setBundle({
@@ -59,14 +61,35 @@ beforeEach(() => {
   vi.stubGlobal(
     'MessageChannel',
     class {
-      port1 = {
-        onmessage: null,
-        start: vi.fn(),
-        close: vi.fn(),
-        postMessage: vi.fn(),
-      }
+      port1: FakeCanvasPort
       port2 = {}
+
       constructor() {
+        const listeners = new Map<string, Set<(event: MessageEvent) => void>>()
+        this.port1 = {
+          listeners,
+          addEventListener: vi.fn((type, listener) => {
+            if (typeof listener !== 'function') return
+            const handlers = listeners.get(type) ?? new Set()
+            handlers.add(listener as (event: MessageEvent) => void)
+            listeners.set(type, handlers)
+          }),
+          removeEventListener: vi.fn((type, listener) => {
+            if (typeof listener === 'function') {
+              listeners
+                .get(type)
+                ?.delete(listener as (event: MessageEvent) => void)
+            }
+          }),
+          dispatchMessage: (event) => {
+            for (const listener of listeners.get('message') ?? []) {
+              listener(event)
+            }
+          },
+          start: vi.fn(),
+          close: vi.fn(),
+          postMessage: vi.fn(),
+        }
         channels.push(this)
       }
     }
@@ -127,7 +150,7 @@ describe('Canvas host lifecycle', () => {
     expect(initialization.theme).toBe('dark')
     const port = channels.at(-1)?.port1
     act(() => {
-      port?.onmessage?.(
+      port?.dispatchMessage(
         new MessageEvent('message', {
           data: { type: 'ready', nonce: initialization.nonce },
         })
@@ -156,7 +179,7 @@ describe('Canvas host lifecycle', () => {
     const port = channels.at(-1)?.port1
     expect(port).toBeDefined()
     act(() => {
-      port?.onmessage?.(
+      port?.dispatchMessage(
         new MessageEvent('message', {
           data: { type: 'ready', nonce: initialization.nonce },
         })
@@ -165,7 +188,7 @@ describe('Canvas host lifecycle', () => {
     expect(frame.getAttribute('aria-busy')).toBe('true')
     expect(frame.classList.contains('invisible')).toBe(true)
     act(() => {
-      port?.onmessage?.(
+      port?.dispatchMessage(
         new MessageEvent('message', { data: { type: 'loaded' } })
       )
     })
@@ -187,7 +210,7 @@ describe('Canvas host lifecycle', () => {
     const port = channels.at(-1)?.port1
     expect(port).toBeDefined()
     act(() => {
-      port?.onmessage?.(
+      port?.dispatchMessage(
         new MessageEvent('message', {
           data: { type: 'ready', nonce: initialization.nonce },
         })
@@ -197,7 +220,7 @@ describe('Canvas host lifecycle', () => {
     expect(screen.getByText('Unable to open canvas')).toBeTruthy()
     expect(port?.close).toHaveBeenCalled()
     act(() => {
-      port?.onmessage?.(
+      port?.dispatchMessage(
         new MessageEvent('message', { data: { type: 'loaded' } })
       )
     })

@@ -62,3 +62,56 @@ func TestUploadCanvasImageToToolsRequiresConfiguration(t *testing.T) {
 	_, err := uploadCanvasImageToTools(t.Context(), strings.NewReader("png-bytes"), "canvas-reference.png", "image/png", int64(len("png-bytes")))
 	require.ErrorIs(t, err, ErrCanvasImagePublishNotConfigured)
 }
+
+func TestUploadCanvasVideoToMediaHostUsesServerOnlyKeyAndMultipart(t *testing.T) {
+	const key = "sk-test-canvas-publish"
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		require.Equal(t, "Bearer "+key, request.Header.Get("Authorization"))
+		mediaType, params, err := mime.ParseMediaType(request.Header.Get("Content-Type"))
+		require.NoError(t, err)
+		require.Equal(t, "multipart/form-data", mediaType)
+		reader := multipart.NewReader(request.Body, params["boundary"])
+		part, err := reader.NextPart()
+		require.NoError(t, err)
+		require.Equal(t, "file", part.FormName())
+		require.Equal(t, "canvas-reference.mp4", part.FileName())
+		content, err := io.ReadAll(part)
+		require.NoError(t, err)
+		require.Equal(t, []byte("mp4-bytes"), content)
+		_, err = reader.NextPart()
+		require.ErrorIs(t, err, io.EOF)
+		writer.Header().Set("Content-Type", "application/json")
+		writer.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(writer).Encode(map[string]any{
+			"success": true,
+			"data":    map[string]string{"url": "https://coderapi.vip/media-upload/v_fixture"},
+		})
+	}))
+	defer server.Close()
+
+	previousClient := httpClient
+	previousURL := canvasVideoUploadURL
+	previousPrefix := canvasVideoPublicURLPrefix
+	t.Cleanup(func() {
+		httpClient = previousClient
+		canvasVideoUploadURL = previousURL
+		canvasVideoPublicURLPrefix = previousPrefix
+	})
+	httpClient = server.Client()
+	canvasVideoUploadURL = server.URL
+	canvasVideoPublicURLPrefix = "https://coderapi.vip/media-upload/"
+	t.Setenv(canvasImageUploadKeyEnv, key)
+
+	url, err := uploadCanvasVideoToMediaHost(t.Context(), strings.NewReader("mp4-bytes"), "canvas-reference.mp4", "video/mp4", int64(len("mp4-bytes")))
+	require.NoError(t, err)
+	require.Equal(t, "https://coderapi.vip/media-upload/v_fixture", url)
+}
+
+func TestCanvasVideoContentTypeRejectsUnsupportedFormats(t *testing.T) {
+	for _, contentType := range []string{"video/mp4", "video/webm", "video/quicktime"} {
+		_, err := canvasVideoContentType(contentType)
+		require.NoError(t, err)
+	}
+	_, err := canvasVideoContentType("application/octet-stream")
+	require.Error(t, err)
+}

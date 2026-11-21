@@ -185,7 +185,7 @@ type relayOutcome struct {
 	status int
 	header http.Header
 	body   string
-	quota  int
+	quota  int64
 	log    model.Log
 }
 

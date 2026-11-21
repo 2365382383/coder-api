@@ -34,6 +34,7 @@ services:
       - REDIS_CONN_STRING=redis://:123456@redis:6379 # ⚠️ IMPORTANT: Change the password in production!
       - TZ=Asia/Shanghai
       - ERROR_LOG_ENABLED=true # 是否启用错误日志记录 (Whether to enable error log recording)
+      - CANVAS_IMAGE_UPLOAD_API_KEY=${CANVAS_IMAGE_UPLOAD_API_KEY:-} # Server-side temporary image/video publishing for canvas references
       - BATCH_UPDATE_ENABLED=true  # 是否启用批量更新 (Whether to enable batch update)
       - NODE_NAME=new-api-node-1  # 节点名称，用于审计日志中标识节点身份；多节点/容器部署时建议设置 (Node name used in audit logs; recommended when running multiple instances or in containers)
 #      - DEFAULT_LANGUAGE=zh-CN  # 默认语言：日志输出，以及对方没有指定语言时返回的提示、邮件和通知；可选 en、zh-CN、zh-TW，不设置为 en (Default language of logs and of messages, emails and notifications when the reader states none: en, zh-CN or zh-TW; en if unset)
