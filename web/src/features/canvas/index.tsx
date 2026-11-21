@@ -17,12 +17,15 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
+import { Monitor } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { EmptyState } from '@/components/empty-state'
 import { ErrorState } from '@/components/error-state'
 import { LoadingState } from '@/components/loading-state'
 import { useTheme } from '@/context/theme-provider'
+import { useMediaQuery } from '@/hooks/use-media-query'
 import { getBuildRevision } from '@/lib/build-metadata'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth-store'
@@ -32,6 +35,7 @@ import { createCanvasBridge } from './bridge'
 export function Canvas() {
   const { t } = useTranslation()
   const { resolvedTheme } = useTheme()
+  const isNarrow = useMediaQuery('(max-width: 767px)')
   const iframe = useRef<HTMLIFrameElement>(null)
   const themeRef = useRef<'light' | 'dark'>(resolvedTheme)
   const portRef = useRef<MessagePort | undefined>(undefined)
@@ -49,6 +53,7 @@ export function Canvas() {
 
   useEffect(() => {
     setStatus('loading')
+    if (isNarrow) return
     if (!userID || !sid) return
     const frame = iframe.current
     if (!frame) return
@@ -128,31 +133,44 @@ export function Canvas() {
       portRef.current = undefined
       frame.src = 'about:blank'
     }
-  }, [userID, sid, version])
+  }, [isNarrow, userID, sid, version])
 
   return (
     <section className='relative flex h-full min-h-0 flex-1 flex-col overflow-hidden'>
-      {status === 'loading' && <LoadingState className='absolute inset-0' />}
-      {status === 'failed' && (
-        <ErrorState
+      {isNarrow ? (
+        <EmptyState
+          icon={Monitor}
           title={t('Infinite Canvas')}
-          description={t('Unable to open canvas')}
-          onRetry={() => setVersion((value) => value + 1)}
+          description={t('Use a wider screen to open Infinite Canvas.')}
+          className='h-full min-h-0 border-0'
         />
+      ) : (
+        <>
+          {status === 'loading' && (
+            <LoadingState className='absolute inset-0' />
+          )}
+          {status === 'failed' && (
+            <ErrorState
+              title={t('Infinite Canvas')}
+              description={t('Unable to open canvas')}
+              onRetry={() => setVersion((value) => value + 1)}
+            />
+          )}
+          <iframe
+            key={`${String(userID)}:${String(sid)}`}
+            ref={iframe}
+            title={t('Infinite Canvas')}
+            sandbox='allow-scripts allow-downloads'
+            className={cn(
+              'h-full min-h-0 w-full flex-1 border-0',
+              status === 'loading' && 'invisible',
+              status === 'failed' && 'hidden'
+            )}
+            referrerPolicy='same-origin'
+            aria-busy={status === 'loading'}
+          />
+        </>
       )}
-      <iframe
-        key={`${String(userID)}:${String(sid)}`}
-        ref={iframe}
-        title={t('Infinite Canvas')}
-        sandbox='allow-scripts allow-downloads'
-        className={cn(
-          'h-full min-h-0 w-full flex-1 border-0',
-          status === 'loading' && 'invisible',
-          status === 'failed' && 'hidden'
-        )}
-        referrerPolicy='same-origin'
-        aria-busy={status === 'loading'}
-      />
     </section>
   )
 }

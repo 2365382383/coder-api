@@ -31,6 +31,7 @@ export function CanvasTextSettingsPopover({ config, onConfigChange, count, onCou
         const syncPosition = () => setButtonRect(buttonRef.current?.getBoundingClientRect() || null);
         const closeOnOutsidePointer = (event: PointerEvent) => {
             const target = event.target;
+            if (target instanceof Element && target.closest(".ant-select-dropdown, .ant-dropdown, .ant-popover, .ant-picker-dropdown")) return;
             if (!(target instanceof Node) || buttonRef.current?.contains(target) || panelRef.current?.contains(target)) return;
             setOpen(false);
         };
@@ -79,7 +80,7 @@ function TextSettingsPortal({ buttonRect, panelRef, placement, theme, config, co
     const topPlacement = placement?.startsWith("top");
     const style = {
         position: "fixed",
-        zIndex: 1200,
+        zIndex: 1000,
         width,
         left: Math.max(margin, Math.min(window.innerWidth - width - margin, left)),
         ...(topPlacement ? { bottom: window.innerHeight - buttonRect.top + gap } : { top: buttonRect.bottom + gap }),

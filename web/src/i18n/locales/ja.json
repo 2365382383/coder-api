@@ -7923,6 +7923,7 @@
     "Index request failed with HTTP {{status}}": "インデックスの取得に失敗しました（HTTP {{status}}）",
     "Index URL": "インデックス URL",
     "Infinite Canvas": "無限キャンバス",
+    "Use a wider screen to open Infinite Canvas.": "より広い画面でキャンバスを開いてください。",
     "Initial amount shown in the top-up input before the user edits it.": "ユーザーが変更する前にチャージ入力欄へ表示する初期金額です。",
     "Inspect normalized text before token estimation.": "トークン数を推定する前に正規化されたテキストを検査します。",
     "Inspect user prompts": "ユーザープロンプトの検査",

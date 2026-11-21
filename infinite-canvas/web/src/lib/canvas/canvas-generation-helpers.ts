@@ -42,26 +42,33 @@ export async function resolveMetadataReferences(metadata: CanvasNodeMetadata) {
     return references.every(Boolean) ? (references as ReferenceImage[]) : null;
 }
 
-export async function hydrateCanvasImages(nodes: CanvasNodeData[]) {
+type CanvasImageRestoreStorage = {
+    ensureImagePreview: typeof ensureImagePreview;
+    resolveImageUrl: typeof resolveImageUrl;
+    uploadImage: typeof uploadImage;
+};
+
+export async function hydrateCanvasImages(nodes: CanvasNodeData[], storage: CanvasImageRestoreStorage = { ensureImagePreview, resolveImageUrl, uploadImage }) {
     return Promise.all(
         nodes.map(async (node) => {
             const metadata = node.metadata;
             const content = metadata?.content;
             if ((node.type === CanvasNodeType.Video || node.type === CanvasNodeType.Audio) && metadata?.storageKey) return { ...node, metadata: { ...metadata, content: await resolveMediaUrl(metadata.storageKey, content) } };
-            if (node.type !== CanvasNodeType.Image || !metadata || !content) return node;
+            if (node.type !== CanvasNodeType.Image || !metadata) return node;
             const images = await Promise.all(
                 (metadata.images || []).map(async (image) => {
-                    if (!image.content) return image;
-                    void ensureImagePreview(image.storageKey);
-                    return { ...image, content: await resolveImageUrl(image.storageKey, image.content) };
+                    if (!image.content && !image.storageKey) return image;
+                    if (image.storageKey) void storage.ensureImagePreview(image.storageKey);
+                    return { ...image, content: await storage.resolveImageUrl(image.storageKey, image.content) };
                 }),
             );
             if (metadata.storageKey) {
-                void ensureImagePreview(metadata.storageKey);
-                return { ...node, metadata: { ...metadata, content: await resolveImageUrl(metadata.storageKey, content), images } };
+                void storage.ensureImagePreview(metadata.storageKey);
+                return { ...node, metadata: { ...metadata, content: await storage.resolveImageUrl(metadata.storageKey, content), images } };
             }
-            if (!content.startsWith("data:image/")) return node;
-            return { ...node, metadata: { ...metadata, ...imageMetadata(await uploadImage(content)) } };
+            if (!content) return images.some((image, index) => image !== metadata.images?.[index]) ? { ...node, metadata: { ...metadata, images } } : node;
+            if (!content.startsWith("data:image/")) return images.some((image, index) => image !== metadata.images?.[index]) ? { ...node, metadata: { ...metadata, images } } : node;
+            return { ...node, metadata: { ...metadata, ...imageMetadata(await storage.uploadImage(content)) } };
         }),
     );
 }
@@ -109,6 +116,11 @@ export function buildGenerationConfig(config: AiConfig, node: CanvasNodeData | u
         reasoningEffort: node?.metadata?.reasoningEffort || config.reasoningEffort || defaultConfig.reasoningEffort,
         quality: node?.metadata?.quality || config.quality || defaultConfig.quality,
         size: node?.metadata?.size || config.size || defaultConfig.size,
+        imageAspectRatio: node?.metadata?.imageAspectRatio || config.imageAspectRatio || defaultConfig.imageAspectRatio,
+        imageResolution: node?.metadata?.imageResolution || config.imageResolution || defaultConfig.imageResolution,
+        imageOutputFormat: node?.metadata?.imageOutputFormat || config.imageOutputFormat || defaultConfig.imageOutputFormat,
+        imageModeration: node?.metadata?.imageModeration || config.imageModeration || defaultConfig.imageModeration,
+        imageOutputCompression: node?.metadata?.imageOutputCompression || config.imageOutputCompression || defaultConfig.imageOutputCompression,
         background: node?.metadata?.background ?? config.background ?? defaultConfig.background,
         videoSeconds: node?.metadata?.seconds || config.videoSeconds || defaultConfig.videoSeconds,
         vquality: node?.metadata?.vquality || config.vquality || defaultConfig.vquality,

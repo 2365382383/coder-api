@@ -7923,6 +7923,7 @@
     "Index request failed with HTTP {{status}}": "索引请求失败，HTTP {{status}}",
     "Index URL": "索引 URL",
     "Infinite Canvas": "无限画布",
+    "Use a wider screen to open Infinite Canvas.": "请在较宽屏幕上使用无限画布。",
     "Initial amount shown in the top-up input before the user edits it.": "用户编辑前充值输入框中显示的初始金额。",
     "Inspect normalized text before token estimation.": "在 token 估算前检查规范化文本。",
     "Inspect user prompts": "检查用户提示",

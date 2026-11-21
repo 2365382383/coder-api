@@ -28,6 +28,7 @@ export function CanvasVideoSettingsPopover({ config, onConfigChange, buttonClass
         const closeOnOutsidePointer = (event: PointerEvent) => {
             const target = event.target;
             if (!(target instanceof Node)) return;
+            if (target instanceof Element && target.closest(".ant-select-dropdown, .ant-dropdown, .ant-popover, .ant-picker-dropdown")) return;
             if (buttonRef.current?.contains(target) || panelRef.current?.contains(target)) return;
             setOpen(false);
         };
@@ -83,7 +84,7 @@ function VideoSettingsPortal({
     const topPlacement = placement?.startsWith("top");
     const style = {
         position: "fixed",
-        zIndex: 1200,
+        zIndex: 1000,
         width,
         left: Math.max(margin, Math.min(window.innerWidth - width - margin, left)),
         ...(topPlacement ? { bottom: window.innerHeight - buttonRect.top + gap, maxHeight: Math.max(260, buttonRect.top - margin * 2) } : { top: buttonRect.bottom + gap, maxHeight: Math.max(260, window.innerHeight - buttonRect.bottom - margin * 2) }),

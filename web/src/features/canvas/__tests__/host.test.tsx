@@ -81,6 +81,25 @@ afterEach(() => {
 })
 
 describe('Canvas host lifecycle', () => {
+  it('does not mount the canvas iframe on narrow screens', () => {
+    const matchMedia = window.matchMedia.bind(window)
+    vi.spyOn(window, 'matchMedia').mockImplementation((query) => {
+      const media = matchMedia(query)
+      return {
+        ...media,
+        matches: query === '(max-width: 767px)' || media.matches,
+      }
+    })
+
+    render(<Canvas />)
+
+    expect(
+      screen.getByText('Use a wider screen to open Infinite Canvas.')
+    ).toBeVisible()
+    expect(screen.queryByTitle('Infinite Canvas')).toBeNull()
+    expect(channels).toHaveLength(0)
+  })
+
   it('sends the resolved host theme during the canvas handshake', () => {
     function ThemeControl() {
       const { setTheme } = useTheme()

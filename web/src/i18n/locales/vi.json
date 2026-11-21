@@ -7923,6 +7923,7 @@
     "Index request failed with HTTP {{status}}": "Yêu cầu chỉ mục thất bại với HTTP {{status}}",
     "Index URL": "URL chỉ mục",
     "Infinite Canvas": "Bảng vẽ vô hạn",
+    "Use a wider screen to open Infinite Canvas.": "Hãy mở bảng vẽ trên màn hình rộng hơn.",
     "Initial amount shown in the top-up input before the user edits it.": "Số tiền ban đầu hiển thị trong ô nạp tiền trước khi người dùng chỉnh sửa.",
     "Inspect normalized text before token estimation.": "Kiểm tra văn bản đã chuẩn hóa trước khi ước tính token.",
     "Inspect user prompts": "Kiểm tra lời nhắc của người dùng",

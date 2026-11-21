@@ -7923,6 +7923,7 @@
     "Index request failed with HTTP {{status}}": "Échec de la requête d’index : HTTP {{status}}",
     "Index URL": "URL de l’index",
     "Infinite Canvas": "Canevas infini",
+    "Use a wider screen to open Infinite Canvas.": "Utilisez un écran plus large pour ouvrir le canevas infini.",
     "Initial amount shown in the top-up input before the user edits it.": "Montant initial affiché dans le champ de recharge avant modification par l’utilisateur.",
     "Inspect normalized text before token estimation.": "Inspecter le texte normalisé avant l’estimation des tokens.",
     "Inspect user prompts": "Inspecter les invites utilisateur",

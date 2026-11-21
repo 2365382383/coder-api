@@ -30,6 +30,11 @@ export function CanvasImageSettingsPopover({ config, onConfigChange, onOpenChang
     const quality = config.quality || "auto";
     const count = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
     const activeSize = config.size || "auto";
+    const imagePreset = [config.imageResolution, config.imageAspectRatio].filter(Boolean);
+    let imageSizeSummary = imageSizeLabel(activeSize);
+    if (imagePreset.length) {
+        imageSizeSummary = imagePreset.every((value) => value === "auto") ? t("settingsPanels.common.auto") : imagePreset.join(" · ");
+    }
     const updateOpen = (nextOpen: boolean) => {
         setOpen(nextOpen);
         onOpenChange?.(nextOpen);
@@ -41,6 +46,7 @@ export function CanvasImageSettingsPopover({ config, onConfigChange, onOpenChang
         const closeOnOutsidePointer = (event: PointerEvent) => {
             const target = event.target;
             if (!(target instanceof Node)) return;
+            if (target instanceof Element && target.closest(".ant-select-dropdown, .ant-dropdown, .ant-popover, .ant-picker-dropdown")) return;
             if (buttonRef.current?.contains(target) || panelRef.current?.contains(target)) return;
             if (document.activeElement instanceof HTMLElement && panelRef.current?.contains(document.activeElement)) document.activeElement.blur();
             setOpen(false);
@@ -65,7 +71,7 @@ export function CanvasImageSettingsPopover({ config, onConfigChange, onOpenChang
             <span ref={buttonRef} className="inline-flex min-w-0">
                 <Button size="small" type="text" className={buttonClassName || "!h-8 !max-w-[180px] !justify-start !rounded-full !px-2.5"} style={{ background: theme.node.fill, color: theme.node.text }} icon={<Settings2 className="size-3.5" />} onClick={() => updateOpen(!open)}>
                     <span className="truncate">
-                        {imageQualityLabel(quality)} · {imageSizeLabel(activeSize)} · {t("canvas.controls.images", { count })}
+                        {imageQualityLabel(quality)} · {imageSizeSummary} · {t("canvas.controls.images", { count })}
                     </span>
                 </Button>
             </span>
@@ -98,7 +104,7 @@ function ImageSettingsPortal({
     const topPlacement = placement?.startsWith("top");
     const style = {
         position: "fixed",
-        zIndex: 1200,
+        zIndex: 1000,
         width,
         left: Math.max(margin, Math.min(window.innerWidth - width - margin, left)),
         ...(topPlacement ? { bottom: window.innerHeight - buttonRect.top + gap, maxHeight: Math.max(260, buttonRect.top - margin * 2) } : { top: buttonRect.bottom + gap, maxHeight: Math.max(260, window.innerHeight - buttonRect.bottom - margin * 2) }),

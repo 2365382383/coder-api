@@ -7923,6 +7923,7 @@
     "Index request failed with HTTP {{status}}": "Запрос индекса завершился ошибкой HTTP {{status}}",
     "Index URL": "URL индекса",
     "Infinite Canvas": "Бесконечный холст",
+    "Use a wider screen to open Infinite Canvas.": "Откройте холст на более широком экране.",
     "Initial amount shown in the top-up input before the user edits it.": "Начальная сумма в поле пополнения до изменения пользователем.",
     "Inspect normalized text before token estimation.": "Проверять нормализованный текст до оценки токенов.",
     "Inspect user prompts": "Просмотр запросов пользователя",

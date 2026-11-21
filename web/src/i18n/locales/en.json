@@ -7923,6 +7923,7 @@
     "Index request failed with HTTP {{status}}": "Index request failed with HTTP {{status}}",
     "Index URL": "Index URL",
     "Infinite Canvas": "Infinite Canvas",
+    "Use a wider screen to open Infinite Canvas.": "Use a wider screen to open Infinite Canvas.",
     "Initial amount shown in the top-up input before the user edits it.": "Initial amount shown in the top-up input before the user edits it.",
     "Inspect normalized text before token estimation.": "Inspect normalized text before token estimation.",
     "Inspect user prompts": "Inspect user prompts",
