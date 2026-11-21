@@ -6,6 +6,8 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/setting"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -93,4 +95,46 @@ func TestCanvasCatalogIncludesResolvedVideoRoutesWithoutModelMetadata(t *testing
 		Capability:   "video",
 		VideoAdapter: "sora",
 	})
+}
+
+func TestCanvasCatalogUsesMediaGroupTypesWithoutEndpointFiltering(t *testing.T) {
+	previousGroups := setting.UserUsableGroups2JSONString()
+	previousTypes, previousAssignments := ratio_setting.GroupTypeOptions2JSONString()
+	t.Cleanup(func() {
+		require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(previousGroups))
+		require.NoError(t, ratio_setting.UpdateGroupTypeOptionsByJSONString(previousTypes, previousAssignments))
+	})
+	require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(`{"default":"Default","image-group":"Image","video-group":"Video","audio-group":"Audio"}`))
+	require.NoError(t, ratio_setting.UpdateGroupTypeOptionsByJSONString(
+		`{"image-type":{"name":"图片","order":1},"video-type":{"name":"视频","order":2},"audio-type":{"name":"音频","order":3}}`,
+		`{"image-group":"image-type","video-group":"video-type","audio-group":"audio-type"}`,
+	))
+
+	truncate(t)
+	model.InitColumnNamesForTest()
+	require.NoError(t, model.DB.AutoMigrate(&model.Ability{}, &model.Channel{}, &model.Model{}))
+	t.Cleanup(func() {
+		require.NoError(t, model.DB.Where("channel_id IN ?", []int{907, 908, 909}).Delete(&model.Ability{}).Error)
+		require.NoError(t, model.DB.Where("id IN ?", []int{907, 908, 909}).Delete(&model.Channel{}).Error)
+	})
+	for _, channel := range []model.Channel{
+		{Id: 907, Type: constant.ChannelTypeOpenAI, Status: common.ChannelStatusEnabled, Name: "image-group"},
+		{Id: 908, Type: constant.ChannelTypeOpenAI, Status: common.ChannelStatusEnabled, Name: "video-group"},
+		{Id: 909, Type: constant.ChannelTypeOpenAI, Status: common.ChannelStatusEnabled, Name: "audio-group"},
+	} {
+		require.NoError(t, model.DB.Create(&channel).Error)
+	}
+	for _, ability := range []model.Ability{
+		{Group: "image-group", Model: "image-without-endpoint-metadata", ChannelId: 907, Enabled: true},
+		{Group: "video-group", Model: "video-without-endpoint-metadata", ChannelId: 908, Enabled: true},
+		{Group: "audio-group", Model: "audio-without-endpoint-metadata", ChannelId: 909, Enabled: true},
+	} {
+		require.NoError(t, model.DB.Create(&ability).Error)
+	}
+
+	options, err := CanvasModelCatalog("default")
+	require.NoError(t, err)
+	assert.Contains(t, options, CanvasModelOption{Name: "image-without-endpoint-metadata", Group: "image-group", Capability: "image"})
+	assert.Contains(t, options, CanvasModelOption{Name: "video-without-endpoint-metadata", Group: "video-group", Capability: "video", VideoAdapter: "openai"})
+	assert.Contains(t, options, CanvasModelOption{Name: "audio-without-endpoint-metadata", Group: "audio-group", Capability: "audio"})
 }

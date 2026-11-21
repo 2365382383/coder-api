@@ -11,6 +11,7 @@ import (
 	"github.com/QuantumNous/new-api/pkg/imagecapability"
 	"github.com/QuantumNous/new-api/pkg/jsplugin"
 	"github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 )
 
 type CanvasModelOption struct {
@@ -19,6 +20,15 @@ type CanvasModelOption struct {
 	Capability        string                           `json:"capability"`
 	ImageCapabilities *imagedto.ImageModelCapabilities `json:"image_capabilities,omitempty"`
 	VideoAdapter      string                           `json:"video_adapter,omitempty"`
+}
+
+// These three group types are the media lanes configured in the model catalog.
+// Their membership is authoritative for the canvas media selectors; a media
+// group does not need a second endpoint or model metadata declaration.
+var canvasMediaGroupTypes = map[string]string{
+	"图片": "image",
+	"视频": "video",
+	"音频": "audio",
 }
 
 // DefaultImageCapabilities is the single image workbench configuration used by
@@ -62,8 +72,8 @@ func canvasVideoAdapter(ability model.AbilityWithChannel, generation *jsplugin.R
 	return "openai"
 }
 
-// Catalog capability follows published endpoint metadata, never a model-name
-// heuristic or a price. Unknown capabilities stay unavailable.
+// Canvas media capabilities follow the configured media group types. Other
+// groups retain endpoint metadata discovery for text and legacy compatibility.
 func CanvasModelCatalog(userGroup string) ([]CanvasModelOption, error) {
 	options := []CanvasModelOption{}
 	groups := GetUserUsableGroups(userGroup)
@@ -92,6 +102,7 @@ func CanvasModelCatalog(userGroup string) ([]CanvasModelOption, error) {
 	if err != nil {
 		return nil, err
 	}
+	groupTypeDefinitions, groupTypeAssignments := ratio_setting.GetGroupTypeOptionsCopy()
 	generation := jsplugin.DefaultRegistry.Generation()
 	for _, group := range groupNames {
 		queryGroups := []string{group}
@@ -102,6 +113,23 @@ func CanvasModelCatalog(userGroup string) ([]CanvasModelOption, error) {
 		videoAdapters := map[string]string{}
 		for _, ability := range abilities {
 			if !slices.Contains(queryGroups, ability.Group) {
+				continue
+			}
+			if capability := canvasMediaCapabilityForGroup(ability.Group, groupTypeDefinitions, groupTypeAssignments); capability != "" {
+				key := ability.Model + "\x00" + capability
+				if !seen[key] {
+					option := CanvasModelOption{Name: ability.Model, Group: group, Capability: capability}
+					if capability == "video" {
+						adapter := canvasVideoAdapter(ability, generation)
+						if current, ok := videoAdapters[ability.Model]; ok && current != adapter {
+							adapter = "unsupported"
+						}
+						videoAdapters[ability.Model] = adapter
+						option.VideoAdapter = adapter
+					}
+					options = append(options, option)
+					seen[key] = true
+				}
 				continue
 			}
 			endpoints := metadata[ability.Model]
@@ -166,4 +194,12 @@ func CanvasModelCatalog(userGroup string) ([]CanvasModelOption, error) {
 		return cmp.Compare(a.Name, b.Name)
 	})
 	return options, nil
+}
+
+func canvasMediaCapabilityForGroup(group string, definitions map[string]ratio_setting.GroupTypeInfo, assignments map[string]string) string {
+	typeID := assignments[group]
+	if typeID == "" {
+		return ""
+	}
+	return canvasMediaGroupTypes[definitions[typeID].Name]
 }
