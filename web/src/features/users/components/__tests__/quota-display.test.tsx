@@ -321,6 +321,11 @@ it('sends balance sorting to the server and keeps invitation details on two line
   expect(
     screen.getByRole('columnheader', { name: 'User Group' })
   ).toBeInTheDocument()
+  expect(
+    screen.getAllByRole('columnheader', {
+      name: 'Sensitive-word violations',
+    })
+  ).toHaveLength(1)
   await userEvent.click(
     screen.getByRole('button', { name: 'Available Balance ($)' })
   )
