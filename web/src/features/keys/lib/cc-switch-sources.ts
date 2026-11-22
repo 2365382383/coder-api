@@ -32,6 +32,8 @@ export type CCSwitchApp =
   | 'kimi'
   | 'dsh'
   | 'omp'
+  | 'copilot'
+  | 'workbuddy'
 
 type CCSwitchApiFormat =
   | 'anthropic'
@@ -49,7 +51,7 @@ export type CCSwitchSource = {
   appId: CCSwitchApp
   labelKey: string
   defaultName: string
-  endpointSuffix: '' | '/v1'
+  endpointSuffix: string
   modelFields: readonly CCSwitchModelField[]
   apiFormat?: CCSwitchApiFormat
 }
@@ -172,6 +174,22 @@ export const CCSWITCH_SOURCES: readonly CCSwitchSource[] = [
     labelKey: 'Oh My Pi',
     defaultName: 'coder',
     endpointSuffix: '/v1',
+    modelFields: SINGLE_MODEL_FIELDS,
+    apiFormat: 'openai_chat',
+  },
+  {
+    appId: 'copilot',
+    labelKey: 'GitHub Copilot CLI',
+    defaultName: 'coder',
+    endpointSuffix: '/v1',
+    modelFields: SINGLE_MODEL_FIELDS,
+    apiFormat: 'openai_chat',
+  },
+  {
+    appId: 'workbuddy',
+    labelKey: 'WorkBuddy',
+    defaultName: 'coder',
+    endpointSuffix: '/v1/chat/completions',
     modelFields: SINGLE_MODEL_FIELDS,
     apiFormat: 'openai_chat',
   },

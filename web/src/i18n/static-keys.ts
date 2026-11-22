@@ -445,6 +445,7 @@ export const STATIC_I18N_KEYS = [
   'Claude Code',
   'Claude Desktop',
   'DeepSeek Harness',
+  'GitHub Copilot CLI',
   'Grok Build',
   'Hermes',
   'Import to CC Switch',
@@ -461,6 +462,7 @@ export const STATIC_I18N_KEYS = [
   'Opus Model',
   'Enter model name',
   'Use the latest version of CC Switch',
+  'WorkBuddy',
 
   // User binding dialog
   'Account Binding Management',

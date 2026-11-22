@@ -49,6 +49,7 @@ await i18n.use(initReactI18next).init({
         'Claude Desktop': 'Claude Desktop',
         Codex: 'Codex',
         'DeepSeek Harness': 'DeepSeek Harness',
+        'GitHub Copilot CLI': 'GitHub Copilot CLI',
         'Grok Build': 'Grok Build',
         Gemini: 'Gemini',
         Hermes: 'Hermes',
@@ -69,6 +70,7 @@ await i18n.use(initReactI18next).init({
         'Opus Model': 'Opus Model',
         'Use the latest version of CC Switch':
           'Use the latest version of CC Switch',
+        WorkBuddy: 'WorkBuddy',
       },
     },
   },
@@ -115,6 +117,7 @@ describe('CC Switch dialog', () => {
       'Codex',
       'DeepSeek Harness',
       'Gemini',
+      'GitHub Copilot CLI',
       'Grok Build',
       'Hermes',
       'Kimi Code',
@@ -123,6 +126,7 @@ describe('CC Switch dialog', () => {
       'OpenClaw',
       'OpenCode',
       'Pi',
+      'WorkBuddy',
     ]) {
       expect(screen.getByRole('radio', { name: app })).toBeInTheDocument()
     }

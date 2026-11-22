@@ -47,6 +47,8 @@ describe('CC Switch source registry', () => {
       'kimi',
       'dsh',
       'omp',
+      'copilot',
+      'workbuddy',
     ])
     expect(
       new Set(CCSWITCH_SOURCES.map((source) => source.defaultName))
@@ -142,6 +144,8 @@ describe('CC Switch source registry', () => {
       ['kimi', '/v1', 'openai_chat'],
       ['dsh', '/v1', 'openai_chat'],
       ['omp', '/v1', 'openai_chat'],
+      ['copilot', '/v1', 'openai_chat'],
+      ['workbuddy', '/v1/chat/completions', 'openai_chat'],
     ] as const
 
     for (const [appId, endpointSuffix, apiFormat] of expected) {
