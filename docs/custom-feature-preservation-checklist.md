@@ -4,7 +4,7 @@
 
 ## 1. 当前范围
 
-- 当前第 4 节包含 34 项现行自研功能和业务契约。
+- 当前第 4 节包含 35 项现行自研功能和业务契约。
 - 条目只描述当前必须保留的行为、数据边界、配置键、代码位置和验证入口。
 - 上游实现只有在当前行为满足本条契约时才可采用；不以文件名称、历史提交或冲突结果代替行为验证。
 - 已退休、已被上游完整覆盖或仅属测试治理的内容不列入当前保护项。
@@ -719,10 +719,32 @@
 - 验证入口：`web/src/components/__tests__/notification-popover.test.tsx`、
   `web/src/hooks/__tests__/notifications.test.tsx`。
 
+### P-43 New API 健康探针、配置快照发布与计费事务观测
+
+- 必须保留：`/health` 是无数据库、无配置锁、无外部请求的进程存活端点，容器健康检查和
+  `new-api-proxy` 健康检查使用该端点；业务状态接口 `/api/status` 继续提供完整配置快照，
+  但不能承担进程存活探针职责。
+- 必须保留：`/api/status` 读取 `OptionMap` 时只复制所需字段并立即释放读锁，响应组装和
+  JSON 写出不能持有 `OptionMapRWMutex`。配置同步必须在锁外完成数据库读取、规范化和运行时
+  后处理，最后一次性发布内存选项，不能逐项持写锁更新。
+- 必须保留：计费事务每次尝试、重试、最终成功/失败、单次耗时、总耗时和重试次数继续通过
+  `/metrics` 暴露；指标按真实计费调用方区分，并且中间 1205/1213 重试不能直接等同于最终
+  失败。现有 `BILLING_LOCK_WAIT_TIMEOUT_SECONDS`、整事务重试、幂等阶段和账务语义继续有效。
+- 当前位置：`controller/misc.go`、`controller/health_test.go`、`router/main.go`、
+  `model/option.go`、`model/request_policy.go`、`model/billing_transaction.go`、
+  `pkg/billing_metrics/**`、`deploy/docker-compose.yml`。
+- 数据/配置：`BILLING_LOCK_WAIT_TIMEOUT_SECONDS` 默认 10 秒，设为 0 使用数据库服务端默认值；
+  `/metrics` 不写业务表，不改变 quota、结算、退款或历史账务记录；健康检查切换不改变公开
+  `/api/status` 响应契约。
+- 验证入口：`controller/health_test.go`、`controller/misc_observation_status_test.go`、
+  `model/option_test.go`、`model/request_policy_test.go`、`model/billing_operation_database_matrix_test.go`、
+  `pkg/billing_metrics/metrics_test.go`；发布后检查容器 health、`/health`、`/api/status`、
+  `/metrics` 和 MySQL `data_lock_waits`/`handler commit`。
+
 
 ## 5. 当前审查状态
 
-- 当前保护项数量：34。
+- 当前保护项数量：35。
 - 当前条目中的路径、配置、验证入口和行为描述是唯一维护对象。
 - P-01 的 GitHub Actions、P-05 的 390px/768px/桌面响应式 smoke、P-39 的 Canvas 真实浏览器验收由用户或发布流程执行。
 - 任何后续维护只更新当前功能状态，不追加提交历史或变更时间线。
