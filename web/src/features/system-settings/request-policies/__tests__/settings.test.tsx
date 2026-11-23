@@ -364,18 +364,34 @@ describe('request policy settings', () => {
     expect(api.put).not.toHaveBeenCalled()
   })
 
-  it.each([
-    '/system-settings/security/sensitive-words',
-    '/system-settings/request-policies/filtering',
-  ])(
-    '%s opens request processing, where sensitive words live now',
+  it.each(['/system-settings/security/sensitive-words'])(
+    '%s redirects to the local sensitive-word policy page',
     async (path) => {
       const router = await renderPolicies(path)
       await waitFor(() =>
-        expect(router.state.location.pathname).toBe('/request-processing')
+        expect(router.state.location.pathname).toBe(
+          '/system-settings/request-policies/filtering'
+        )
       )
+      expect(
+        await screen.findByRole('button', { name: 'Save policy' })
+      ).toBeVisible()
     }
   )
+
+  it('keeps the sensitive-word policy page at its request-policy route', async () => {
+    const router = await renderPolicies(
+      '/system-settings/request-policies/filtering'
+    )
+    await waitFor(() =>
+      expect(router.state.location.pathname).toBe(
+        '/system-settings/request-policies/filtering'
+      )
+    )
+    expect(
+      await screen.findByRole('button', { name: 'Save policy' })
+    ).toBeVisible()
+  })
 
   it.each([
     ['/system-settings/models/channel-affinity', 'routing'],
