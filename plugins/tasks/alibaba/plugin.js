@@ -370,7 +370,7 @@ export const meta = {
   protocols: [
     { name: "openai_responses", supports: ["stream", "sync", "background"] },
     { name: "openai_video", models: Object.keys(WAN_MODELS).concat(["wan2.7-t2v-2026-04-25", "wan2.7-t2v-2026-06-12", "wan2.7-i2v-2026-04-25"]) },
-    { name: "openai_image", models: Object.keys(IMAGE_MODELS).concat(IMAGE_MODEL_SNAPSHOTS) },
+    { name: "openai_image", models: Object.keys(IMAGE_MODELS).concat(IMAGE_MODEL_SNAPSHOTS), supports: ["sync", "background"] },
   ],
 };
 
@@ -1497,9 +1497,9 @@ export const protocols = {
       };
     },
   },
-  // OpenAI Images API. The host pins ctx.model, waits for the task to become
-  // terminal and honors response_format itself; the plugin maps the request
-  // onto the DashScope image services and renders data[] from the result.
+  // OpenAI Images API. The host pins ctx.model, supports synchronous and
+  // background task delivery, and honors response_format itself; the plugin
+  // maps the request onto the DashScope image services and renders data[].
   openai_image: {
     decodeRequest: function (ctx) {
       const model = trimmed(ctx.model);

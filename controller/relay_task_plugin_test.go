@@ -334,6 +334,58 @@ func TestExecuteTaskSubmissionHonorsRouteRetainResult(t *testing.T) {
 	}
 }
 
+func TestExecuteTaskSubmissionRetainsImmediateBackgroundImageResult(t *testing.T) {
+	events := make([]string, 0, 3)
+	database := setupTaskSubmissionDatabase(t, true, &events)
+	previousLogConsumeEnabled := common.LogConsumeEnabled
+	common.LogConsumeEnabled = false
+	t.Cleanup(func() { common.LogConsumeEnabled = previousLogConsumeEnabled })
+
+	c := taskSubmissionTestContext()
+	c.Set(pluginruntime.ContextKeyPinnedEndpoint, pluginruntime.PinnedEndpoint{
+		Plugin:   &pluginruntime.LoadedPlugin{Meta: pluginruntime.Meta{Key: "image-plugin"}},
+		Protocol: pluginruntime.ProtocolOpenAIImage,
+		Operation: pluginruntime.HostProtocolOperation{
+			Name: "generate",
+		},
+	})
+	c.Set(pluginruntime.ContextKeyProtocolRequest, pluginruntime.ProtocolRequestContext{
+		RouteRequestContext: pluginruntime.RouteRequestContext{
+			Path:   "/v1/images/generations",
+			Method: http.MethodPost,
+			Body: map[string]any{
+				"kind":  "json",
+				"value": map[string]any{"model": "image-model", "prompt": "a cat", "background": true},
+			},
+		},
+		Protocol:  pluginruntime.ProtocolOpenAIImage,
+		Operation: "generate",
+		Model:     "image-model",
+	})
+	info := taskSubmissionRelayInfo(&taskSubmissionTestBilling{events: &events})
+
+	outcome, taskErr := executeTaskSubmissionWith(c, info, func(*gin.Context, *relaycommon.RelayInfo) (*relay.TaskSubmitResult, *dto.TaskError) {
+		return &relay.TaskSubmitResult{
+			UpstreamTaskID: "image-vendor-task",
+			Platform:       constant.TaskPlatform("image-plugin"),
+			TaskData:       []byte(`{"images":["https://cdn.example/image.png"]}`),
+			Immediate:      &relaycommon.TaskInfo{Status: model.TaskStatusSuccess, Progress: "100%"},
+		}, nil
+	})
+	require.Nil(t, taskErr)
+	require.NotNil(t, outcome)
+	assert.False(t, outcome.Task.PrivateData.ResultDiscarded)
+	require.NotNil(t, outcome.Task.PrivateData.OpenAIImageProtocol)
+	assert.True(t, outcome.Task.PrivateData.OpenAIImageProtocol.Background)
+
+	var stored model.Task
+	require.NoError(t, database.Where("task_id = ?", "task_public").First(&stored).Error)
+	assert.False(t, stored.PrivateData.ResultDiscarded)
+	assert.JSONEq(t, `{"images":["https://cdn.example/image.png"]}`, string(stored.Data))
+	require.NotNil(t, stored.PrivateData.OpenAIImageProtocol)
+	assert.True(t, stored.PrivateData.OpenAIImageProtocol.Background)
+}
+
 func TestExecuteTaskSubmissionRefundsCancellationBeforeDurableBarrier(t *testing.T) {
 	events := make([]string, 0, 2)
 	setupTaskSubmissionDatabase(t, true, &events)

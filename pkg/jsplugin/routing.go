@@ -96,12 +96,14 @@ var hostProtocols = []HostProtocolDefinition{
 		{Name: "retrieve", Methods: []string{http.MethodGet}, Path: "/v1/videos/:task_id", BodyKinds: []BodyKind{BodyNone}, RequiredProtocolMembers: []string{"render"}},
 		{Name: "content", Methods: []string{http.MethodGet, http.MethodHead}, Path: "/v1/videos/:task_id/content", BodyKinds: []BodyKind{BodyNone}, RequiredDriverHooks: []string{"listArtifacts", "buildContentRequest"}},
 	}},
-	// The OpenAI Images API is synchronous: both operations create a task and
-	// the host answers with the rendered image response once the task is
-	// terminal, so there is no retrieve operation and no request modes.
+	// OpenAI Images supports the historical synchronous form and an additive
+	// background form. Both forms use the same render hook; retrieval is a
+	// separate host operation so a pending task can be rendered later.
 	{Name: ProtocolOpenAIImage, Operations: []HostProtocolOperation{
-		{Name: "generate", Methods: []string{http.MethodPost}, Path: "/v1/images/generations", BodyKinds: []BodyKind{BodyJSON}, ModelField: "model", RequiredProtocolMembers: []string{"decodeRequest", "render"}},
-		{Name: "edit", Methods: []string{http.MethodPost}, Path: "/v1/images/edits", BodyKinds: []BodyKind{BodyJSON, BodyMultipart}, ModelField: "model", RequiredProtocolMembers: []string{"decodeRequest", "render"}},
+		{Name: "generate", Methods: []string{http.MethodPost}, Path: "/v1/images/generations", BodyKinds: []BodyKind{BodyJSON}, ModelField: "model", RequiredProtocolMembers: []string{"decodeRequest", "render"}, Modes: []ProtocolMode{{Name: "sync", Hook: "render"}, {Name: "background", Hook: "render"}}},
+		{Name: "edit", Methods: []string{http.MethodPost}, Path: "/v1/images/edits", BodyKinds: []BodyKind{BodyJSON, BodyMultipart}, ModelField: "model", RequiredProtocolMembers: []string{"decodeRequest", "render"}, Modes: []ProtocolMode{{Name: "sync", Hook: "render"}, {Name: "background", Hook: "render"}}},
+		{Name: "retrieve", Methods: []string{http.MethodGet}, Path: "/v1/images/generations/:task_id", BodyKinds: []BodyKind{BodyNone}, RequiredProtocolMembers: []string{"render"}},
+		{Name: "retrieve", Methods: []string{http.MethodGet}, Path: "/v1/images/edits/:task_id", BodyKinds: []BodyKind{BodyNone}, RequiredProtocolMembers: []string{"render"}},
 	}},
 }
 
@@ -479,6 +481,7 @@ var reservedRouteNamespaces = []string{
 	"/system-settings",
 	"/channels",
 	"/chat",
+	"/canvas",
 	"/dashboard",
 	"/errors",
 	"/keys",

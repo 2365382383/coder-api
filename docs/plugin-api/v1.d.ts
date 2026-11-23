@@ -70,12 +70,13 @@ export type TaskIntent = SubmitIntent | QueryIntent;
 export interface NativeRoute {method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE"; /** The vendor's own path; the host also serves it under /{key} unless its first segment is the key or a proper prefix of it. */ path: string; type: "submit" | "query" | "dynamic"; action?: string; /** Query routes: the path parameter carrying the gateway task id or, when the path has none, the query-string parameter of that name. Default "task_id". */ taskIdParam?: string; decode?: string; render: string; models?: readonly string[]; retainResult?: boolean}
 export type ProtocolName = "openai_responses" | "openai_video" | "openai_image";
 export type ResponsesMode = "stream" | "sync" | "background";
+export type ImageMode = "sync" | "background";
 export type ProtocolClaim =
   | "openai_video"
   | "openai_image"
   | {name: "openai_responses"; supports: readonly ResponsesMode[]; models?: readonly string[]}
   | {name: "openai_video"; models?: readonly string[]}
-  | {name: "openai_image"; models?: readonly string[]};
+  | {name: "openai_image"; models?: readonly string[]; supports?: readonly ImageMode[]};
 /** One entry of the OpenAI ImageResponse `data` array rendered by protocols.openai_image.render. */
 export type ImageResponseEntry = {url?: string; b64_json?: string; revised_prompt?: string};
 export type LocalizedText = string | ({ en: string } & Record<string, string>);

@@ -1769,6 +1769,52 @@ func TestServeTaskPluginImageProtocolWaitsForAsynchronousTask(t *testing.T) {
 	}
 }
 
+func TestServeTaskPluginImageProtocolBackgroundReturnsDurableTask(t *testing.T) {
+	pinned := imageProtocolTestEndpoint(t)
+	c, recorder := newImageProtocolTestContext("")
+	setProtocolRequestBackground(c, true)
+	deps := pluginProtocolTestDeps()
+	polls := 0
+	deps.pollTask = func(context.Context, *model.Task) error {
+		polls++
+		return nil
+	}
+	deps.submit = func(_ *gin.Context, info *relaycommon.RelayInfo) (*taskSubmissionOutcome, *dto.TaskError) {
+		return imageProtocolTestOutcome(info, model.TaskStatusSubmitted), nil
+	}
+
+	serveTaskPluginImageProtocol(c, pinned, deps)
+	require.Equal(t, http.StatusAccepted, recorder.Code, recorder.Body.String())
+	var response map[string]any
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+	assert.Equal(t, "task_image", response["id"])
+	assert.Equal(t, "image_generation", response["object"])
+	assert.Equal(t, "queued", response["status"])
+	assert.Equal(t, "image-model", response["model"])
+	assert.Zero(t, polls, "background submission must not poll in the client request")
+}
+
+func TestRetrieveTaskPluginImageRendersPersistedTask(t *testing.T) {
+	pinned := imageProtocolTestEndpoint(t)
+	submitContext, _ := newImageProtocolTestContext("")
+	setProtocolRequestBackground(submitContext, true)
+	request := submitContext.MustGet(pluginruntime.ContextKeyProtocolRequest).(pluginruntime.ProtocolRequestContext)
+	task := imageProtocolTestOutcome(&relaycommon.RelayInfo{UserId: 71, OriginModelName: "image-model"}, model.TaskStatusSuccess, "https://cdn.example/final.png").Task
+	task.PrivateData.OpenAIImageProtocol = taskPluginImageProtocolSnapshot(request)
+	c, recorder := newPluginProtocolRetrieveContext(task.TaskID)
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/images/generations/"+task.TaskID, nil)
+	c.Params = gin.Params{{Key: "task_id", Value: task.TaskID}}
+	deps := pluginProtocolRetrieveDeps(pinned, task, true, nil)
+
+	retrieveTaskPluginImage(c, deps)
+	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+	var response map[string]any
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+	assert.Equal(t, task.TaskID, response["id"])
+	assert.Equal(t, "completed", response["status"])
+	assert.Equal(t, []any{map[string]any{"url": "https://cdn.example/final.png"}}, response["data"])
+}
+
 // Submission failures use the OpenAI error envelope and surface a DashScope
 // {code, message} failure body as a readable vendor message.
 func TestServeTaskPluginImageProtocolSubmissionErrorUsesOpenAIEnvelope(t *testing.T) {

@@ -4,7 +4,7 @@
 
 ## 1. 当前范围
 
-- 当前第 4 节包含 35 项现行自研功能和业务契约。
+- 当前第 4 节包含 36 项现行自研功能和业务契约。
 - 条目只描述当前必须保留的行为、数据边界、配置键、代码位置和验证入口。
 - 上游实现只有在当前行为满足本条契约时才可采用；不以文件名称、历史提交或冲突结果代替行为验证。
 - 已退休、已被上游完整覆盖或仅属测试治理的内容不列入当前保护项。
@@ -741,10 +741,28 @@
   `pkg/billing_metrics/metrics_test.go`；发布后检查容器 health、`/health`、`/api/status`、
   `/metrics` 和 MySQL `data_lock_waits`/`handler commit`。
 
+### P-44 Task Plugin 图片协议异步提交与查询
+
+- 必须保留：`openai_image` 继续支持原有同步图片生成/编辑请求；声明
+  `supports: ["background"]` 的插件可接受 `background: true`，提交立即返回可查询的任务
+  对象，`GET /v1/images/generations/:task_id` 和 `GET /v1/images/edits/:task_id` 按任务归属
+  返回排队、进行中、完成或失败状态，完成时仍由插件 `render` 生成标准图片响应。
+- 必须保留：异步图片任务复用现有 task 持久化、轮询、计费预扣/结算和用户归属检查；后台
+  任务必须保留 `task.data`，同步图片的即时终态仍可按原契约不保留。查询渲染只恢复无凭据的
+  协议上下文，不保存客户端认证头或上传文件字节；历史裸字符串/缺少 supports 的图片声明
+  继续按同步能力兼容。
+- 当前位置：`pkg/jsplugin/routing.go`、`pkg/jsplugin/registry.go`、
+  `router/task-plugin-protocol-router.go`、`controller/plugin_protocol_image.go`、
+  `controller/relay.go`、`model/task.go`、`plugins/tasks/alibaba/plugin.js`、
+  `plugins/tasks/doubao/plugin.js`、`docs/plugin-api/v1.md`、`docs/plugin-api/v1.schema.json`。
+- 验证入口：`controller/plugin_protocol_test.go`、`controller/relay_task_plugin_test.go`、
+  `pkg/jsplugin/routing_test.go`、`router/task_plugin_protocol_router_test.go`；至少覆盖同步兼容、
+  background 提交不等待、即时结果保留、任务查询渲染和失败状态。
+
 
 ## 5. 当前审查状态
 
-- 当前保护项数量：35。
+- 当前保护项数量：36。
 - 当前条目中的路径、配置、验证入口和行为描述是唯一维护对象。
 - P-01 的 GitHub Actions、P-05 的 390px/768px/桌面响应式 smoke、P-39 的 Canvas 真实浏览器验收由用户或发布流程执行。
 - 任何后续维护只更新当前功能状态，不追加提交历史或变更时间线。

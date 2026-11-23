@@ -50,6 +50,8 @@ func taskPluginProtocolHandlers(protocol, operation string) ([]gin.HandlerFunc, 
 		}, nil
 	case "openai_responses.retrieve":
 		return []gin.HandlerFunc{middleware.RouteTag("relay"), middleware.TokenAuth(), controller.RetrieveTaskPluginResponse}, nil
+	case "openai_image.retrieve":
+		return []gin.HandlerFunc{middleware.RouteTag("relay"), middleware.TokenAuth(), controller.RetrieveTaskPluginImage}, nil
 	case "openai_video.retrieve":
 		return []gin.HandlerFunc{middleware.RouteTag("relay"), middleware.TokenAuth(), defaultPluginDispatcher.handOffNativeTaskQuery, middleware.Distribute(), controller.RelayTaskFetch}, nil
 	case "openai_video.content":

@@ -131,6 +131,10 @@ type TaskPrivateData struct {
 	// disconnect regardless; this only echoes the protocol-level request
 	// attribute back on retrieval snapshots.
 	ResponsesBackground bool `json:"responses_background,omitempty"`
+	// OpenAIImageProtocol preserves the credential-free request context needed
+	// when an asynchronous Images API task is rendered by a later retrieve
+	// request. The request body is bounded and contains no gateway headers.
+	OpenAIImageProtocol *TaskProtocolRequestSnapshot `json:"openai_image_protocol,omitempty"`
 	// PluginState is plugin-owned cross-round data. Unlike Task.Data it is
 	// only replaced when a hook explicitly returns state.
 	PluginState json.RawMessage `json:"plugin_state,omitempty"`
@@ -282,7 +286,7 @@ func (p TaskPrivateData) Value() (driver.Value, error) {
 	if p.Key == "" && p.UpstreamTaskID == "" && p.ResultURL == "" &&
 		p.Execution == nil && p.BillingSource == "" && len(p.BillingAllocations) == 0 && p.SubscriptionId == 0 &&
 		p.TokenId == 0 && p.NodeName == "" && p.BillingContext == nil &&
-		!p.ResponsesBackground && len(p.PluginState) == 0 && p.PollFailures == 0 &&
+		!p.ResponsesBackground && p.OpenAIImageProtocol == nil && len(p.PluginState) == 0 && p.PollFailures == 0 &&
 		!p.ResultDiscarded && p.RequestPlugins == nil {
 		return nil, nil
 	}
@@ -292,6 +296,24 @@ func (p TaskPrivateData) Value() (driver.Value, error) {
 		return nil, err
 	}
 	return string(b), nil
+}
+
+// TaskProtocolRequestSnapshot is the persisted, credential-free portion of a
+// task plugin protocol request. It lets a later protocol retrieval reconstruct
+// the same plugin render context without retaining the client's headers or
+// uploaded file bytes.
+type TaskProtocolRequestSnapshot struct {
+	Path          string              `json:"path,omitempty"`
+	Method        string              `json:"method,omitempty"`
+	Params        map[string]string   `json:"params,omitempty"`
+	Query         map[string][]string `json:"query,omitempty"`
+	Body          json.RawMessage     `json:"body,omitempty"`
+	Protocol      string              `json:"protocol,omitempty"`
+	Operation     string              `json:"operation,omitempty"`
+	Model         string              `json:"model,omitempty"`
+	UpstreamModel string              `json:"upstream_model,omitempty"`
+	Stream        bool                `json:"stream,omitempty"`
+	Background    bool                `json:"background,omitempty"`
 }
 
 // SyncTaskQueryParams 用于包含所有搜索条件的结构体，可以根据需求添加更多字段
