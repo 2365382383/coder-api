@@ -95,7 +95,7 @@ func withBillingTransactionNamed(ctx context.Context, operation string, fn func(
 }
 
 func billingTransactionCaller() string {
-	pc, _, _, ok := runtime.Caller(2)
+	pc, _, _, ok := runtime.Caller(3)
 	if !ok {
 		return "unknown"
 	}
