@@ -29,8 +29,8 @@ func TestClassifyRelayOutcome(t *testing.T) {
 	}{
 		{"success", context.Background(), nil, OutcomeSuccess},
 		{"upstream bad request", context.Background(), types.InitOpenAIError("unknown", 400), OutcomeIgnored},
-		{"upstream credentials returned as 400", context.Background(), types.InitOpenAIError("invalid_api_key", 400), OutcomeFailure},
-		{"wrapped credentials keep their cause", context.Background(), types.NewErrorWithStatusCode(types.InitOpenAIError("invalid_api_key", 400), types.ErrorCodeInvalidRequest, 400), OutcomeFailure},
+		{"upstream credentials returned as 400", context.Background(), types.InitOpenAIError("invalid_api_key", 400), OutcomeIgnored},
+		{"wrapped credentials returned as 400", context.Background(), types.NewErrorWithStatusCode(types.InitOpenAIError("invalid_api_key", 400), types.ErrorCodeInvalidRequest, 400), OutcomeIgnored},
 		{"upstream context limit returned as 500", context.Background(), types.InitOpenAIError("context_length_exceeded", 500), OutcomeIgnored},
 		{"local rate limit", context.Background(), types.NewErrorWithStatusCode(errors.New("limited"), types.ErrorCodeInvalidRequest, 429), OutcomeIgnored},
 		{"upstream rate limit", context.Background(), types.InitOpenAIError("rate_limit_exceeded", 429), OutcomeFailure},
@@ -56,9 +56,12 @@ func TestClassifyRelayOutcome(t *testing.T) {
 	imageInfo.LastUpstreamHTTPStatusCode = http.StatusBadRequest
 	assert.Equal(t, OutcomeIgnored, ClassifyRelayOutcome(context.Background(), imageInfo, upstream400))
 	imageInfo.LastUpstreamHTTPStatusCode = http.StatusInternalServerError
-	assert.Equal(t, OutcomeFailure, ClassifyRelayOutcome(context.Background(), imageInfo, upstream400))
+	assert.Equal(t, OutcomeIgnored, ClassifyRelayOutcome(context.Background(), imageInfo, upstream400))
 	imageInfo.LastUpstreamHTTPStatusCode = 0
-	assert.Equal(t, OutcomeFailure, ClassifyRelayOutcome(context.Background(), imageInfo, upstream400))
+	assert.Equal(t, OutcomeIgnored, ClassifyRelayOutcome(context.Background(), imageInfo, upstream400))
+
+	local400 := types.NewErrorWithStatusCode(errors.New("bad request"), types.ErrorCodeBadResponseBody, http.StatusBadRequest)
+	assert.Equal(t, OutcomeIgnored, ClassifyRelayOutcome(context.Background(), &relaycommon.RelayInfo{}, local400))
 }
 
 func TestStreamOutcomeClassification(t *testing.T) {

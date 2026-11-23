@@ -42,15 +42,14 @@ func ClassifyRelayOutcome(ctx context.Context, info *relaycommon.RelayInfo, apiE
 	if apiErr != nil && errors.Is(apiErr, context.Canceled) {
 		return OutcomeIgnored
 	}
-	// rc.39 classifies general upstream errors centrally. Keep the local image
-	// metric contract at this narrow boundary: only a raw provider 400 is a
-	// non-health sample. A local 400, a response-parser 400, or a 5xx/429 that
-	// a channel maps to 400 must remain a failed image sample.
-	if info.RelayFormat == types.RelayFormatOpenAIImage && apiErr != nil {
-		if info.LastUpstreamHTTPStatusCode == http.StatusBadRequest {
-			return OutcomeIgnored
-		}
-		return OutcomeFailure
+	// A client/provider HTTP 400 is a request-level rejection, not an
+	// availability signal. Keep it out of the health denominator regardless of
+	// whether the error was produced locally, returned by the provider, or
+	// remapped by an adaptor. The image path also preserves the original
+	// upstream status before adaptor-level error mapping.
+	if apiErr != nil && (apiErr.StatusCode == http.StatusBadRequest ||
+		info.LastUpstreamHTTPStatusCode == http.StatusBadRequest) {
+		return OutcomeIgnored
 	}
 	if stream.Response == relaycommon.ResponseOutcomeFailed {
 		return classifyFailure(false, stream.ErrorCode, stream.ErrorType, stream.ErrorStatus)
@@ -105,6 +104,12 @@ func rootAPIError(apiErr *types.NewAPIError) *types.NewAPIError {
 
 func classifyFailure(local bool, code, errorType string, status int) Outcome {
 	code, errorType = strings.ToLower(code), strings.ToLower(errorType)
+	// All HTTP 400 responses are excluded from availability metrics. This must
+	// happen before error-code classification so credential, platform, and
+	// provider-specific 400s cannot be counted as outages.
+	if status == http.StatusBadRequest {
+		return OutcomeIgnored
+	}
 	if local {
 		if strings.HasPrefix(code, "violation_fee.") {
 			return OutcomeIgnored
