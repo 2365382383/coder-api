@@ -3,10 +3,13 @@ package model
 import (
 	"context"
 	"errors"
+	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	billingmetrics "github.com/QuantumNous/new-api/pkg/billing_metrics"
 	"github.com/go-sql-driver/mysql"
 	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
@@ -21,6 +24,12 @@ const billingLockWaitTimeoutEnv = "BILLING_LOCK_WAIT_TIMEOUT_SECONDS"
 // closure is required so every row read and write observes a fresh snapshot
 // and lock set.
 func withRetryableDatabaseTransaction(ctx context.Context, fn func(*gorm.DB) error) error {
+	return withRetryableDatabaseTransactionObserved(ctx, fn, nil)
+}
+
+type billingTransactionAttemptObserver func(attempt int, err error, duration time.Duration, willRetry bool)
+
+func withRetryableDatabaseTransactionObserved(ctx context.Context, fn func(*gorm.DB) error, observer billingTransactionAttemptObserver) error {
 	if fn == nil {
 		return errors.New("database transaction callback is nil")
 	}
@@ -32,8 +41,14 @@ func withRetryableDatabaseTransaction(ctx context.Context, fn func(*gorm.DB) err
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return ctxErr
 		}
+		attemptStarted := time.Now()
 		err = DB.WithContext(ctx).Transaction(fn)
-		if !isRetryableDatabaseTransactionError(err) || attempt == billingTransactionAttempts-1 {
+		retryable := isRetryableDatabaseTransactionError(err)
+		willRetry := retryable && attempt < billingTransactionAttempts-1
+		if observer != nil {
+			observer(attempt, err, time.Since(attemptStarted), willRetry)
+		}
+		if !willRetry {
 			return err
 		}
 		// A lock can outlive the statement that reported it (especially on
@@ -52,9 +67,67 @@ func withRetryableDatabaseTransaction(ctx context.Context, fn func(*gorm.DB) err
 }
 
 func withBillingTransaction(ctx context.Context, fn func(*gorm.DB) error) error {
-	return withRetryableDatabaseTransaction(ctx, func(tx *gorm.DB) error {
+	return withBillingTransactionNamed(ctx, billingTransactionCaller(), fn)
+}
+
+func withBillingTransactionNamed(ctx context.Context, operation string, fn func(*gorm.DB) error) error {
+	started := time.Now()
+	retries := 0
+	err := withRetryableDatabaseTransactionObserved(ctx, func(tx *gorm.DB) error {
 		return withBillingLockWaitTimeout(tx, fn)
+	}, func(_ int, attemptErr error, duration time.Duration, willRetry bool) {
+		result := "success"
+		if attemptErr != nil {
+			result = "failure"
+			if willRetry {
+				result = "retry"
+				retries++
+			}
+		}
+		billingmetrics.ObserveAttempt(operation, result, billingErrorCode(attemptErr), duration)
 	})
+	result := "success"
+	if err != nil {
+		result = "failure"
+	}
+	billingmetrics.ObserveFinal(operation, result, billingErrorCode(err), time.Since(started), retries)
+	return err
+}
+
+func billingTransactionCaller() string {
+	pc, _, _, ok := runtime.Caller(2)
+	if !ok {
+		return "unknown"
+	}
+	name := runtime.FuncForPC(pc).Name()
+	if slash := strings.LastIndex(name, "/"); slash >= 0 {
+		name = name[slash+1:]
+	}
+	if dot := strings.LastIndex(name, "."); dot >= 0 {
+		name = name[dot+1:]
+	}
+	if name == "" {
+		return "unknown"
+	}
+	return name
+}
+
+func billingErrorCode(err error) string {
+	if err == nil {
+		return "none"
+	}
+	var mysqlErr *mysql.MySQLError
+	if errors.As(err, &mysqlErr) {
+		return "mysql_" + strconv.Itoa(int(mysqlErr.Number))
+	}
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		return "postgres_" + pgErr.Code
+	}
+	if isRetryableDatabaseTransactionError(err) {
+		return "retryable_database"
+	}
+	return "application"
 }
 
 // withBillingLockWaitTimeout bounds each MySQL billing attempt before the

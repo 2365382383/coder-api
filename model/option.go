@@ -256,6 +256,7 @@ func LoadOptionsFromDatabase() error {
 		}
 	}()
 	passkeyOptions := make(map[string]string)
+	optionEntries := make([]optionMapEntry, 0, len(options))
 	groupTypesJSON, groupTypeMapJSON := "{}", "{}"
 	for _, option := range options {
 		if IsPasskeyDomainOption(option.Key) {
@@ -278,10 +279,10 @@ func LoadOptionsFromDatabase() error {
 				common.SysLog("repaired legacy option " + option.Key)
 			}
 		}
-		err := updateOptionMap(option.Key, value)
-		if err != nil {
-			common.SysLog(common.LogText("failed to update option map: %s", err.Error()))
-		}
+		optionEntries = append(optionEntries, optionMapEntry{key: option.Key, value: value})
+	}
+	if err := updateOptionMapBatch(optionEntries); err != nil {
+		common.SysLog(common.LogText("failed to update option map: %s", err.Error()))
 	}
 	loadedGroupTypeMap, groupTypeErr := normalizeStoredGroupTypeAssignments(groupTypeMapJSON)
 	if groupTypeErr == nil {
@@ -528,10 +529,12 @@ func UpdateOptionsBulk(values map[string]string) error {
 		return err
 	}
 	BumpSyncTopic(SyncTopicOptions)
+	entries := make([]optionMapEntry, 0, len(normalizedValues))
 	for k, v := range normalizedValues {
-		if err := updateOptionMap(k, v); err != nil {
-			return err
-		}
+		entries = append(entries, optionMapEntry{key: k, value: v})
+	}
+	if err := updateOptionMapBatch(entries); err != nil {
+		return err
 	}
 	if policySnapshot != nil {
 		requestPolicySnapshot.Store(policySnapshot)
@@ -611,42 +614,101 @@ func updateGroupTypeOptionValues(groupTypesJSON, groupTypeMapJSON string) {
 	common.OptionMap[groupTypeMapOptionKey] = groupTypeMapJSON
 }
 
-func updateOptionMap(key string, value string) (err error) {
-	if key == retiredThemeOptionKey || key == legacyAccessTokenRetireAtKey {
-		common.OptionMapRWMutex.Lock()
-		delete(common.OptionMap, key)
-		common.OptionMapRWMutex.Unlock()
-		return nil
-	}
+type optionMapEntry struct {
+	key   string
+	value string
+}
+
+func publishOptionMapEntries(entries []optionMapEntry) {
 	common.OptionMapRWMutex.Lock()
 	defer common.OptionMapRWMutex.Unlock()
-	if key == playgroundImageConcurrencyKey {
-		normalizedValue, _, err := normalizePlaygroundImageMaxConcurrency(value)
-		if err != nil {
-			return err
+	if common.OptionMap == nil {
+		common.OptionMap = make(map[string]string)
+	}
+	for _, entry := range entries {
+		if entry.key == retiredThemeOptionKey || entry.key == legacyAccessTokenRetireAtKey {
+			delete(common.OptionMap, entry.key)
+			continue
 		}
-		common.OptionMap[key] = normalizedValue
+		common.OptionMap[entry.key] = entry.value
+	}
+}
+
+func updateOptionMap(key string, value string) error {
+	normalizedValue, err := normalizeOptionMapValue(key, value)
+	if err != nil {
+		return err
+	}
+	runtimeErr := applyOptionRuntime(key, normalizedValue)
+	publishOptionMapEntries([]optionMapEntry{{key: key, value: normalizedValue}})
+	return runtimeErr
+}
+
+// updateOptionMapBatch applies runtime side effects without holding the
+// OptionMap lock, then publishes all values in one short critical section.
+// Configuration reloads can therefore spend time parsing and refreshing
+// settings without blocking status readers.
+func updateOptionMapBatch(entries []optionMapEntry) error {
+	var firstErr error
+	normalizedEntries := make([]optionMapEntry, 0, len(entries))
+	for _, entry := range entries {
+		normalizedValue, err := normalizeOptionMapValue(entry.key, entry.value)
+		if err != nil {
+			if firstErr == nil {
+				firstErr = fmt.Errorf("update option %s: %w", entry.key, err)
+			}
+			continue
+		}
+		normalizedEntries = append(normalizedEntries, optionMapEntry{key: entry.key, value: normalizedValue})
+	}
+	for _, entry := range normalizedEntries {
+		if err := applyOptionRuntime(entry.key, entry.value); err != nil && firstErr == nil {
+			firstErr = fmt.Errorf("update option %s: %w", entry.key, err)
+		}
+	}
+	publishOptionMapEntries(normalizedEntries)
+	return firstErr
+}
+
+func normalizeOptionMapValue(key, value string) (string, error) {
+	switch key {
+	case playgroundImageConcurrencyKey:
+		normalized, _, err := normalizePlaygroundImageMaxConcurrency(value)
+		return normalized, err
+	case "LogRetentionDays":
+		normalized, _, err := normalizeLogRetentionDaysOptionValue(value)
+		return normalized, err
+	case "TopUpInviteRewardPercent":
+		normalized, _, err := normalizeTopUpInviteRewardPercentOptionValue(value)
+		return normalized, err
+	default:
+		return value, nil
+	}
+}
+
+func applyOptionRuntime(key string, value string) (err error) {
+	if key == retiredThemeOptionKey || key == legacyAccessTokenRetireAtKey {
+		return nil
+	}
+	if key == playgroundImageConcurrencyKey {
 		return nil
 	}
 	if key == "LogRetentionDays" {
-		normalizedValue, intValue, err := normalizeLogRetentionDaysOptionValue(value)
+		_, intValue, err := normalizeLogRetentionDaysOptionValue(value)
 		if err != nil {
 			return err
 		}
 		common.LogRetentionDays = intValue
-		common.OptionMap[key] = normalizedValue
 		return nil
 	}
 	if key == "TopUpInviteRewardPercent" {
-		normalizedValue, floatValue, err := normalizeTopUpInviteRewardPercentOptionValue(value)
+		_, floatValue, err := normalizeTopUpInviteRewardPercentOptionValue(value)
 		if err != nil {
 			return err
 		}
 		common.TopUpInviteRewardPercent = floatValue
-		common.OptionMap[key] = normalizedValue
 		return nil
 	}
-	common.OptionMap[key] = value
 	// 检查是否是模型配置 - 使用更规范的方式处理
 	if handleConfigUpdate(key, value) {
 		return nil // 已由配置系统处理
@@ -963,8 +1025,7 @@ func updateOptionMap(key string, value string) (err error) {
 		err = operation_setting.UpdatePayMethodsByJsonString(value)
 	case "WaffoPayMethods":
 		// WaffoPayMethods is read directly from OptionMap via setting.GetWaffoPayMethods().
-		// The value is already stored in OptionMap at the top of this function (line: common.OptionMap[key] = value).
-		// No additional in-memory variable to update.
+		// The value is published with the other entries after runtime updates.
 	}
 	return err
 }

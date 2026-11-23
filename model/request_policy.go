@@ -237,10 +237,12 @@ func UpdateRequestPolicyOptions(values map[string]string) error {
 		return err
 	}
 	BumpSyncTopic(SyncTopicOptions)
+	entries := make([]optionMapEntry, 0, len(values))
 	for key, value := range values {
-		if err := updateOptionMap(key, value); err != nil {
-			return err
-		}
+		entries = append(entries, optionMapEntry{key: key, value: value})
+	}
+	if err := updateOptionMapBatch(entries); err != nil {
+		return err
 	}
 	requestPolicySnapshot.Store(snapshot)
 	return nil

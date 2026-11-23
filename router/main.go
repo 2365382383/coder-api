@@ -7,12 +7,16 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/controller"
 	"github.com/QuantumNous/new-api/middleware"
+	billingmetrics "github.com/QuantumNous/new-api/pkg/billing_metrics"
 
 	"github.com/gin-gonic/gin"
 )
 
 func SetRouter(router *gin.Engine, assets WebAssets) {
+	router.GET("/health", controller.GetHealth)
+	router.GET("/metrics", gin.WrapH(billingmetrics.Handler()))
 	SetApiRouter(router)
 	SetCanvasRouter(router)
 	SetDashboardRouter(router)
