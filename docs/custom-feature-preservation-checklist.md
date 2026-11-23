@@ -1,138 +1,32 @@
 # 自研功能保护清单
 
-本文档是 `/opt/qlh-main/new-api` 后续合并上游版本时的长期功能保护清单。
+本文档只记录当前代码中仍需保护的自研功能和业务契约。内容以当前 `main` 工作树为准，作为后续合并和代码变更的当前验收入口；不保存变更来源、映射或更新时间线。
 
-它记录的是本项目自行开发或按本项目业务规则改造后的行为契约，而不是一次性
-的 Git 冲突处理记录。合并时保护自研功能、数据和配置契约，不冻结旧版本代码、
-翻译或作者实现。作者正常更新、删除和重构按作者版本处理；若作者也实现了某项
-自研功能且实现更好，必须暂停该项并向用户说明，获得明确决定后再替换。
+## 1. 当前范围
 
-## 1. 覆盖范围与基线
+- 当前第 4 节包含 34 项现行自研功能和业务契约。
+- 条目只描述当前必须保留的行为、数据边界、配置键、代码位置和验证入口。
+- 上游实现只有在当前行为满足本条契约时才可采用；不以文件名称、历史提交或冲突结果代替行为验证。
+- 已退休、已被上游完整覆盖或仅属测试治理的内容不列入当前保护项。
 
-- 最近一次完整上游合并审计快照：RC-44 合并前本地
-  `main@3dfa7cea6b4341a84578da97d31bce0fbe3bc0a0`，复核日期 2026-10-14。
-  合并目标为作者正式标签 `v1.0.0-rc.44@633b4c5b190dc1af99a2814391354d86948e7943`；
-  该轮保护和验证记录见第 12 节，第 11 节为 RC-42 历史记录。
-- 上次盘点快照为 `main@54da177f7617d0e7bf34cba43437afe1650cf97b`（2026-09-28）；
-  第 8、9 节仍是 2026-09-23 的历史审计，不能当作本轮代码或线上状态。
-- 2026-09-23 的 RC-40 对照以 `main@6fb2358525cf762fa81a4c59ec3751275493bf71` 为历史快照，
-  直接比较得到 541 个不同路径（114 个新增、422 个修改、5 个删除）；它们包含本项目差异、
-  作者版本演进、测试/文档/工具文件，不能把路径数或提交数直接当成功能数，逐项分类仍保留在
-  第 8、9 节。RC-40 已于 2026-09-27 通过 `ba886153f`、`3ffc9dd4f` 集成到当前 `main`。
-- 2026-09-23 盘点逐项复核 P-01 至 P-34，并把 RC-39 合并收尾提交 `4824d38fd` 之后的 26 个本地
-  非合并提交逐一归属；新增 P-35。当时第 4 节列出 28 项仍含本地独有实现或本地业务契约的
-  保护项。5 个旧条目中，P-09/P-10/P-25 的行为已由作者 RC-40 等价覆盖而整项移出；P-18/P-23
-  仅保留仍独有的子契约，其上游等价子行为移入历史归档。另将 P-02/P-26 两项治理条目和
-  已退休的 P-33 移出；历史编号及来源仍可追溯。另识别 1 组作者历史实现残留，不计入 QLH
-  自研项。上述数字按保护项/行为组统计，不是原子用户功能数量。
-- 2026-10-20 新增 P-36，记录普通用户任务日志隐藏插件平台标识的契约，来源提交为
-  `0a758e1d7`。当前第 4 节有 29 项现行保护项；RC-42、RC-44 章节中的 28 项核对表仍是
-  各自合并时的历史快照，不随本次盘点回写。
-- 2026-10-20 新增 P-37，记录 New API 原生公开文档阅读、同源导航、匿名发布内容接口及
-  Tools 管理/草稿数据边界，来源提交为 `2980da538`。当前第 4 节有 30 项现行保护项；
-  RC-42、RC-44 章节中的 28 项核对表仍是各自合并时的历史快照。
-- 2026-10-26 新增 P-38，记录 Responses 流断开后的共享 drain、终态 usage 结算、
-  `drain_result` 可观测性和本地估算为 1 时的临时 30--90 输出计费规则，来源提交为
-  `d90827ab6`、`0c0d1c8a0`、`697e4f7d8`。当前第 4 节有 31 项现行保护项；本项不把
-  其他协议路径中已有的 `completion_tokens=1` 误归入 Responses 临时规则。
-- 2026-11-17 按用户决定将 P-28 移出现行保护项，理由与核查事实见第 5 节历史归档和
-  第 7 节维护记录。当前第 4 节有 30 项现行保护项；RC-42、RC-44 章节中的历史核对表
-  保持各自合并时的快照，不随本次移出回写。
-- 2026-11-17 审计补录 P-39 至 P-42：Infinite Canvas、分组类型管理、动态分组定价目录和
-  系统通知确认对话框。视频任务 `usage.total_tokens` 作为 P-32 的任务账务子契约登记。
-  当前第 4 节有 34 项现行保护项；此前 RC-42、RC-44 章节中的历史核对表仍不回写。
-- 在第 8、9 节的历史审计时点，RC-40 尚未合并；当时“已吸收”仅指作者侧语义等价。
-  当前合并前 `main` 已包含 RC-40 及后续维护提交，不能再把两侧历史差异重复计成功能。
+## 2. 当前合并规则
 
-- 历史自研基线：从上一个上游基线 `v1.0.0-rc.21` 到原 `main@6a978443` 的
-  93 个非合并提交。
-- rc.22 合并完成后的自研补充：`441ea707`、`9773de9e`、`51cd6ec4`、
-  `51e0b058`、`d81c294f`、`504e193f`。
-- 历史基线共映射 105 个可追踪的本地非合并提交（截至 `main@4173af597`）。其中
-  `d81c294f` 是对分组可见性回归测试的泛化修正，不单独增加产品功能；其余提交都
-  对应下列可见行为、账务不变量、数据迁移或发布能力。
-- 已批准退休的本地实现包括：`cd2f8814` 只服务于已退休的 Classic 前端构建，不得恢复
-  `web/classic` 或 `web/default`；`bca83882` 的用户编辑分组扩展已按用户明确决定恢复上游
-  原始行为；`66759ee72` 的旧定价编辑器辅助实现已删除。现行单前端必须全部位于 `web/src`。
-- 清单创建后补录的功能提交为 `3707af0c4`、`b44e6971e`、
-  `cc70f2c3c`、`e1765fd8e` 和 `4173af597`；
-  `88ff1c7cd` 是执行已批准退休决定的用户管理维护提交，不新增独立保留功能，
-  但仍在 P-21 中保留可追踪映射。rc.22/24 的合并提交和保留执行提交已逐项复核，
-  不再笼统标为“文档维护”；具体归属见第 8 节及 RC-39 审计表第 11 节。
-- 本次新增 P-30 敏感词与内容审计保护项，功能提交为 `21cc64f46`、`7f17b6307`、
-  `ab37d8b51`、`384e4988c`；本轮实时查找功能提交为 `416fabe52`；
-  `84daf8a43` 仅回填发布记录，不新增产品契约。
-- P-30 的后续实现修复包括 `b24c6ad95`（跨数据库方言正确读取敏感词配置）和
-  `52d68cb40`（长提示词存储、UTF-8 截断以及 observe/block 审计失败语义）；它们属于
-  现行 P-30 契约，不能在合并时只保留最初的拦截逻辑。
-- RC-40 集成后的 P-30 重实现提交为 `9e5e31632`、`6c72aebf5`、`3d9c70e8a` 和
-  `a09489b80`，分别覆盖运行时/迁移、Relay 与认证失效、管理界面/文档以及审查修复；
-  它们通过 `ba886153f`、`3ffc9dd4f` 进入本地 `main`，不是作者上游提交。
-- `25e5f87a4` 修复 P-30 日志权限与结果状态：普通用户和 API Key 在查询及计数阶段排除
-  类型 8，管理员列表只读取新的 `other.admin_info.keyword_filter` 三态结果，详情要求
-  `AuditRead`，并移除旧顶层字段推断；该提交属于 P-30，不新增独立保护项。
-- `54da177f7` 的 P-30 用户编辑修复要求接口对 `sensitive_word_violation_count` 和
-  `sensitive_word_whitelist` 保持显式 patch 语义：常规资料/权限编辑不能携带安全字段，
-  只有对应控件实际变更才提交，避免陈旧表单值覆盖并发违规计数或白名单状态。
-- 2026-09-28 后的 9 个非合并提交已核销：`a14834157` 为 P-30 文档映射，
-  `0f3c4e67c`、`ec2641d93` 为 P-32 持久账务和跨表锁序，`f17fc83a7` 为 P-13
- 模型端点/媒体能力，`b084a8a65` 为 P-30 界面本地化，`a19e8704b` 为 P-18 缺省 IP
-  日志，`8f639edbd` 为 P-06/P-28 观测能力状态，`dece225fb` 为 P-15/P-16 图片生命周期；
-  `8067b3e40` 仅为模型广场重构交接文档，不表示已实施该重构。
-- RC-42 合并后的 `3dfa7cea6` 将图片任务额度锁改为数据库持久互斥；归入 P-15/P-16，
-  防止并发取消、过期回收与结算重复操作额度，不新增独立保护项。
-- P-13/P-16 的后续 Playground 提交包括 `889436b78`、`734b60163` 和 `4cd9c9460`；
-  前者保护图片历史清理的查询边界，后两者把图片能力配置外置并统一 GPT 图片模型能力。
-- 清单上次更新后新增的独立自研功能提交为 `b2e905185`（CC Switch 多来源导入）和
-  `afab95b53`（钱包额度 int64 迁移）。
-- `66759ee72` 的分层定价表达式编辑器状态辅助实现已按用户明确决定退休；当前定价编辑器
-  使用上游 AST 表达式编辑器和官方测试，旧辅助文件及其专属测试已删除。
-- rc.39 合并前新增的独立自研修复为 `5e5c79c1b`（CC Switch 名称与作用域整理）和
-  `f0a62f2c6`（按所选 API Key 查询模型）；二者共同归入 P-34。当前合并目标固定为
-  上游正式标签 `v1.0.0-rc.39@9978ee1e25a647bfe004e96c8719a2cb62c24732`，具体决策
-  与验证证据记录在 `upstream-merge-v1.0.0-rc.39.md`；这是历史合并基线，不是本次盘点基线。
-- `955243896` 与 `d1529b6eb`、`22eeed171` 与 `4c9c5209f` 分别是已回滚的功能/回滚对，
-  当前主分支不保留其注册提示或自动封禁后重试文案契约；`78ae12181`、`3dda71a37` 等
-  仅记录该回滚过程的文档提交也不新增保护项。
-- 本文档与 [upstream-merge-v1.0.0-rc.22.md](./upstream-merge-v1.0.0-rc.22.md)、
-  `upstream-merge-v1.0.0-rc.23.md`、`upstream-merge-v1.0.0-rc.24.md` 配套使用：
-  各审计文件保留对应上游标签的逐提交迁移证据，本文件是以后每次合并的验收入口。
+1. 合并或重构前逐项检查第 4 节全部保护项，记录当前代码是否仍满足契约。
+2. 采用上游等价实现时，必须确认当前路径、数据/配置兼容性和验证入口仍成立。
+3. 不用整文件 `ours`/`theirs` 解决语义冲突，不以“上游已重构”解释当前功能消失。
+4. 保持现有数据库表、`options` 键、任务记录、账本记录、订阅余额和用户会话兼容。
+5. 现行单前端代码位于 `web/src`；不恢复已退休的 `web/default` 或 `web/classic`。
+6. 新增或修改自研功能时，更新对应当前保护项；没有对应条目时新增当前保护项。
 
-## 2. 合并时的硬性规则
+## 3. 当前验收规则
 
-1. 合并开始前复制第 4 节的全部现行保护项到本次合并审计中，并逐项标记为“原样保留”、
-   “语义等价的上游替代”或“经用户明确批准退休”。不允许空白状态。
-2. “语义等价的上游替代”必须同时给出新路径、自动测试或可重复验证证据、数据库
-   迁移/配置兼容说明。没有这三项就仍按“未保留”处理。
-3. 不允许用整文件 `ours` / `theirs` 解决冲突，也不允许把本地文件删除后只以“上游
-   已重构”为理由结案。
-4. 所有数据库表、现有 `options` 键、历史任务记录、账本记录、订阅余额和用户会话
-   都必须保持向后兼容。除非用户明确授权，不直接修改生产 MySQL 数据来迁移行为。
-5. 分组名称没有内置公开或私有语义。`default`、`vip` 或其他任何名称是否公开，仅由
-   `UserUsableGroups`、`GroupSpecialUsableGroup`、用户自身分组以及现行配置决定。
-6. 涉及 `web/default`、`web/classic` 的旧路径时，必须证明每个仍有效的自研实现已迁移
-   到 `web/src`；旧目录本身不得重新引入。
-7. 每次新增自研功能、修复或数据契约时，同一提交必须更新本文件：新增保护项或把
-   提交加入既有保护项，不能只在聊天记录中保留背景。
+1. 对每个保护项核对当前位置、数据/配置边界和验证入口。
+2. 检查删除路径、迁移路径、配置读取、缓存失效、API 响应和前后端类型契约。
+3. 运行与改动范围相称的 Go、前端类型检查和目标测试。
+4. P-01 的 Actions、P-05 的响应式 smoke、P-39 的 Canvas 浏览器验收保留为用户或发布流程入口。
+5. 本文档不保存提交哈希、历史映射或功能更新记录。
 
-## 3. 合并验收步骤
-
-1. 获取正式上游标签，记录共同祖先、待合并提交和当前 `main` 的本地自研提交。
-2. 对第 4 节每个编号记录最终代码位置、状态和验证结果；先处理高风险项，再处理
-   普通前端展示项。
-3. 对第 5 节的提交映射做集合比对：现行提交须归属一个保护项；已吸收、治理及退休提交
-   须归属第 5 节的历史归档，不能再次计入现行自研项。
-4. 检查删除列表、迁移后的文件路径、数据库 `AutoMigrate`/快速迁移路径、配置键
-   读取路径和缓存失效路径。
-5. 运行与改动范围相称的自动检查。合并完成时至少记录 `git diff --check`、Go 测试、
-   前端类型检查/测试/lint/build 检查，以及 GitHub Actions 的结果。测试需隔离共享数据，
-   并恢复 Gin 等全局测试模式，避免污染后续用例（原 P-26 工程治理项，不计入自研功能）。
-   `new-api` 不启动本地开发或预览服务器；发布仍直接推送 `main`，由 GitHub Actions 构建镜像。
-
-## 4. 功能保护项
-
-本节仅列当前仍需作为本地独有行为/契约保护的项目。作者 RC-40 已有等价实现、仅属工程治理或
-已按决定退休的条目不列在此处；它们的稳定编号和来源提交保留在第 5 节历史归档中。
+## 4. 当前自研功能保护项
 
 ### P-01 Fork 镜像发布与多架构产物
 
@@ -145,7 +39,6 @@
 - 验证入口：推送 `main` 后由 GitHub Actions 自动运行；需要追溯时使用
   `gh run view <head-sha> --repo QLHazyCoder/new-api` 确认 amd64、arm64 和 manifest Job。
   本轮只登记入口，不等待或重复执行 Actions。
-- 来源提交：`8c813336`、`7b887e44`、`0c315d4a`。
 
 ### P-03 钱包默认自定义充值金额
 
@@ -156,7 +49,6 @@
 - 数据/配置：现有支付设置中的 `default_topup_amount` 必须兼容保留。
 - 验证入口：`setting/operation_setting/payment_setting_test.go`、
   `web/src/features/wallet/lib/payment.test.ts`。
-- 来源提交：`711a0315`、`bf162983`、`1a704ad1`。
 
 ### P-04 支付回跳后的钱包刷新
 
@@ -166,7 +58,6 @@
   `web/src/features/wallet/lib/payment-return.ts`、`web/src/features/wallet/index.tsx`。
 - 验证入口：`controller/return_path_test.go`、
   `web/src/features/wallet/lib/payment-return.test.ts`。
-- 来源提交：`50f25187`、`ade4551d`。
 
 ### P-05 钱包与订阅面板的稳定布局
 
@@ -179,7 +70,6 @@
   `web/src/features/wallet/components/dialogs/__tests__/billing-history-pricing-audit.test.tsx`；
   390px、768px 和桌面宽度的响应式可见性由用户自行人工/浏览器 smoke 验收，本轮不作为
   代理完成门禁。
-- 来源提交：`b415a3f1`、`9a3826d4`、`6be657a2`。
 
 ### P-06 性能指标的分组可见性、聚合与失败归类
 
@@ -192,26 +82,24 @@
   `web/src/features/performance-metrics/**`、仪表盘性能组件。
 - 数据/配置：性能统计依赖现有日志/统计数据，不得因合并清空或改写历史聚合数据。
 - 验证入口：`controller/perf_metrics_test.go`、`pkg/perf_metrics/metrics_test.go`。
-- 维护记录：2026-08-10 修正图片上游拒绝的成功率统计口径，保留错误日志、计费/退款和重试行为。
-- 维护记录：2026-09-21 明确性能查询中的 `auto` 是对所有用户可见的虚拟请求分组，真实
-  分组仍按用户可用分组和管理员权限过滤。
-- 维护记录：2026-09-21 按官方 24 小时窗口清理模型详情页自研的 1 小时成功率展示及其
-  专用聚合工具，保留后端按小时分桶和 24 小时汇总逻辑。
-- 来源提交：`2d8a8fde`、`7cf40dba`、`250bde67`、`cc70f2c3c`。
 
 ### P-07 Relay 协议兼容与缓存写入计费
 
 - 必须保留：公开 Chat Completions 请求不会被自动改写为 Responses；Responses 的
   cache creation/cache write 用量会进入账务和日志；旧音频完成倍率配置继续有效。
+- 必须保留：Claude 流式响应缺少上游 output usage 时，按已接收文本和 tool-use 数量进行
+  本地估算，向客户端补齐 `output_tokens`，并在账务快照中标记为 estimated；上游已经给出
+  的 usage 不被覆盖，部分字段只补缺失值。
 - 当前位置：`relay/chat_completions_via_responses.go`、
   `service/openai_chat_responses_mode.go`、`service/openai_chat_responses_compat.go`、
   `relaykit/relayconvert/**`、`relay/channel/openai/relay_responses.go`、
+  `relay/channel/claude/relay-claude.go`、
+  `relaykit/relayconvert/internal/claude_messages/to_oai_chat_resp.go`、
   `service/billing.go`、`service/log_info_generate.go`、相关 `setting` 配置。
 - 合并检查：区分协议转换、上游请求显示用量和实际扣费用量，不能只因上游返回字段
   更少就丢弃 cache-write 计费；不要重新打开公共 Chat-to-Responses 自动转换。
 - 验证入口：`relay/chat_completions_via_responses_test.go`、
   `relay/channel/openai/relay_responses_billing_test.go`、相关 relay/service 测试。
-- 来源提交：`c54a1d55`、`cb7ad647`、`4066e54f`、`fc08d7e5`。
 
 ### P-08 分组描述与配置编辑的保留
 
@@ -225,7 +113,6 @@
   `group_ratio_setting.group_special_usable_group` 都是已有生产配置，不能在迁移中归零。
 - 验证入口：`web/src/features/system-settings/models/__tests__/group-settings.test.tsx`、
   `service/group_test.go`。
-- 来源提交：`bbdeb35d`、`057f635e`。
 
 ### P-11 分组可见性、定价接口脱敏与使用日志分组选择
 
@@ -242,7 +129,6 @@
   `web/src/features/usage-logs/components/common-logs-filter-bar.tsx`。
 - 验证入口：`controller/pricing_test.go`；未来合并应追加普通用户、同名私有分组和
   管理员三类接口断言。
-- 来源提交：`cf386058`、`51e0b058`、`d81c294f`。
 
 ### P-12 日志保留保护、错误日志权限与工具附加费标记
 
@@ -259,7 +145,6 @@
 - 验证入口：`controller/log_test.go`、`service/system_task_test.go`、
   `model/log_format_test.go`、
   `web/src/features/usage-logs/components/__tests__/cost-display.test.tsx`。
-- 来源提交：`89c2d59a`、`45f4e67f`、`d565eea6`、`504e193f`。
 
 ### P-13 Playground 多供应商图片能力与路由
 
@@ -282,9 +167,6 @@
   `controller/playground_test.go`、Gemini/xAI 图片 relay 测试。
 - 模型广场与插件协议的交叉验证见 `docs/model-catalog-endpoint-capabilities.md`：
   定价端点及图片参数必须使用启用渠道、映射与配置，不能从公开模型名或插件内部协议名猜测。
-- 来源提交：`a7b870b0`、`f3018f4f`、`99f171da`、`fce66558`、`31dce377`、
-  `dfe64ed2`、`cc64bf3b`、`4e40cd8a`、`3ea4788d`、`2209a200`、`734b60163`、
-  `4cd9c9460`。
 
 ### P-14 Playground 图片请求构造、编辑与规格选项
 
@@ -307,7 +189,6 @@
 - 验证入口：`web/src/features/playground/lib/image-payload-builder.test.ts`、
   `web/src/features/playground/lib/image-generation-capabilities.test.ts`、
   `relay/helper/valid_image_request_test.go`。
-- 来源提交：`30515cc6`、`99853f90`、`a934a149`、`2c9a61cb`、`f3a181fb`、`93aaa3c2`。
 
 ### P-15 Playground 异步任务、持久队列与全局并发
 
@@ -323,7 +204,6 @@
   标准/快速迁移均必须 seed 并校验 required option。
 - 验证入口：`model/playground_image_test.go`、`model/required_option_test.go`、
   `model/main_migration_test.go`、`service/playground_image_worker_test.go`。
-- 来源提交：`19d9bb7e`、`ae0dc6be`、`8ce14f79`、`9b7fd1ca`、`441ea707`。
 
 ### P-16 Playground 图片历史、删除与任务卡交互
 
@@ -345,9 +225,6 @@
   `web/src/features/playground/index.tsx`。
 - 验证入口：`model/playground_image_test.go`、`controller/playground_image_task_test.go`、
   前端 Playground 图片库测试。
-- 来源提交：`72c401ed`、`f042ea22`、`fe04dbd2`、`0f00ee3a`、`1df5a78d`、
-  `78364808`、`325726da`、`3df68604`、`4284ca06`、`089f7e9a`、`6347b97e`、
-  `d39cc0bc`、`5c6cfd85`、`6a978443`、`51cd6ec4`、`889436b78`、`1435da952`。
 
 ### P-17 邀请奖励账本与额度换算
 
@@ -366,12 +243,11 @@
 - 数据/迁移：`affiliate_reward_events` 是生产账本表，禁止删除、重建或用非事务 SQL
   批量重算；详细语义见 [affiliate-reward-ledger.md](./affiliate-reward-ledger.md)。
 - 验证入口：`model/affiliate_reward_test.go`、`model/payment_method_guard_test.go`。
-- 来源提交：`b5fb25e1`、`4190de6e`、`ba3b9be6`、`6adf6ffb`。
 
 ### P-18 缺省开启请求与错误日志 IP 记录
 
 - 必须保留：用户设置中没有 `record_ip_log` 键时，普通请求和错误日志默认记录客户端 IP；
-  用户显式设置 `false` 时停止记录。缺省值与显式关闭必须可区分，不能改成上游 RC-40
+  用户显式设置 `false` 时停止记录。缺省值与显式关闭必须可区分，不能改成非指针布尔值
   的非指针布尔值语义。
 - 当前位置：`relaykit/dto/user_settings.go`、`controller/user.go`、`model/log.go`、
   `web/src/features/profile/lib/user-settings.ts`、`web/src/features/profile/api.ts`、
@@ -383,9 +259,6 @@
 - 验证入口：`controller/user_manage_test.go`、`model/log_other_test.go`、
   `web/src/features/profile/__tests__/settings.test.tsx`、
   `web/src/features/security/components/__tests__/privacy-card.test.tsx`。
-- 2026-09-29 修复：前端归一化和隐私卡统一采用缺省开启语义，设置请求改为指针字段并按 presence
-  合并；回归覆盖 `controller/user_manage_test.go`、`model/log_other_test.go` 及对应前端测试。
-- 来源提交：`db10c428`。
 
 ### P-19 订阅适用分组与管理界面
 
@@ -398,7 +271,6 @@
 - 数据/迁移：保留订阅计划和用户订阅中的 `applicable_group` 字段，不能在上游迁移中
   置空或丢列。
 - 验证入口：`model/subscription_applicable_group_test.go`、订阅 controller/前端测试。
-- 来源提交：`3c7df8f5`、`46423a16`、`3219bde1`、`3eb2c6ed`。
 
 ### P-20 订阅优先的混合扣费
 
@@ -416,7 +288,6 @@
   mixed 任务当成单一订阅或单一钱包任务处理。
 - 验证入口：`service/task_billing_test.go`、
   `service/billing_session_settlement_test.go`、`model/billing_operation_database_matrix_test.go`。
-- 来源提交：`460b36a8`、`1779060b`、`525ecf72`。
 
 ### P-21 用户管理、缓存一致性与硬删除边界
 
@@ -427,17 +298,11 @@
 - 必须保留：`PUT /api/user/self` 的资料和密码修改只能更新自助字段白名单；
   `quota`、`used_quota`、`request_count` 等账务字段不得从请求或旧快照写回，侧边栏与
   语言偏好也只能更新 `setting` 列。
-- 已批准退休：`bca83882` 曾使用户编辑抽屉将 `GroupRatio` 的分组定价和
-  `GroupGroupRatio` 的用户分组覆盖键合并为可分配分组。该展示/接口扩展已按用户
-  明确决定恢复上游原始行为：抽屉只从 `/api/group/` 读取 `GroupRatio` 分组；
-  `GroupGroupRatio` 仍保留为真实计费覆盖配置，但不再作为可分配用户分组来源。
 - 当前位置：`controller/user.go`、`model/user.go`、`model/user_auth_cache.go`、
   `web/src/features/users/**`。
 - 验证入口：`controller/user_manage_test.go`、`controller/user_self_update_test.go`、
   `model/user_update_test.go`、`model/user_authentication_test.go`、
   `model/user_cache_auth_version_test.go`。
-- 来源提交：`693494a0`、`8aaede90`、`9773de9e`、`3707af0c4`；`bca83882` 为
-  经用户批准退休项，`88ff1c7cd` 为该退休决定的实施提交。
 
 ### P-22 注册来源分组策略
 
@@ -450,7 +315,6 @@
   [registration-group-policy.md](./registration-group-policy.md)。
 - 验证入口：`model/registration_group_policy_test.go`、
   `controller/registration_group_policy_test.go`。
-- 来源提交：`8ccd7a17`、`393aec79`。
 
 ### P-23 本地化同步的英文基准与翻译键保留
 
@@ -461,9 +325,8 @@
 - 验证入口：`cd web && bun run i18n:sync`；检查英文基准键、七种 locale JSON 可解析且
   静态键集合无回退删除。
 - 合并检查：对比同步前后的各 locale 键和值；标准 BCP-47 语言码和 `Intl` 归一化属于
-  RC-40 已有的上游行为，不是本项的保护内容。保护对象是本地同步规则与自研功能翻译，
+  上游已有的标准行为，不是本项的保护内容。保护对象是本地同步规则与自研功能翻译，
   不要求恢复上游随退休界面一并删除、且没有自研调用的翻译键。
-- 来源/保留提交：`ec15c8e23`。
 
 ### P-24 排行榜的本地自然日与管理员访问边界
 
@@ -477,7 +340,6 @@
   [rankings-time-boundaries.md](./rankings-time-boundaries.md)。
 - 验证入口：`service/rankings_test.go`、`model/usedata_rankings_test.go`、
   `web/src/features/rankings/access.test.ts`。
-- 来源提交：`f3236ab4`、`705070a8`、`3642fd14`。
 
 ### P-29 按用户分组的支付金额折扣与充值定价快照
 
@@ -504,7 +366,6 @@
   `web/src/features/system-settings/integrations/__tests__/amount-discount-visual-editor.test.tsx`、
   `web/src/features/wallet/components/dialogs/__tests__/billing-history-pricing-audit.test.tsx`。
 - 设计与阶段记录：[payment-amount-discount-group-policy.md](./payment-amount-discount-group-policy.md)。
-- 来源提交：`e1765fd8e`、`4173af597`。
 
 ### P-30 敏感词规则、内容审计与用户违规控制
 
@@ -562,8 +423,6 @@
   `web/src/features/users/lib/__tests__/user-form.test.ts`、
   `web/src/features/users/components/__tests__/permissions.test.tsx`、
   `relaykit/**`，以及敏感词页面、用户抽屉和使用日志的前端 typecheck/build/lint。
-- 来源提交：`21cc64f46`、`7f17b6307`、`ab37d8b51`、`384e4988c`、`416fabe52`、
-  `b24c6ad95`、`52d68cb40`。
 - 长提示词/观察模式故障修复涉及 `model/sensitive_word.go`、`controller/relay.go` 及其
   模型/控制器回归测试；完整提示词字段、UTF-8 截断和审计失败类型必须继续保持。
 
@@ -571,8 +430,8 @@
 
 - 必须保留：密钥页面的 CC Switch 导入支持由集中来源注册表驱动；当前支持 Claude、Codex、
   Claude Desktop、Gemini、Antigravity CLI、Grok Build、OpenCode、OpenClaw、Hermes、Pi、
-  MiniMax Code、Kimi Code、DeepSeek Harness 和 Oh My Pi 共十四个来源；Claude Desktop
-  使用 Anthropic 格式，不再显示旧的“不支持”分支。
+  MiniMax Code、Kimi Code、DeepSeek Harness、Oh My Pi、GitHub Copilot CLI 和 WorkBuddy
+  共十六个来源；Claude Desktop 使用 Anthropic 格式，不再显示旧的“不支持”分支。
 - 必须保留：来源专属 endpoint、模型字段和默认名称保持独立；服务地址规范化会去除尾部
   `/v1` 和斜杠，深链参数必须进行 URL 编码，缺少必填模型时不能生成导入链接。
 - 当前位置：`web/src/features/keys/lib/cc-switch-sources.ts`、
@@ -581,7 +440,6 @@
   构造测试，不能把来源配置重新散落回弹窗组件。
 - 验证入口：`web/src/features/keys/lib/__tests__/cc-switch-sources.test.ts`、
   `web/src/features/keys/components/__tests__/cc-switch-dialog.test.tsx`。
-- 来源提交：`b2e905185`、`ea569b999`、`c509b2ede`、`608ba31ec`。
 
 ### P-32 钱包额度 int64 与计费额度边界分离
 
@@ -615,6 +473,9 @@
   adaptor 必须原样保留该响应字段。
 - 必须保留：用户余额提醒的阈值运算继续处于钱包 `int64` 域，不能通过 `int` 窄化或
   未检查的浮点转整数溢出；极大阈值必须按钱包上限安全限制。
+- 必须保留：MySQL 计费事务每次尝试使用 `BILLING_LOCK_WAIT_TIMEOUT_SECONDS` 限制锁等待，
+  默认 10 秒，设为 `0` 时使用数据库服务端默认值；事务结束前恢复连接 session 原值，
+  非 MySQL 方言保持原有事务路径和重试语义。
 - 当前位置：`common/wallet_quota.go`、`common/quota_math.go`、`model/wallet_quota.go`、
   `model/wallet_quota_schema.go`、`model/quota_reserve.go`、`model/user.go`、
   `model/token.go`、`model/billing_operation.go`、`model/task_billing_operation.go`、
@@ -624,7 +485,8 @@
   `controller/token.go`、`controller/billing.go`、
   `controller/misc.go`、`controller/user.go`、`service/quota.go`、
   `relaykit/dto/user_settings.go`、`relaykit/dto/openai_video.go`、
-  `relay/channel/task/jsplugin/adaptor.go`、`web/src/lib/format.ts`。
+  `relay/channel/task/jsplugin/adaptor.go`、`model/billing_transaction.go`、`.env.example`、
+  `web/src/lib/format.ts`。
 - 数据/迁移：钱包字段迁移必须保留默认值、索引、空值行为和历史 raw quota；写入大额度后不能
   回滚到仍带有旧钱包 int32 校验的版本。`billing_operations` 与 `midjourneys` 只追加账务状态、
   请求关联及上游结果列；操作唯一键为 `(request_id, phase)`，既有行不回填、不改账；发布必须
@@ -636,35 +498,6 @@
   `controller/midjourney_billing_test.go`、`controller/user_manage_test.go`、
   `controller/topup_quota_limit_test.go`、`model/task_openai_video_test.go`、
   `relay/channel/task/jsplugin/adaptor_test.go`、相关前端额度格式化测试。
-- 来源提交：`afab95b53`、`d1688dddc`、`3343b7c5d`。
-
-#### P-32 本次实施记录（发布独立授权）
-
-| 阶段 | 状态 | 修改与文件职责 | 自检与验收 |
-| --- | --- | --- | --- |
-| 1. 财务路径隔离 | 已实施 | `model/quota_reserve.go` 将钱包/Token 预扣改为 SQL CAS；`model/user.go`、`model/token.go`、`model/channel.go` 同步写账；`model/utils.go` 停用进程内财务队列；`model/user_cache.go`、`model/user_auth_cache.go`、`model/token_cache.go` 移除额度缓存依赖及字段；`model/checkin.go` 统一签到事务。 | 旧 Redis hash 与数据库余额不一致、缓存失效及 Redis 不可用只影响身份缓存，不重复授信；已新增定向用例。 |
-| 2. 精度与边界 | 已实施 | `controller/token.go` 绑定认证身份和精确返回；`controller/billing.go` 安全求和及错误处理；`model/subscription.go` checked 累计与跨事务调用；`model/db_time.go` 提供事务内数据库时间。 | 高位额度、超 `int64` 总和、分组后缀、查询失败及订阅溢出定向覆盖。 |
-| 3. 持久退款与任务 | 代码及自动化验收完成；生产负载/发布门禁未执行 | `model/billing_operation.go` 追加操作表、阶段唯一键、预留/settlement/refund 状态及上游结果字段，无会话实时流兼容预扣也写入 `initial` 根记录并幂等收口；`model/task_billing_operation.go` 原子更新任务、资金分摊及人工核查标记，并使旧任务首次终态处理创建完整的资金/Token 快照、同步根记录差额且禁止已退款任务被重算复活；`model/midjourney.go`、`model/midjourney_billing_operation.go` 在外呼前预留钱包/Token，先持久上游 ID/响应码，再原子关联 MJ 任务；上游明确拒绝时事务性进入可重试退款，接单任务可恢复结算；`relay/mjproxy_handler.go` 在两个 MJ 提交入口执行该协议；`controller/midjourney.go` 仅把明确上游终态失败作为退款依据，本地超时、渠道缓存故障和缺失上游 ID 均保留额度并标记核查；`service/billing_session.go`、`service/quota.go`、`service/task_billing.go` 统一接入并移除旧分步资金函数；`service/billing_recovery.go` 重试已确认结算/退款、告警未知结果；`model/task.go` 隐藏账务 pending 任务；`model/main.go` 注册迁移，`main.go` 启动恢复扫描及旧开关告警。 | SQLite/MySQL/PostgreSQL 矩阵覆盖旧 MJ 表追加迁移、重复启动、预留/结算故障恢复、拒绝幂等退款及通用任务结算恢复；上游已接单但任务事务失败保存 task ID、未知结果不自动退款、实时预扣中断待核查、混合资金预扣→结算→退款、终态状态竞争、退款后重算隔离与 pending 读取隔离均有回归用例。 |
-
-- 文件结构保持原有模块边界；仅新增下表列出的 6 个文件，没有目录迁移。移除已被事务
-  实现取代且无调用点的旧分步任务资金调整辅助函数。
-
-| 文件范围 | 本轮文件 | 职责 |
-| --- | --- | --- |
-| int64 财务原语、SQL 写入与身份缓存 | `common/wallet_quota.go`、`common/quota_math.go`、`model/wallet_quota.go`、`model/wallet_quota_schema.go`、`model/quota_reserve.go`、`model/user.go`、`model/token.go`、`model/channel.go`、`model/user_quota_adjustment.go`、`model/utils.go`、`model/user_cache.go`、`model/user_auth_cache.go`、`model/token_cache.go`、`model/checkin.go`、`model/db_time.go` | 钱包/Token 边界检查、原子预扣和同步写入、财务队列停用、去除额度缓存及事务时间处理。 |
-| 持久账务状态及数据迁移 | `model/billing_operation.go`（新增）、`model/task_billing_operation.go`（新增）、`model/midjourney_billing_operation.go`（新增）、`model/midjourney.go`、`model/subscription.go`、`model/task.go`、`model/main.go`、`main.go` | 操作记录、任务/订阅/MJ 事务、人工核查状态、追加迁移和恢复 worker 启动。 |
-| 服务层计费及轮询 | `service/billing.go`、`service/billing_session.go`、`service/billing_recovery.go`（新增）、`service/midjourney.go`、`service/quota.go`、`service/task_billing.go`、`service/task_polling.go`、`service/text_quota.go`、`service/violation_fee.go` | 统一预扣/结算/退款、旧实时路径幂等化、终态未知结果隔离、已知操作恢复。 |
-| Relay 与 HTTP 接口 | `relay/common/relay_info.go`、`relay/mjproxy_handler.go`、`controller/billing.go`、`controller/token.go`、`controller/midjourney.go`、`controller/relay.go` | 请求关联、MJ 外呼前预留、用量精度响应、旧 billing 错误兼容及明确失败判定。 |
-| 自动化回归与数据库夹具 | `model/billing_operation_database_matrix_test.go`（新增）、`model/quota_reserve_test.go`、`model/subscription_applicable_group_test.go`、`model/task_cas_test.go`、`model/payment_method_guard_test.go`、`model/user_cache_auth_version_test.go`、`model/user_update_test.go`、`controller/midjourney_billing_test.go`（新增）、`controller/billing_option_test.go`、`controller/plugin_native_e2e_test.go`、`controller/plugin_protocol_test.go`、`controller/relay_task_plugin_test.go`、`controller/responses_websocket_test.go`、`controller/token_quota_int64_test.go`、`controller/user_manage_test.go`、`e2e/doc_parse_test.go`、`service/task_billing_test.go`、`service/task_polling_test.go`、`service/text_quota_test.go`、`service/tiered_settle_test.go` | SQLite 与隔离 MySQL/PostgreSQL 迁移/事务测试，额度精度、回滚/重试、混合分摊、MJ 和未知任务结果覆盖；兼容既有集成测试夹具。 |
-| 文档与接口契约 | `docs/custom-feature-preservation-checklist.md`、`docs/openapi/api.json` | 维护本阶段变更/门禁记录并说明精确额度响应字段。 |
-- 兼容边界：单次请求继续使用 int32 费用域，订阅优先级和分组适用规则不变；
-  旧 billing 响应形状不变，Token 用量响应仅增加可选字符串字段。`docs/openapi/api.json`
-  同步说明精度契约。旧缓存仅保存身份元数据，旧开关继续可读取但不再启用延迟刷库。
-- 当前自检：SQLite/MySQL/PostgreSQL 旧 MJ 表迁移、重复启动和 settlement intent 事务故障/恢复/重复执行矩阵通过；
-  Midjourney 预留回滚、上游任务 ID 持久、未知结果保留、明确拒绝幂等释放及超时/明确失败轮询回归通过。旧任务
-  混合资金/Token 分摊根记录、终态退款后重算隔离回归通过。当前代码的 `go test ./...`、`go build ./...`、
-  `gofmt` 检查和 `git diff --check` 均通过。生产负载下的数据库延迟/连接池评估、待处理账务监控、历史差额审计、
-  候选镜像核验和发布切流均未执行，必须作为独立上线门禁；本次不代表已上线或生产账务已完成对账。
 
 ### P-34 CC Switch 所选密钥授权模型与可访问下拉框
 
@@ -682,7 +515,6 @@
   `web/src/features/keys/components/dialogs/__tests__/cc-switch-dialog.test.tsx`。
 - 验证入口：所选 Key 的 `/v1/models` 授权、加载/失败隐藏、Portal、键盘、异步更新及
   七类来源的深链构造测试。
-- 来源提交：`5e5c79c1b`、`f0a62f2c6`。
 
 ### P-35 使用日志模型诊断的管理员可见性与历史迁移
 
@@ -704,7 +536,6 @@
   `model/log_format_test.go`、`model/log_other_test.go` 和普通用户/管理员接口响应断言。
 - 运维步骤：[log-model-visibility.md](./maintenance/log-model-visibility.md)。本清单只证明
   代码和迁移工具存在，不代表生产日志已执行迁移。
-- 来源提交：`9b0238b83`。
 
 ### P-36 普通用户任务日志隐藏插件标识
 
@@ -729,7 +560,6 @@
   `web/src/features/usage-logs/components/__tests__/task-logs-columns.test.tsx`、
   `web/src/features/usage-logs/components/__tests__/task-details-dialog.test.tsx`、
   `web/src/features/usage-logs/__tests__/artifacts.test.ts`。
-- 来源提交：`0a758e1d7`。
 
 ### P-37 文档管理的数据边界与公开阅读路由
 
@@ -774,7 +604,6 @@
 - 验证入口：`web/src/features/docs/__tests__/reading.test.tsx`、`api.test.ts`、
   `markdown.test.tsx`、`tree.test.ts`、`web/src/lib/__tests__/navigation-target.test.ts`、
   `web/src/components/ui/__tests__/markdown.test.tsx`。
-- 来源提交：`2980da538`。
 
 ### P-38 Responses 流终态 usage、断流 drain 与临时估算计费
 
@@ -819,7 +648,6 @@
 - 数据/配置：仅使用既有 `CLIENT_GONE_DRAIN_TIMEOUT` 环境变量和日志 `stream_status`；
   不新增表或字段，不改变预扣/结算接口。临时估算是运营兜底，待上游终态 usage 对账
   修复后删除 helper、测试和本保护项中的临时分支。
-- 来源提交：`d90827ab6`、`0c0d1c8a0`、`697e4f7d8`。
 
 ### P-39 Infinite Canvas 免 Key 子应用与持久媒体
 
@@ -831,18 +659,21 @@
   既有 relay/plugin 结算链；项目 CAS、引用保护、私有文件原子写入、运行归档/取消、
   过期清理和 opaque-origin sandbox 行为保持。静态 `/canvas-app` 入口不得重新引入旧
   FileServer 重定向循环或把 session Authorization 传给子应用。
+- 必须保留：当前嵌入式 Canvas 源码由 `infinite-canvas/**` 管理，包含 Agent 面板与本地
+  Agent 连接、插件宿主与插件管理、媒体分组类型目录、图片/音频/视频文件上传、视频
+  参考素材公开发布、图片/视频/音频生成设置和窄屏交互。文件和生成结果继续写入服务端
+  用户隔离存储，能力和路由必须来自当前分组与模型目录，不能回退为静态模型名称猜测。
 - 当前位置：`router/canvas-router.go`、`middleware/canvas.go`、`middleware/canvas_static.go`、
   `model/canvas.go`、`service/canvas_catalog.go`、`service/canvas_storage.go`、
   `service/canvas_image_publish.go`、`controller/canvas.go`、`controller/canvas_run.go`、
   `web/src/features/canvas/**`、`web/src/routes/_authenticated/canvas/**`、
-  `infinite-canvas/**`。
+  `infinite-canvas/web/**`、`infinite-canvas/canvas-agent/**`、
+  `infinite-canvas/plugins/**`。
 - 验证入口：`model/canvas_test.go`、`controller/canvas_test.go`、`service/canvas_test.go`、
   `middleware/canvas_test.go`、`web/src/features/canvas/__tests__/bridge.test.ts`、
   `web/src/features/canvas/__tests__/host.test.tsx`；真实浏览器验收使用
   `infinite-canvas/browser-product-check.mjs`，由用户自行执行，本轮只登记入口
   且不替代后端测试。
-- 来源提交：`08e2500b8`、`0c3874f8c`、`b1375eeda`、`0858fac13`、`5a6799792`、
-  `bdda1c97b`、`71763b654`、`c9819e731`、`482c1a462`、`013187f92`。
 
 ### P-40 分组类型配置、路由和授权选择
 
@@ -860,7 +691,6 @@
 - 验证入口：`controller/billing_option_test.go`、`model/option_test.go`、
   `service/group_test.go`、`web/src/features/system-settings/models/__tests__/group-type.test.tsx`、
   `web/src/features/keys/components/__tests__/api-keys-mutate-drawer.test.tsx`。
-- 来源提交：`4da7a937b`、`0bab0308b`、`12441adcc`。
 
 ### P-41 动态分组定价目录与类型分类
 
@@ -875,7 +705,6 @@
 - 验证入口：`controller/pricing_test.go`、`service/group_test.go`、
   `model/pricing_endpoint_test.go`、`web/src/features/pricing/lib/__tests__/group-categories.test.ts`、
   `web/src/features/pricing/__tests__/pricing-navigation.test.tsx`。
-- 来源提交：`f1f1ba3d4`、`c486fc41e`、`6b7fecdcd`、`686702d9b`。
 
 ### P-42 系统通知居中确认与版本快照
 
@@ -889,658 +718,11 @@
   `web/src/components/layout/components/public-header.tsx`。
 - 验证入口：`web/src/components/__tests__/notification-popover.test.tsx`、
   `web/src/hooks/__tests__/notifications.test.tsx`。
-- 来源提交：`0ec5bda77`。
 
-## 5. 提交映射完整性
 
-以下现行保护项映射用于机械核对。未来合并前，应从历史基线列出本地非合并提交并与本节
-及下方历史归档比较。归档行保留原 P 编号；标为“子契约”的只剥离该上游等价行为，编号对应的
-本地独有部分仍以第 4 节为准，不重复计数。
+## 5. 当前审查状态
 
-| 保护项 | 已覆盖提交 |
-| --- | --- |
-| P-01 | `8c813336`, `7b887e44`, `0c315d4a` |
-| P-03 | `711a0315`, `bf162983`, `1a704ad1` |
-| P-04 | `50f25187`, `ade4551d` |
-| P-05 | `b415a3f1`, `9a3826d4`, `6be657a2` |
-| P-06 | `2d8a8fde`, `7cf40dba`, `250bde67`, `cc70f2c3c`, `8f639edbd` |
-| P-07 | `c54a1d55`, `cb7ad647`, `4066e54f`, `fc08d7e5` |
-| P-08 | `bbdeb35d`, `057f635e` |
-| P-11 | `cf386058`, `51e0b058`, `d81c294f` |
-| P-12 | `89c2d59a`, `45f4e67f`, `d565eea6`, `504e193f`, `80595135f` |
-| P-13 | `a7b870b0`, `f3018f4f`, `99f171da`, `fce66558`, `31dce377`, `dfe64ed2`, `cc64bf3b`, `4e40cd8a`, `3ea4788d`, `2209a200`, `734b60163`, `4cd9c9460`, `2844d9198`, `f17fc83a7` |
-| P-14 | `30515cc6`, `99853f90`, `a934a149`, `2c9a61cb`, `f3a181fb`, `93aaa3c2`, `7f8726130` |
-| P-15 | `19d9bb7e`, `ae0dc6be`, `8ce14f79`, `9b7fd1ca`, `441ea707` |
-| P-16 | `72c401ed`, `f042ea22`, `fe04dbd2`, `0f00ee3a`, `1df5a78d`, `78364808`, `325726da`, `3df68604`, `4284ca06`, `089f7e9a`, `6347b97e`, `d39cc0bc`, `5c6cfd85`, `6a978443`, `51cd6ec4`, `889436b78`, `1435da952` |
-| P-17 | `b5fb25e1`, `4190de6e`, `ba3b9be6`, `6adf6ffb` |
-| P-18 | `db10c428` |
-| P-19 | `3c7df8f5`, `46423a16`, `3219bde1`, `3eb2c6ed` |
-| P-20 | `460b36a8`, `1779060b`, `525ecf72`, `d25c06a15` |
-| P-21 | `693494a0`, `8aaede90`, `9773de9e`, `3707af0c4`; 已批准退休：`bca83882`; 退休实施：`88ff1c7cd` |
-| P-22 | `8ccd7a17`, `393aec79` |
-| P-23 | `ec15c8e23` |
-| P-24 | `f3236ab4`, `705070a8`, `3642fd14` |
-| P-29 | `e1765fd8e`, `4173af597`, `964c8dbe6`, `0059f64bd` |
-| P-30 | `21cc64f46`, `7f17b6307`, `ab37d8b51`, `384e4988c`, `416fabe52`, `b24c6ad95`, `52d68cb40`, `9e5e31632`, `6c72aebf5`, `3d9c70e8a`, `a09489b80`, `25e5f87a4`, `54da177f7` |
-| P-31 | `b2e905185`, `ea569b999`, `c509b2ede`, `608ba31ec` |
-| P-32 | `afab95b53`, `d1688dddc`, `3343b7c5d` |
-| P-34 | `5e5c79c1`, `f0a62f2c` |
-| P-35 | `9b0238b83` |
-| P-36 | `0a758e1d7` |
-| P-37 | `2980da538`, `89035dca1` |
-| P-38 | `d90827ab6`, `0c0d1c8a0`, `697e4f7d8`, `9bf85d969` |
-| P-39 | `08e2500b8`, `0c3874f8c`, `b1375eeda`, `0858fac13`, `5a6799792`, `bdda1c97b`, `71763b654`, `c9819e731`, `482c1a462`, `013187f92` |
-| P-40 | `4da7a937b`, `0bab0308b`, `12441adcc` |
-| P-41 | `f1f1ba3d4`, `c486fc41e`, `6b7fecdcd`, `686702d9b` |
-| P-42 | `0ec5bda77` |
-
-### 已移出或剥离的历史映射（不计入现行保护项）
-
-| 原编号 | 归档原因 | 来源提交 |
-| --- | --- | --- |
-| P-02 | Classic/Default 第二套前端已退休；禁止恢复的约束由第 2 节规则 6 维护。 | `cd2f8814` |
-| P-09 | RC-40 已有等价行为；实现仍在本地树中，但不再是本地独有自研契约。 | `38d6e277`, `b365401a`, `2d08cd1f` |
-| P-10 | RC-40 已有等价行为；实现仍在本地树中，但不再是本地独有自研契约。 | `076da1ef`, `dd3b02c3`, `2dab0f32` |
-| P-18（上游等价子契约） | 额度预警按余额比较及通知限流已由 RC-40 覆盖；缺省开启 IP 日志仍列在现行 P-18。 | `71bfa129`, `a4a43c99` |
-| P-23（上游等价子契约） | 标准 BCP-47 语言码及 `Intl` 归一化已由 RC-40 覆盖；本地 `sync-i18n` 规则仍列在现行 P-23。 | `5832779f`, `ea08ee94` |
-| P-25 | RC-40 通用数据表已覆盖该行为；不再作为本地独有保护项。 | `e079ae13` |
-| P-26 | 测试隔离属于工程治理，不是产品自研功能；保留测试本身。 | `271be484`, `4d972671` |
-| P-28 | 2026-11-17 按用户决定删除，暂时不需要；Go 侧实现已在 rc.39 合并提交 `fd74c42d9` 中丢失。 | `b44e6971e` |
-| P-33 | 旧分层定价编辑器实现已按用户决定退休并删除。 | `66759ee72` |
-
-## 6. 本次及以后维护记录模板
-
-每次上游合并，在合并审计文件中为每个保护项追加一行，至少包含：
-
-| 编号 | 状态 | 最终路径 | 数据/配置检查 | 验证命令或测试 | 替代依据 |
-| --- | --- | --- | --- | --- | --- |
-| P-XX | 原样保留 / 等价替代 / 经批准退休 | 路径 | 无 / 已验证迁移 | 命令或测试名 | 仅等价替代时必填 |
-
-合并结束前必须满足：没有未填写的 P 编号；没有未解释的本地文件删除；没有丢失的
-`options` 键或业务表；所有当前变更文本可按 UTF-8 解析；工作区干净；推送 `main` 后
-GitHub Actions 的 amd64、arm64 与 manifest 均成功。
-
-## 7. 维护记录
-
-- 2026-11-17：完成自研功能丢失/未登记审计。确认 RC-19 至 RC-51 上游合并没有新增
-  P-12/P-28 之外的确凿合并丢失；补录 P-39 至 P-42，并将视频任务 `usage.total_tokens`
-  纳入 P-32。P-16 固化为每用户最多 200 张、默认保留 24 小时；P-31 固化当前十四个
-  CC Switch 来源及 Claude Desktop Anthropic 格式。第 5 节同步补入近期行为性提交；
-  P-01/P-03/P-05/P-08/P-18/P-23 增加明确验证入口。历史第 8–12 节保持原快照。
-  审计证据包括 `git diff --check`、merge 前后符号扫描、根模块 build、定向 Go 测试、
-  `web/node_modules/.bin/tsgo -b` 和候选前端 Vitest；完整数据库矩阵、Actions、生产发布
-  和真实 Canvas 浏览器验收仍是独立门禁。
-- 2026-11-17：按用户决定，P-01 的 GitHub Actions、P-05 的 390/768/桌面响应式 smoke、
-  P-39 的 Canvas 真实浏览器验收只保留为用户/发布流程入口，不作为本轮代理完成阻塞条件。
-- 2026-11-17：恢复 P-12 的错误日志访问层过滤，实现与来源提交 `d565eea6` 一致：
-  `GetUserLogsForRole`、`StreamUserLogsForRole`、`GetLogByTokenId` 对所有角色排除
-  type 5（type 8 的非管理员排除保持不变），管理员在全局日志视图查看错误日志；前端
-  `common-logs-filter-bar.tsx` 对非管理范围隐藏 Error 筛选项，并把已保存的
-  `type=5` 筛选归一为全部类型。回归测试为 `model/log_format_test.go` 的
-  `TestUserLogViewsHideErrorLogs`；同步调整依赖旧可见性的
-  `model/log_sensitive_visibility_test.go`、`controller/relay_error_log_test.go` 和
-  `controller/log_export_test.go`。该实现与 P-28 一样在 rc.39 合并 `fd74c42d9` 中
-  丢失。另修复两处与本项无关的既有测试编译错误（`controller/auth_flow_test.go`
-  的 `findOrCreateOAuthUser` 调用、`controller/plugin_native_e2e_test.go` 的 int64
-  额度转换），否则 `controller` 测试包无法编译。
-- 2026-11-17：按用户决定将 P-28「文本请求最终结果与成功率统一口径」标记为已删除、
-  暂时不需要，从第 4 节现行保护项移出并转入第 5 节历史归档，来源提交 `b44e6971e`。
-  核查事实：Go 侧 `classifyTextRequestOutcome`、消费日志 `other.request_outcome` 写入
-  以及 `RecordRelaySample(relayInfo, 成功标记, ...)` 已在 rc.39 合并提交 `fd74c42d9`
-  中丢失，当前性能样本由 `RecordRelayResult` 与 `ClassifyRelayOutcome` 判定；
-  `web/src/features/usage-logs/lib/format.ts` 的 `request_outcome` 读取分支仍保留，
-  但新日志不再写入该字段。本次只更新本清单，未改动任何 Go/前端代码，第 11、12 节的
-  历史核对表与 `upstream-merge-v1.0.0-rc.*.md` 按历史快照保留原文。
-- 2026-10-31：收窄 P-38 的 Responses 估算边界。明确 `response.failed`、`response.error`、
-  `error` 或失败状态事件不再触发本地 prompt/output 估算：有上游 usage 只保留已报告值，
-  无 usage 按 0 token 结算；无明确失败的 client gone/EOF/timeout 仍保留临时 30--90 规则。
-  这样下游 Sub 看到明确失败时不会被伪造 usage 触发二次计费，也不会把参数错误当作成功
-  推理。新增 accumulator 回归覆盖失败无 usage、失败带部分 usage 和 failed status；
-  service 定向测试、controller 关键测试、race、vet、build、diff/UTF-8 检查通过。service
-  全量测试另有现有 `TestBillingOperationRollsBackAndRetriesRefundWithoutDoubleCredit`
-  失败，与本项无关；OpenAI relay 两条 drain 断言也属于当前工作区既有 scanner 回归。
-- 2026-10-26：补录 P-38，固化 Responses 异常流的最终实现设计。共享 scanner 在 client
-  gone 后按 `CLIENT_GONE_DRAIN_TIMEOUT` drain 上游并在同一请求流程完成 usage/工具/图片
-  结算；`drain_result` 只记录传输终态。Responses 本地 output token 估算恰好为 1 时，
-  按 request ID 稳定映射到 30--90 并进入实际 `Usage`/扣费链路；上游真实 output=1 不改写。
-  本轮恢复为精确失败规则：明确失败有 usage 只保留上游 usage，无 usage 按 0 token 结算；
-  仅无明确失败的断流才使用 `697e4f7d8` 的临时规则。该项不覆盖其他协议路径的 1-token
-  记录，也未修改缓存字段解析、价格表达式、数据库或历史日志。服务定向测试通过；本条
-  只登记保护契约，不代表再次部署或上游缓存问题已解决。
-- 2026-09-28：实施 P-32 钱包/Token int64 与持久任务账务根治；完成 SQL 权威额度、精度/checked 边界、
-  持久预留/结算/退款、任务与 Midjourney 状态恢复、未知结果人工核查和旧路径兼容。最终审查补齐旧任务首次
-  终态处理的资金分摊根快照，并阻止退款后重算重新修改资金；`go test ./...`、`go build ./...`、
-  SQLite/MySQL/PostgreSQL 独立数据库矩阵、格式和差异检查通过。只改本地工作区；未提交、未部署、未读写生产库；
-  生产负载与发布门禁仍待单独授权/执行。
-- 2026-08-10：以 `dd95ab677..main@b44e6971e` 的第一父提交链复核历史；确认
-  `88ff1c7cd`、`3707af0c4` 已有行为或审计文档但映射不完整，已补齐；
-  新增 P-28 记录文本请求成功率与日志结果契约。合并/审计维护提交已在第 1 节明确
-  标注，不与产品功能提交混计。
-- 2026-08-23：以 `main@4173af597` 对比保护清单；补齐 P-06 的图片上游 400 统计修复
-  来源 `cc70f2c3c`，新增 P-29 记录按用户分组的支付金额折扣、空数组序列化、统一
-  充值定价和订单快照契约，并将映射计数从 102 更新为 105。
-- 2026-08-23：在 rc.25 合并前再次按第一父提交链与本文件反向核对；确认 105 个产品
-  提交引用均可解析且已归属 P-01 至 P-29，补录 rc.24 的五个阶段/审计维护提交和
-  本轮 `eb9c43244` 的清单维护归属。发现并修复 rc.25 合并后 Epay 成功回调遗漏
-  `success` 响应的问题；该修复属于阶段 2 后端审查，不改变历史订单或数据库数据。
-- 2026-08-30：新增 P-30，登记敏感词与内容审计重构的规则、分组、审计、白名单、
-  违规次数、第五次封禁、HTTP 403 和余额不变契约；确认功能提交已推送并按蓝绿流程
-  上线，`84daf8a43` 仅为发布记录文档维护提交。
-- 2026-08-30：补充 P-30 的启用边界：所有管理员启用/解封入口清零当前次数、保留历史
-  证据和余额；状态变化才刷新认证并撤销会话，重复启用保持幂等。实现已由
-  `384e4988c` 发布，Actions `33313133592` 成功，green standby-first 切流完成，公网版本
-  `main-384e498`；该不可变版本标签的 GHCR manifest digest 为 `sha256:314616ab408bb92bdf579d814e043881dc953b5c510e6ddfe354979bc0ed8ebc`。
-- 2026-08-30：在 P-30 增加规则弹窗实时查找契约及其辅助函数/组件测试；搜索仅作用于
-  未保存草稿，不改变保存 payload 或后端数据结构。功能提交为 `416fabe52`。
-- 2026-09-18：以 `main@66759ee72` 反向核对清单；补录 P-13 的外置图片能力与 GPT
-  能力统一、P-16 的图片历史清理查询边界、P-30 的 SQL/审计存储修复，并新增 P-31
-  CC Switch 多来源导入、P-32 钱包 int64 额度域和 P-33 分层定价表达式编辑器保护项。
-  已明确登记 `955243896`/`d1529b6eb` 与 `22eeed171`/`4c9c5209f` 为已回滚对，
-  不把它们误计入当前产品契约。
-- 2026-09-20：在集成分支 `codex/merge-v1.0.0-rc.39` 完成固定标签
-  `v1.0.0-rc.39@9978ee1e` 的一次性祖先合并（合并提交 `fd74c42d9`）。按“上游等价或
-  更好则直接采用”原则，P-31 采用上游 Portal/Combobox，P-30 采用上游 Request Policies
-  外壳并保留本地高级引擎，P-32 采用上游 billing session 并保留 signed BIGINT 精度。
-  旧任务适配器、简单 RequestChecksSection、GPT 图片动态加价等重复实现已退休；保留项
-  均收敛为窄适配或本地唯一契约。专项 Go/前端测试、构建和格式检查已执行；真实 MySQL
-  克隆迁移、旧版兼容、候选镜像 CI 和生产发布仍未执行；本次仅完成代码合并并推送 `main`，
-  不得视为生产发布完成。
-- 2026-09-20：完成 `daf01437e` 兼容收尾。修复 token quota 的 number/decimal-string
-  JSON 边界、int64 上下文读取、性能指标可见分组、价格分组裁剪、2FA/Passkey expand
-  migration 前登录兼容、敏感词旧表回退及 BIGINT 测试断言；遵循 rc.39 删除未知
-  completion 的本地预扣猜测。`go test ./...`、`go build ./...`、RelayKit 独立测试和
-  controller short 全部通过；数据库克隆、候选镜像和发布仍为未授权门禁。
-- 2026-09-23：以本地 `main@6fb235852` 对照作者正式 `v1.0.0-rc.40@0aec08fee`，逐项
-  复核 P-01 至 P-34 的当前源文件、历史来源和 RC-40 等价实现；标出 P-09/P-10/P-18/P-23/P-25
-  已吸收，P-02/P-26 为结构或测试治理，P-33 已退休。补录 P-35（使用日志模型诊断的管理员
-  可见性与历史迁移），并为 RC-39 合并后 26 个本地非合并提交建立完整归属。同步清除
-  RC-39 审计表内所有“待按文件反查”状态。只改审计文档，未合并 RC-40、未运行代码测试、
-  未执行数据库迁移或发布。
-- 2026-09-23：完成 RC-40 与本地提交树的双向差异分类，纠正“三点比较 501 路径即完整树差异”
-  的口径，记录直接比较的 541 个不同路径；新增 L-01 作者 Compact 后缀历史残留和
-  A-01 Task Plugin 作者版本差异，并明确二者均不计作 QLH 自研功能。
-- 2026-09-23：复核时确认旧 P-18/P-23 条目各包含一项仍独有契约：缺省开启 IP 日志及
-  英文为固定基准的本地化同步；已将条目收窄后保留。P-09/P-10/P-25 整项移出，P-18/P-23
-  已被 RC-40 覆盖的子契约、P-02/P-26 治理项及退休的 P-33 转入第 5 节历史归档。现行保护项
-  为 28 项；历史来源保留但不再混入自研数量。
-- 2026-10-20：补录 P-36，保护普通用户任务日志对插件平台标识的服务端隐藏、管理员诊断
-  可见性、原生任务兼容、缺失平台时的前端呈现，以及 Suno 插件音频预览标记。对应实现
-  已在 `0a758e1d7` 提交；后端角色投影、前端列表/详情和预览回归入口列于 P-36。当前清单
-  共 29 项现行保护项；历史 RC-42/RC-44 核对表保持其当时的 28 项快照。
-- 2026-10-20：补录 P-37，保护 New API 原生公开文档路由、顶部导航和同源链接行为、匿名
-  只读发布接口、Markdown 安全边界，以及 Tools 作为唯一编辑与内容存储端的职责。New API
-  功能提交 `2980da538`、Tools 收敛提交 `15db4f7` 已部署；三个 New API 公网入口在五分钟内
-  11 轮检查均返回 `main-2980da5`，Tools revision 与 `15db4f7` 一致。Caddy 路由提交
-  `66f4434` 和 green 活动槽位提交 `3fe7d69` 已在部署仓库本地提交并 reload/切换；因该仓库
-  还包含 5 个此前未推送的其他提交，尚待确定父仓库推送范围。生产 HTTP 检查确认 `/docs`、
-  `/docs/videos`、公开文章 API 和 `/tools/` 均可用；未执行生产浏览器视觉验收，也未改数据库。
-
-## 8. RC-40 对照与 RC-39 后续提交闭环（2026-09-23 历史快照）
-
-本节记录 RC-40 集成前的逐项源码审计证据。当前 `main` 已在 2026-09-27 集成 RC-40
-及 P-30 重实现；本节中的“未合入”只描述当时的审计时点，不代表当前分支状态。
-
-### 对照快照
-
-| 项目 | 证据 | 结论 |
-| --- | --- | --- |
-| 本地代码 | `main@6fb2358525cf762fa81a4c59ec3751275493bf71` | 2026-09-23 历史盘点对象；工作区开始时干净。 |
-| 作者正式版本 | `upstream` tag `v1.0.0-rc.40@0aec08fee811ec6136828fda790551b49e410301` | 本次唯一逐项版本基线。 |
-| 作者滚动主线 | `upstream/main@d04c118c8803f49e0c9bab74dcf5b5efeab9464a` | 已 fetch，仅记录版本位置；未用未发布主线替代正式 tag。 |
-| 集成边界 | `v1.0.0-rc.39@9978ee1e25a647bfe004e96c8719a2cb62c24732` | 历史盘点时本地功能分支以 RC-39 合并结果为上游起点；RC-40 后续已通过 `ba886153f`、`3ffc9dd4f` 集成。 |
-| 新增/保留项 | 第 4 节 28 项现行保护项及第 5 节历史归档 | 无未归属的 RC-39 后本地非合并提交；RC-39 历史表中原“待按文件反查”也已逐项定性。 |
-
-作者 RC-40 相对 RC-39 有 14 个提交；抓取时 `upstream/main` 又在 RC-40 之后。它们会影响后续
-上游迁移评估，尤其是 Task Plugin、RelayKit 转换和任务提交流程，但不属于当前本地已经交付的
-代码。本文只判定“本地有哪些仍独有的行为”和“作者 RC-40 是否已有等价功能”，不判定 RC-40
-的合并冲突解决方案，也不把提交对象数量当成功能数量。
-
-### RC-39 合并后本地提交归属
-
-下表覆盖 `4824d38fd..6fb235852` 的 26 个非合并提交。`文档/验证维护` 表示不增加运行时功能，
-但仍保留可追踪归属；多项编号表示该提交确实跨越多个既有契约。
-
-| 提交 | 归属 | 复核结论 |
-| --- | --- | --- |
-| `6fb235852` | P-30 | 恢复敏感词审计详情呈现和回归测试。 |
-| `3c998a7c5` | P-14 | 修复 Playground 图片编辑模型解析。 |
-| `634807fb0` | P-13 | 恢复 Playground 图片相关 API 路由。 |
-| `612d478dd` | P-30 | 敏感词选择值本地化，不改变规则数据契约。 |
-| `964c8dbe6` | P-29 | 恢复支付折扣策略 API 路由并增加路由测试。 |
-| `0059f64bd` | P-29/P-30/P-32 | 收尾 Epay 固定结算、精确钱包金额及敏感词默认值；没有新增独立产品项。 |
-| `6230adff7` | P-21 | 恢复专用用户删除边界和额度缓存一致性。 |
-| `38d33931b` | P-19/P-20 | 恢复订阅分组与混合扣费/资金来源语义。 |
-| `d0835263c` | P-30 | 收敛敏感词内容审计执行、存储和管理端行为。 |
-| `8b2a32f8b` | P-15/P-16 | 加固图片历史保留、结果清理与任务生命周期。 |
-| `6dbb8c681` | P-06 | 删除已由上游 24 小时窗口取代的本地 1 小时成功率展示；属于批准收敛，不再保留旧行为。 |
-| `9b0238b83` | P-35 | 新增管理员专属模型诊断投影和显式历史日志迁移工具。 |
-| `084d663e4` | P-06 | 确保虚拟 `auto` 分组在性能视图中保留。 |
-| `471b866d9` | 历史归档 P-33 | 删除已批准退休的旧分层定价状态辅助实现和专属测试。 |
-| `441453dcc` | P-06 | 对齐上游性能可见性 Hook，同时保留服务端本地分组授权边界。 |
-| `a19ff933d` | P-13 | 恢复 Playground 图片模型发现端点。 |
-| `d81bfe556` | P-12 | 隐藏普通使用日志视图中的工具附加费标记，不改实际扣费。 |
-| `99e8662c8` | 工程测试治理（历史 P-26） | 稳定前端测试运行器及重型测试套件；不新增产品行为。 |
-| `69b2b99ed` | 文档/验证维护 | 记录 main 推送后的固定 SHA。 |
-| `fbf0c13fc` | 文档/验证维护 | 记录 RC-39 main 交付状态。 |
-| `44e18e738` | 文档/验证维护 | 记录前端聚焦测试数量。 |
-| `6d6c4619f` | 文档/验证维护 | 记录 RC-39 最终验证门禁。 |
-| `daf01437e` | P-06/P-11/P-19/P-20/P-30/P-32 | 跨模块兼容收尾：可见分组、账务、认证迁移边界、敏感词存储及 int64 精度；不新增独立功能编号。 |
-| `1de5558e3` | 文档/验证维护 | 刷新 RC-39 验证证据。 |
-| `f60b0cd9f` | P-30 | 稳定敏感词策略默认值和界面回退。 |
-| `a4d93620b` | 文档/验证维护 | 记录 RC-39 兼容门禁。 |
-
-### 完整性与限制
-
-- RC-39 审计文件第 11 节已将原 `待按文件反查` 行改为明确的上游同步/合并、P 编号归属、
-  后续撤销或纯审计维护结论；敏感词自动封禁后重试文案和注册成功提示均属于已回滚功能，
-  不计入当前功能。
-- 当前自研清单为 28 项本地独有实现/契约（含部分行为已被上游吸收、但仍留有本地独有
-  契约的条目）。另有 8 条历史映射：6 个条目整体移出（3 项作者等价、2 项治理/测试、1 项退休），
-  以及从 P-18/P-23 剥离的 2 个上游等价子契约；其提交来源仍在第 5 节归档。所有数字按保护项
-  或子契约映射统计，不按提交或文件计数。
-- 本轮对文档执行 `git diff --check` 和“无待归类标记”检查；没有执行 Go/前端测试，因为
-  生产代码未改。RC-40 尚未合并，所有上游数据迁移兼容、CI 和部署仍须在未来获准的合并/发布
-  审计中重新验证。
-
-## 9. RC-40 全量源码差异闭环（2026-09-23 历史快照）
-
-本节的 541 路径分类和作者提交核销均冻结于 2026-09-23。当前分支的集成结果、P-30
-权限修复及验证记录见第 10 节。
-
-### 固定比较与路径清点
-
-共同祖先为 `v1.0.0-rc.39@9978ee1e25a647bfe004e96c8719a2cb62c24732`。本节用两棵实际提交树
-直接比较，不把三点比较的单侧变更数当成树间差异数。
-
-| 路径类别 | 不同路径数 | 处理规则 |
-| --- | ---: | --- |
-| Go 后端生产代码 | 129 | Go 源码中排除 `_test.go` 后的生产代码；按控制器、模型、服务、Relay、设置及迁移职责归入 P 项或下方显式差异项。 |
-| 前端生产代码与资源 | 253 | `web/` 下排除 44 个前端测试文件、2 个测试基础设施文件及 2 个工程工具文件后；按钱包、Playground、定价、日志、用户、设置、共享组件和本地化行为归入 P 项。纯呈现/类型整理不单独计功能。 |
-| 自动化测试及测试基础设施 | 133 | 87 个 Go 测试、44 个前端测试及 `web/src/test-setup.ts`、`web/vitest.config.ts`；作为行为回归证据或上游测试变化，不单独计运行时功能。 |
-| 文档 | 17 | 作为功能约束、维护/合并记录，不单独计运行时功能。 |
-| 内置插件源码 | 5 | 对照作者插件版本变化；不是新增的 QLH 自研插件功能。 |
-| CI 工作流 | 1 | 归入 P-01。 |
-| 配置/工具资源 | 3 | `web/.oxlintrc.json` 属工程治理；`web/scripts/sync-i18n.mjs` 的本地化同步契约归入 P-23；`pkg/imagecapability` 的全局图片能力归入 P-13。 |
-| 合计 | 541 | 114 新增、422 修改、5 删除。 |
-
-作者 RC-40 相对 RC-39 有 14 个提交；`upstream/main` 相对 RC-40 又有 8 个提交，直接树差异为
-13 个路径（297 行新增、79 行删除）。这些作者侧提交也逐项检查过，没有发现其功能应计为本地
-自研；它们属于未合入作者代码的升级差异，不改变本表按 RC-40 固定版本得到的自研统计。
-
-### 非自研差异项
-
-| 编号 | 当前代码与作者代码的差异 | 来源及分类 | 清单处理 |
-| --- | --- | --- | --- |
-| L-01 | 当前仍有 `-openai-compact` 的价格/倍率通配回退，以及渠道测试按后缀识别 Compact；但当前已没有旧版请求分发追加后缀、模型映射去后缀和 Codex 模型列表扩展的完整链路。 | 原始实现来自作者 `cf114ca7d` / `57746fc97`；作者在 `bb234ff41` 明确移除了模型后缀机制。当前残留是合并后保留的局部旧实现，不是 QLH 原创，也不能据此宣称端到端 Compact 后缀功能仍然完整。 | 记录为历史残留，不新增自研保护项、不计入 28 项；未来合并时需判断清理还是恢复完整契约。相关位置：`setting/ratio_setting/compact_suffix.go`、`setting/ratio_setting/model_ratio.go`、`controller/channel-test.go`。 |
-| A-01 | 本地 Task Plugin 仍是旧版实现：上传上限 1 MiB，模型将 source 声明为普通 `text`，同步快照读取完整 source；RC-40 改为 8 MiB、跨数据库 `LongText`，并按哈希变化再读取/编译 source。RC-40 还包含上传后激活交互和安全解析静态常量预览。 | 这是作者旧版到作者 RC-40 的实现差异，不是 QLH 新造的功能。当前 MySQL `TEXT` 的容量小于 API 接受的 1 MiB；对新建或实际仍为 `TEXT` 的表，超过约 64 KiB 的 source 可能无法保存。生产表当前列类型未在本次读取。 | 不计入自研清单。列为版本/数据兼容风险，未来合并前必须核实实际表结构并运行 SQLite、MySQL、PostgreSQL 迁移验证；本次不改生产代码或数据库。 |
-
-RC-40 相对 RC-39 的 14 个作者提交逐组核销如下；全部排除在 QLH 自研数量之外：
-
-| 作者提交 | 行为/处置 |
-| --- | --- |
-| `47713bcb1`、`9a0be8750`、`474ed66fb`、`e537dc380`、`c0cff23a3`、`2c175190c`、`b6809a52d` | 内置插件更新、插件价格枚举编辑、Alibaba 图片元数据、上传后激活、8 MiB/跨数据库 source 存储、哈希增量同步、安全常量元数据预览。属于作者 Task Plugin 演进；当前本地代码尚未具备全部行为，见 A-01。 |
-| `d61d6be75` | 任务提交接受任意 2xx 状态，属作者 Relay 行为更新。 |
-| `6e9de44a7`、`4eb3b9160` | Responses/Claude 工具输出媒体和 reasoning 转换修复，属作者协议转换更新。 |
-| `54eee488b` | 隔离主题偏好到本地存储，属作者前端状态持久化更新。 |
-| `00e8a00cb` | Windows 构建包含 provider 图标，属作者构建更新。 |
-| `9c293e8c0` | WebSocket 预扣拒绝退款测试修复，测试变化。 |
-| `0aec08fee` | 作者署名维护，不增加运行时行为。 |
-
-`upstream/main@d04c118c8` 比 RC-40 多出的 8 个提交为 `d04c118c8`、`c76452d22`、`6c14c0762`、
-`a46f045d6`、`5401874c6`、`996adffe5`、`8cb88ebd1`、`9310231b3`；涉及 Responses WebSocket
-设置保存、Playground 文本换行、定价表达式来源差异展示/列宽/编辑焦点、插件强制操作确认、
-日志模型标记及 release ldflags。它们没有被误归为本地自研，也没有执行合并。
-
-### 归类结论
-
-- 第 4 节现行自研保护项为 28 项，包含部分被上游吸收但仍有本地独有子契约的条目；另有
-  8 条历史映射已移入第 5 节（6 项整体移出、P-18/P-23 的 2 个等价子契约），不参与现行条目计数。
-- 541 个路径差异经目录职责、现行 P 项、历史归档、测试/文档/工程资源及 L-01/A-01 分类核销；
-  本轮未发现第二组可证实的 QLH 原创运行时行为或数据/工程契约落在现行 28 项之外。
-- L-01 是作者旧功能残留，A-01 是作者版本差异；它们都被明确排除在 QLH 自研数量之外。A-01 的实际生产数据库列类型和 L-01 是否仍需保留，属于尚未由本次只读源码审计证明的运行状态/产品决策，不以猜测补成结论。
-- 在 2026-09-23 这个历史审计时点，本轮只修改审计文档；未合并作者代码、未读取或写入生产数据库、未运行代码测试。`git diff --check` 和文档中的计数/标记复核是当时的验收门禁；当前集成后的验证结果见第 10 节。
-
-## 10. 2026-09-28 当前主线集成与 P-30 维护记录
-
-| 项目 | 状态 | 证据与边界 |
-| --- | --- | --- |
-| RC-40 祖先关系 | 已完成 | `main` 包含 `v1.0.0-rc.40@0aec08fee`；集成提交为 `ba886153f`，主线合并提交为 `3ffc9dd4f`。 |
-| P-30 重实现保留 | 已完成 | `9e5e31632`、`6c72aebf5`、`3d9c70e8a`、`a09489b80` 均保留，规则运行时、Relay 预检、认证失效、管理界面和迁移链路未被 RC-40 合并覆盖。 |
-| 普通用户日志隔离 | 已完成 | `model.GetUserLogsForRole` 和 `GetLogByTokenId` 在计数/分页前排除类型 8；管理员仍可按本人或全局范围查看。 |
-| 管理员结果状态 | 已完成 | 类型 8 只使用 `other.admin_info.keyword_filter.action`，列表明确显示拦截、白名单放行、观察；缺失新结果显示未知，不从旧顶层字段推断。详情路由要求 `AuditRead`。 |
-| 用户状态写入边界 | 已完成 | `User.EditWithTx` 不再隐式提交违规次数或白名单字段，只有敏感词专用显式事务更新路径可写；不改变 quota、余额、订阅或历史账务。 |
-| 用户编辑 payload 边界 | 已修复 | `user-form.ts` 不再默认附加两个安全字段；用户抽屉仅按 `dirtyFields` 提交实际变更，包括明确清零 `0` 或关闭白名单 `false`。权限编辑、陈旧表单默认值及两个控件的独立提交均由前端回归测试覆盖；不改后端事务/数据库。 |
-| 用户编辑修复验证 | 已完成 | 前端专项 2 文件 7 项、全量 181 文件 2165 项、typecheck/目标 lint/format 通过；SQLite 3.50.4 控制器专项和 `controller` 包全套通过，未执行部署或生产数据库操作。 |
-| 验证 | 已完成（受限项已记录） | `go test ./...`、`go vet ./...`、`go build ./...`、relaykit 全套检查、目标 Vitest、typecheck、build:check、i18n sync 和 `git diff --check` 通过；copyright 仍有 24 个官方基线失败项，外部数据库/ClickHouse 因当前未配置 DSN 未执行。 |
-| 当前上游差异 | 待后续批准 | `upstream/main@c2b7a9a9e` 已领先 RC-40，尚未合入；下一次上游更新必须重新执行第 2、3 节保护项核对。 |
-
-本次维护提交为 `25e5f87a4`，已推送 `origin/main`；未部署、未重启服务，也未修改生产数据库。
-
-## 11. 2026-10-10 RC-42 合并与自研保护审查
-
-### 项目整体分析
-
-- 业务边界保持 `controller/router/middleware -> service/relay -> model/setting`，前端仍是
-  `web/src` 单入口。独立模块为 `relaykit` 和新增的 `tokenkit`；不恢复 Classic 前端。
-- 合并前工作树干净。共同祖先为 `d04c118c8803f49e0c9bab74dcf5b5efeab9464a`；标签侧
-  新增 40 个提交，包含 RC-41/42 的安全验证、范围令牌、token 计数、协议转换、工具用量和插件更新。
-- 风险集中在自研接口被新令牌规则拒绝、启用账号跳过上游安全验证、int64 财务字段迁移、
-  Responses 工具输出提取、图片任务状态及多语言合并。按实际调用链和数据契约核对，
-  不以 Git 无冲突或提交仍在历史中代替行为证明。
-- 合并前相对 RC-40 的 579 个本地差异路径中，50 个与本轮上游改动交叉；其他路径保持
-  原样。下表逐项核销 28 项现行保护契约，没有批准或执行任何自研功能退休。
-
-### 合并方案
-
-1. 固定正式标签做三方合并，逐段解决 21 个文件冲突，保留双方有效测试。
-2. 保留自研账务、图片、分组、日志和安全字段契约；在原模块补充与上游范围令牌及安全
-   验证的兼容，不另造平行框架。界面按仓库 shadcn-ui 技能复用现有 Base UI 验证流程。
-   上游自身的正常更新照常接受，包括替换旧令牌界面及删除其无调用的翻译键；不将自研
-   保护范围扩大为冻结上游实现。
-3. 数据库只走应用已有追加式迁移，不清表、不重算生产额度、不回填历史任务或日志。
-   SQLite、隔离 MySQL 8.2.0 和 PostgreSQL 15.19 同时验证新库、旧版升级和重复启动。
-4. 在测试、构建和差异审查后才提交主线。镜像由 Fork Actions 构建，不用本机 Docker 构建
-   替代发布验收；运行时按稳定代理、备用槽位先启动的既有流程执行。
-
-### 28 项功能逐项核对
-
-表中“原样保留”指原有本地契约仍在；必要的上游 API/类型兼容与原实现并存，不表示整个文件
-逐字节不变。验证入口均随本轮全套测试运行，界面内容和迁移还按下方阶段记录单独检查。
-
-| 编号 | 状态 | 最终位置、语义核对与回归证据 |
-| --- | --- | --- |
-| P-01 | 原样保留 | `.github/workflows/docker-build.yml` 未改；仍发布 Fork GHCR、main 短 SHA、latest、amd64/arm64 及 manifest。 |
-| P-03 | 原样保留 | `payment_setting.go`、`controller/topup.go`、钱包 `lib/payment.ts` 的默认金额和最小额校验未被替换。 |
-| P-04 | 原样保留 | 两层 `return_path.go`、钱包 `payment-return.ts` 保留支付标记；上游 Waffo 回跳测试改为断言本地 `pay/scope/show_history` 契约。 |
-| P-05 | 原样保留 | 钱包/订阅结构未改；账单历史仅合入状态翻译，未移除本地充值、订阅和奖励卡。 |
-| P-06 | 原样保留 | `pkg/perf_metrics`、`controller/perf_metrics.go` 保留分组过滤、原始图片 400 排除及能力状态；相关 Go/前端回归保留。 |
-| P-07 | 原样保留 | 公共 Chat-to-Responses 禁用、cache creation/write、旧音频倍率仍在；Responses 输出结合上游 agent 回放计数与本地对象字符串提取，每段仅一次。 |
-| P-08 | 原样保留 | `service/group.go`、分组倍率设置和可视化编辑器未改；GroupDescriptions 与特殊可见配置不清零。 |
-| P-11 | 原样保留 | 定价接口和分组过滤生产代码未改；`pricing_test.go` 继续覆盖副本过滤与普通用户/管理员边界。 |
-| P-12 | 原样保留 | `model/log.go`、日志清理任务和成本展示未改；`model/option.go` 仅新增上游旧令牌截止键只读规则。 |
-| P-13 | 原样保留 | `pkg/imagecapability`、渠道图片识别及实际模型映射仍在；`common/model.go` 的本地文本模型集合保留，新令牌允许读取 image-models。 |
-| P-14 | 原样保留 | 图片 DTO、请求构造、参考图、默认尺寸、4K 和 auto 校验未改；有效图片请求及 payload 测试保留。 |
-| P-15 | 原样保留 | 持久任务/批次、required option、全局并发、租约和生命周期锁未改；标准迁移加入新令牌表时仍保留图片表和必需 option。 |
-| P-16 | 原样保留 | 50 条上限、500 条清理批次、幂等硬删除、前端 tombstone 未改；异步读写接口新增 playground:read/write 范围，旧令牌过渡期仍可访问。 |
-| P-17 | 原样保留 | 邀请账本、订单奖励快照、raw 字符串和硬删除 aff_count 事务均保留；硬删除测试只适配新增的令牌撤销计数返回值。 |
-| P-18 | 原样保留 | `RecordIPLog` presence/default-on 与设置合并逻辑未改；controller、日志和前端隐私回归仍覆盖显式 false。 |
-| P-19 | 原样保留 | 两级 `ApplicableGroup`、计划校验和抽屉仍在；订阅表格仅合入 Enabled/Disabled 翻译。 |
-| P-20 | 原样保留 | 订阅优先、混合资金分摊、差额退款及任务资金来源未改；账务矩阵保留所有持久恢复与幂等断言。 |
-| P-21 | 原样保留 | 自助字段白名单、int64 额度、认证缓存、软/硬删除与邀请计数保持；合入上游安全证明、新范围令牌撤销，并修复事务锁冲突。 |
-| P-22 | 原样保留 | `registration_group_policy.go` 及注册入口保留；微信绑定仅改为上游统一 step-up identity，不改来源分组。 |
-| P-23 | 原样保留 | `sync-i18n.mjs` 固定英文、全语言键并集逻辑未改；7 语言各 7064 键，自研翻译保留，上游退休界面的 18 个旧键照常删除。 |
-| P-24 | 原样保留 | 本地自然日半开区间、零点缓存和管理员入口未改；排行榜 Go/前端回归保留。 |
-| P-28 | 原样保留 | `text_quota.go` 最终结果、外层单样本和 request_outcome 未变；上游工具计数接入仍通过持久计费路径结算，不回填历史数据。 |
-| P-29 | 原样保留 | 分组折扣、Epay 固定快照及 credited_quota 未改；两条折扣接口补充 option:read/write 范围，原 RootAuth 不变。 |
-| P-30 | 原样保留 | 类型 8 隔离、AuditRead 详情、行锁违规控制、UTF-8 提示词、观察降级、显式安全字段 patch 全部保留；启用清零先验证绑定 user/action 的证明，余额与历史不变。 |
-| P-31 | 原样保留 | CC Switch 七来源注册表、字段、endpoint 和深链规则未改；来源/弹窗测试保留。 |
-| P-32 | 原样保留 | int64/BIGINT、SQL 授信、持久账务、跨表锁序及未知结果保留未改；修正 PostgreSQL int8 类型别名误判，不改额度或费用域。 |
-| P-34 | 原样保留 | 所选 API Key 的 `/v1/models`、skipSessionAuthorization、加载失败隔离和 Portal/键盘交互未改。 |
-| P-35 | 原样保留 | admin_info 模型诊断、普通用户脱敏及显式日志迁移工具未改；本轮未执行历史日志 apply。 |
-
-### 文件结构设计与新增职责
-
-没有本地目录重组。下列新增文件均来自固定上游标签，在已有职责边界内落位；本轮额外回归
-补在已有测试文件，审查文档也更新本文件，不新建无调用关系的产品模块。
-
-| 新增路径 | 职责 |
-| --- | --- |
-| `middleware/access_token_routes.go` | 每个面板接口的范围/会话规则；额外登记本地图片、支付和敏感词接口。 |
-| `middleware/frontend_static.go` | 静态资源独立限流及条件响应，不共用动态网页预算。 |
-| `middleware/frontend_static_test.go` | 静态资源限流/缓存回归。 |
-| `model/user_access_token.go` | 新范围令牌的哈希存储、额度无关的授权/过期/撤销、30 天旧令牌迁移截止。 |
-| `service/access_token_scope.go` | 权限目录、范围规范化与验证；加入本地 playground 和 sensitive_word 资源。 |
-| `router/access_token_scope_test.go` | 全面板路由恰好一次登记、授权目录及自研接口行为覆盖。 |
-| `controller/admin_user_verification_test.go` | 管理员操作证明的用户/动作绑定、单次消费与权限检查。 |
-| `plugins/tasks/xai/plugin.js` | 上游 xAI Responses 视频任务插件实现，不改变本地图片路由。 |
-| `plugins/xai_responses_test.go` | xAI 插件协议回归。 |
-| `relay/channel/ali/web_search.go` | Alibaba 原生搜索工具转换与用量。 |
-| `relay/channel/openai/web_search.go` | OpenAI/Azure 搜索用量与计费键。 |
-| `relay/channel/xai/web_search.go` | xAI Responses 原生工具用量。 |
-| `relay/channel/zhipu_4v/web_search.go` | Zhipu 搜索工具转换。 |
-| `relaykit/dto/token_count_meta_test.go` | agent 回放、工具调用和多协议输入计数回归。 |
-| `relaykit/relayconvert/convmeta/websearch.go` | 协议转换共享搜索状态。 |
-| `relaykit/relayconvert/internal/shared/claude/media.go` | 共享 Claude 多媒体转换，不丢弃响应/工具媒体。 |
-| `tokenkit/go.mod` | 独立 token 计数模块及 Go 版本。 |
-| `tokenkit/go.sum` | 独立模块依赖校验。 |
-| `tokenkit/tokenkit.go` | 统一计数 API。 |
-| `tokenkit/tokenizer.go` | tokenizer 初始化/使用。 |
-| `tokenkit/image.go` | 模型相关图片 token 算法。 |
-| `tokenkit/tokenkit_test.go` | 文本/模块 API 回归。 |
-| `tokenkit/image_test.go` | 图片尺寸/detail/model 回归。 |
-| `tokenkit/README.md` | 独立模块使用契约。 |
-| `web/src/components/permission-matrix.tsx` | 用户权限和范围令牌复用的权限矩阵。 |
-| `web/src/features/security/components/access-token-item.tsx` | 单个令牌的安全摘要和操作。 |
-| `web/src/features/security/components/access-tokens-card.tsx` | 多令牌列表/旧令牌迁移状态。 |
-| `web/src/features/security/components/dialogs/access-token-create-dialog.tsx` | 范围、过期时间与单次明文显示。 |
-| `web/src/features/security/components/dialogs/access-token-edit-dialog.tsx` | 重命名/权限修改和安全验证。 |
-| `web/src/features/security/hooks/use-access-tokens.ts` | 令牌列表与变更数据交互。 |
-| `web/src/features/security/lib/access-token-catalog.ts` | 目录分组/展示转换。 |
-| `web/src/features/security/lib/access-token-schema.ts` | 创建/编辑输入校验。 |
-| `web/src/features/security/components/__tests__/access-token-create-dialog.test.tsx` | 单次明文、授权与过期验证。 |
-| `web/src/features/security/components/__tests__/access-tokens-card.test.tsx` | 列表、修改与旧令牌状态。 |
-| `web/src/features/channels/components/__tests__/channels-columns-status-tooltip-content.test.tsx` | 渠道状态提示信息。 |
-| `web/src/features/channels/components/__tests__/param-override-editor.test.tsx` | 参数覆盖编辑输入安全。 |
-| `web/src/features/channels/components/__tests__/table-refresh.test.tsx` | 表格刷新状态。 |
-| `web/src/features/dashboard/lib/__tests__/charts.test.ts` | 时间戳排序和分桶展示。 |
-| `web/src/features/users/components/__tests__/group-filter.test.tsx` | 用户分组筛选。 |
-| `web/src/features/users/components/__tests__/step-up-verification.test.tsx` | 管理操作及本地启用清零的证明、取消和弹窗隔离。 |
-| `web/src/features/wallet/__tests__/copy.test.tsx` | 钱包文案语义。 |
-| `web/src/i18n/languages.test.ts` | 现行 BCP-47 与旧缓存语言码兼容、Intl 安全。 |
-| `assets/screenshots/dashboard.en.jpg` | 上游英文仪表盘文档截图。 |
-| `assets/screenshots/dashboard.zh-CN.jpg` | 上游中文仪表盘文档截图。 |
-| `assets/screenshots/models.en.jpg` | 上游英文模型页文档截图。 |
-| `assets/screenshots/models.zh-CN.jpg` | 上游中文模型页文档截图。 |
-| `assets/screenshots/plugin-marketplace.en.jpg` | 上游英文插件页文档截图。 |
-| `assets/screenshots/plugin-marketplace.zh-CN.jpg` | 上游中文插件页文档截图。 |
-| `assets/screenshots/usage-logs.en.jpg` | 上游英文日志页文档截图。 |
-| `assets/screenshots/usage-logs.zh-CN.jpg` | 上游中文日志页文档截图。 |
-
-### 删除/替换逆向审查
-
-6 个删除文件逐一与 RC-40 基线核对，合并前内容均与该正式标签一致，不含本地独有差异；
-保留上游替换后的调用链和测试，没有删除图片、财务、分组或敏感词自研文件。
-
-| 删除路径 | 接替位置与原因 |
-| --- | --- |
-| `service/token_estimator.go` | `service/token_counter.go` 调用独立 `tokenkit`，统一计数。 |
-| `service/tokenizer.go` | `tokenkit/tokenizer.go` 接替初始化和 tokenizer。 |
-| `relaykit/relayconvert/internal/oai_responses/to_gemini_chat_req_preprocess.go` | 转换注册与 shared Gemini/media 逻辑统一接替旧预处理。 |
-| `web/src/features/security/components/access-token-card.tsx` | 多范围令牌列表 `access-tokens-card.tsx` 接替单令牌卡。 |
-| `web/src/features/security/hooks/use-access-token.ts` | `use-access-tokens.ts` 接替单令牌请求。 |
-| `web/src/features/security/components/__tests__/access-token-card.test.tsx` | 新列表及创建弹窗测试接替旧单令牌断言。 |
-
-### 开发清单与阶段自检
-
-| 阶段 | 状态 | 问题、处理与证据 |
-| --- | --- | --- |
-| 全局理解/基线 | 完成 | 核对 remotes、正式标签、共同祖先、28 项契约及 9 个后续本地提交。 |
-| 三方合并 | 完成 | 21 个冲突文件逐段合并；删除文件逆向审查；未整文件选择 ours/theirs。 |
-| 自研路由兼容 | 完成 | 新范围规则会拒绝未登记接口；补齐图片/折扣/敏感词/审计规则，测试范围授予、缺少范围及不可提升普通用户角色。 |
-| 账号安全兼容 | 完成 | 本地 enable 提前返回会绕过上游证明；证明前置，保留行锁清零、余额不变和单次 auth_version；界面验证期间隐藏确认框，取消不请求。 |
-| 锁冲突复核 | 完成 | 独立重复测试复现 SQLite 删除与提交后会话撤销锁错误；复用完整事务重试，故障注入和 50 轮并发/重试通过，不重用安全证明。 |
-| 协议提取 | 完成 | 本地 function output 与新上游计数叠加导致重复文本；每段仅提取一次，保留嵌套对象解码和 assistant output_text；relaykit 全套通过。 |
-| 数据库兼容 | 完成 | 新建/升级 SQLite、MySQL、PostgreSQL 各运行迁移两次；修复 PostgreSQL int8 别名误判，账户、额度、旧/新令牌、哈希唯一性及日志数据保留。 |
-| 自研财务/敏感词 | 完成 | 三种真实方言矩阵通过；包含旧表升级、持久退款/结算、混合分摊和敏感词提示词/违规状态，不用生产 DB。 |
-| 本地化 | 完成 | 自研同步规则、功能键和值保留；7 语言各 7064 键。撤回对上游已退休的 18 个旧键的恢复，包括并集同步带回的键；上游更新的翻译值全部接受，不干预上游自身更新。 |
-| 后端门禁 | 完成 | 根模块 vet/build/test 全部通过，4981 个通过测试、54 个明确跳过；独立 relaykit/tokenkit 全套通过。另在真实 MySQL/PostgreSQL 各运行 75 个账号安全测试，全通过。 |
-| 前端门禁 | 完成（已记录波动） | 全量 193 文件、2238 测试，2237 通过；未改动的上游模型映射测试有一次异步焦点断言失败，单独 9/9 及最终相关 24/24 复跑通过。typecheck/lint/build 通过；lint 58 个非阻断警告，format 仅有合并前已存在且未改的 prompt-input.tsx/privacy-card.tsx 格式差异，不扩大本轮修改。 |
-| 发布/现场验收 | 待执行 | 推送 main 后按 head SHA 等待 amd64/arm64/manifest，核验 OCI revision；仅重建备用槽位，切流后观测至少 5 分钟，失败保留旧槽位回退。 |
-
-安全复核参考 [OWASP Authentication Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html)
-和 [Session Management Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html)；
-PostgreSQL 类型别名参考 [官方数值类型说明](https://www.postgresql.org/docs/15/datatype-numeric.html)。
-这些参考不表示执行了完整合规认证。ClickHouse 无隔离实例，本轮未验证该日志后端，不以
-SQLite/MySQL/PostgreSQL 的通过结果冒充其结果。
-
-验证环境与实际命令：Go 1.26.1 linux/arm64，SQLite 3.50.4、MySQL 8.2.0、
-PostgreSQL 15.19。外部数据库仅使用隔离实例的 loopback 端口与独立测试库；
-DSN 不写入文档或终端输出。日志位于本机 `/tmp/new-api-rc42-*`，不是永久 CI 制品。
-
-```bash
-# 根模块与独立模块分别执行，GOWORK=off。
-go vet ./...
-go build ./...
-go test -json ./...
-# 三方言新建/已发布版升级，以及独立 MySQL/PostgreSQL 日志库。
-go test ./controller -run '^(TestAuditDatabaseMatrix|TestIndependentAuditLogStores)$' -count=1
-go test ./model -run '^(TestBillingOperationDatabaseMatrix|TestSensitiveWordDatabaseMigrationMatrix)$' -count=1
-go test ./model -run '^(TestMigrationSchemaStability|TestWalletQuotaSchemaRecognizesDialectTypeNames)$' -count=1
-# 外部 TEST_MYSQL_DSN/TEST_POSTGRES_DSN 已私下设置为隔离实例。
-# 分别设置 TEST_MANAGE_USER_DIALECT、TEST_SECURITY_DIALECT 为 mysql/postgres，日志库独立。
-go test ./controller -run '^(TestManageUser|TestUpdateUserSensitive|TestDeleteUserHard|TestSecurityAccountDeletion|TestAdminUserVerification)' -count=1
-go test ./controller -run '^(TestSecurityAccountDeletionConcurrentRequestsHaveOneWinner|TestSecurityAccountDeletionRetriesTransactionWithoutRepeatingRevocation)$' -count=50
-# 以下在 web/ 执行。
-bun run i18n:sync
-bun run typecheck
-bun run lint
-bun run build:check
-bun run test -- --maxWorkers=2 --reporter=default --reporter=json --outputFile.json=/tmp/new-api-rc42-web-tests.json
-bun run test -- src/features/channels/components/__tests__/model-mapping-editor.test.tsx src/features/users/components/__tests__/permissions.test.tsx src/features/users/components/__tests__/step-up-verification.test.tsx src/i18n/languages.test.ts --maxWorkers=1 --retry=2
-```
-
-## 12. 2026-10-14 RC-44 合并与自研功能复核
-
-### 项目整体分析
-
-- 仍由 `controller/router/middleware -> service/relay -> model/setting` 承载后端业务，
-  `web/src` 是唯一前端入口；`relaykit`、`tokenkit` 继续保持独立模块边界。
-- 合并前 `main@3dfa7cea6b4341a84578da97d31bce0fbe3bc0a0` 工作区干净。唯一上游基线为
-  正式标签 `v1.0.0-rc.44@633b4c5b190dc1af99a2814391354d86948e7943`；RC-43/44 的中间
-  提交按该正式标签一并核对，不以滚动主线替代发布基线。
-- 风险主要在钱包/订阅持久账务、图片与插件任务状态、用户安全字段及会话、日志权限/导出、
-  跨方言迁移、前端存储隔离和 locale 合并。核对目标是保住现行自研行为与已有数据契约，
-  不冻结旧实现，也不把作者正常更新当成本地保护项。
-- 作者如已更完整地实现某项自研功能，暂停该项并取得明确决定后再继续合并。
-
-### 重构与合并方案
-
-1. 以正式标签三方合并，逐段解决冲突；对保护项按调用链、状态转换、持久化字段、迁移和
-   回归证据检查，不以无冲突或旧行仍在 Git 历史代替验证。
-2. 接纳作者普通代码、翻译和依赖更新；保留本地仍独有的产品行为、账务和数据库契约，
-   仅在既有职责模块适配新接口，不重建平行实现。
-3. 对数据库使用隔离 SQLite、MySQL 和 PostgreSQL 检查，不触及生产数据库；通过代码测试、
-   构建、前端测试和差异审查后才提交到现有 `main`。
-4. 发布仅更新 NewAPI 的备用槽位。等待本提交 Actions 与镜像 revision 验证后再按部署手册
-   切流，保留原活动槽并在切流后至少观测 300 秒；不重建 Tools、Sub2API 或公网 Caddy。
-
-### 28 项功能逐项核对
-
-| 编号 | 状态 | RC-44 合并后核对点 |
-| --- | --- | --- |
-| P-01 | 原样保留 | `.github/workflows/docker-build.yml` 仍构建 Fork GHCR amd64/arm64 与 manifest。 |
-| P-03 | 原样保留 | 自定义充值金额与最小额校验仍在 operation settings/controller/wallet。 |
-| P-04 | 原样保留 | 支付回跳标记、返回路径与钱包刷新仍在原服务和前端链路。 |
-| P-05 | 原样保留 | 钱包/订阅布局、本地充值、订阅和奖励卡没有被上游界面替换。 |
-| P-06 | 原样保留 | 性能指标分组可见性、原始图片 400 排除和 outcome 语义保留。 |
-| P-07 | 原样保留 | 协议边界与 cache-write 计费保留，并与新的 common.Message 和转换 API 兼容。 |
-| P-08 | 原样保留 | 用户可用分组、特殊可见规则和分组描述配置未被清空或改写。 |
-| P-11 | 原样保留 | 分组过滤、权限边界和定价脱敏行为及回归仍在。 |
-| P-12 | 原样保留 | 日志权限、成本语义和自定义历史保留期 30 天默认值仍在；新导出/API 格式采用上游。 |
-| P-13 | 原样保留 | 图片能力注册、渠道识别、模型映射和供应商路由仍在。 |
-| P-14 | 原样保留 | 图片参考图、尺寸/规格、payload 构造与验证继续使用原有能力链。 |
-| P-15 | 原样保留 | 持久图片批次/任务、全局并发与数据库锁生命周期仍在。 |
-| P-16 | 原样保留 | 图片历史上限、清理、幂等删除和 Playground 用户隔离存储仍在。 |
-| P-17 | 原样保留 | 邀请奖励账本、事务额度换算和订单奖励快照保留。 |
-| P-18 | 原样保留 | 配额阈值预警和默认开启 IP 日志的配置语义保留。 |
-| P-19 | 原样保留 | 订阅适用分组字段、验证和管理界面保留。 |
-| P-20 | 原样保留 | 订阅优先及钱包/订阅/Token 混合资金预留、结算和退款恢复保留。 |
-| P-21 | 原样保留 | 用户字段白名单、int64 额度、缓存一致性、安全字段 patch 与删除规则保留。 |
-| P-22 | 原样保留 | 注册来源分组策略及密码/OAuth/微信注册入口保留。 |
-| P-23 | 原样保留 | locale 同步规则和本地翻译键保留；共享上游翻译值按 RC-44 接受。 |
-| P-24 | 原样保留 | 排行榜本地自然日、半开区间、缓存跨日失效和管理员入口保留。 |
-| P-25 | 原样保留 | 可伸缩数据表列宽行为保留。 |
-| P-26 | 原样保留 | 自研测试初始化隔离及其资源清理保留。 |
-| P-28 | 原样保留 | 文本请求最终结果、单外层样本和 `request_outcome` 契约保留。 |
-| P-29 | 原样保留 | 支付分组折扣、固定额度精度和不可变订单价格快照保留。 |
-| P-30 | 原样保留 | 敏感词规则、日志 type 8 隔离、审计权限、安全字段 patch/余额语义保留。 |
-| P-31 | 原样保留 | CC Switch 多来源导入、字段映射、来源与作用域规则保留。 |
-| P-32 | 原样保留 | int64 额度、持久账务阶段、任务恢复、跨表锁序和未知结果人工核查保留。 |
-| P-34 | 原样保留 | 指定 API Key 查询模型及其失败隔离和 Portal 行为保留。 |
-| P-35 | 原样保留 | 管理端模型诊断、用户脱敏及显式日志迁移工具保留。 |
-
-### 文件职责与变更范围
-
-没有目录重组。本轮合并改动落在上游已维护的 `common`、`controller`、`model`、`service`、
-`relay`、`relaykit`、`middleware`、`setting`、`router`、`plugins` 和 `web/src` 既有模块；
-RC-44 新增的日志导出、i18n message、设置和界面组件沿其对应模块职责落位。回归测试加入
-现有 Go/TypeScript 测试目录。本轮审查文件为本清单及此前 RC-24、RC-39 审计中的对应历史
-描述，除此之外不清理未跟踪工作区内容，也不改写 Git 历史对象。
-
-RC-44 的上游更新还包括 CSV/NDJSON 日志导出、统一日志查询范围设置、locale 秒级日期时间、
-Playground 浏览器存储清理、多协议图像/工具用量与插件更新。
-`controller/usedata.go` 与作者 RC-44 文件完全一致；回归测试覆盖官方可配置查询范围。
-
-### 删除路径逆向审查
-
-以下路径存在于 RC-44，但不在当前本地基线中；确认是此前本地 P-30 重实现已替代的旧通用
-敏感词代码，并非本轮合并删除。P-30 的运行时检查、规则/审计数据和管理界面均保留在新路径。
-
-| RC-44 路径 | 当前替代路径与依据 |
-| --- | --- |
-| `service/sensitive.go` | P-30 提交 `9e5e31632` 移除旧进程内词表检查；由 `model/sensitive_word_runtime.go`、`middleware/sensitive_word.go` 和 `controller/sensitive_word.go` 承担持久策略与请求检查。 |
-| `setting/sensitive.go` | P-30 提交 `9e5e31632` 移除全局内存配置；由敏感词规则/策略模型与数据库迁移保存当前规则。 |
-| `web/src/features/system-settings/request-policies/request-checks-section.tsx` | 本地 P-30 界面替换为 `web/src/features/system-settings/request-policies/sensitive-words/section.tsx`、`policy-form.tsx` 和规则编辑组件。 |
-
-### 开发清单与阶段自检
-
-| 阶段 | 状态 | 自检/证据 |
-| --- | --- | --- |
-| 基线、发布标签和工作区 | 完成 | 核对 `main@3dfa7cea6`、正式 RC-44 标签及仓库原始干净状态；其他仓库的既有改动不纳入。 |
-| 冲突与自研语义审查 | 完成 | 高风险账务、用户、日志、图片任务、性能和认证路径逐项手工融合并保留回归。 |
-| 官方功能核对 | 完成 | `controller/usedata.go` 与 RC-44 逐字节一致，相关测试覆盖作者可配置查询范围。 |
-| 独立数据库矩阵 | 完成 | 新建隔离 MySQL/PostgreSQL 主库及日志库后，运行模型/controller/service/性能迁移专项；结束时隔离数据库均已删除。 |
-| 后端 vet/build/test | 完成 | `go vet ./...`、`go build ./...` 和 `go test -json ./...` 通过；46 包、5,095 项通过、57 项显式跳过、0 失败。 |
-| 三方言隔离矩阵 | 完成 | 隔离 SQLite/MySQL 8.2/PostgreSQL 15 启动与模型/controller/service/perf migration 专项通过；独立 MySQL/PostgreSQL 日志库及测试数据库均已清理。 |
-| 前端 test/build/typecheck | 完成 | 全量 413 套件、2,318 项通过；`build:check`（含 `tsgo -b`）通过。首次回归暴露 BCP-47 到日历 locale 的映射遗漏，修复两个 date picker 并调整测试输入后全量复跑通过。 |
-| 前端 lint/format/locales | 完成 | `bun run lint` 退出码 0（仅已有规则告警）；`format:check` 通过；7 种 locale 的 7,466 个键逐项一致且 JSON 可解析。 |
-| 差异与清单审查 | 完成 | `git diff --check` 通过；保护矩阵 28 项；相关工作树文档与源码完成痕迹检索，个人接口控制器与 RC-44 文件一致。 |
-| 差异、UTF-8、翻译和删除逆查 | 待完成 | 待最终工作区冲突标记、翻译 JSON、差异与本地特有路径审查后记录。 |
-| 提交、推送和 Actions | 合并后发布流程 | 推送现有 `main` 后，核对本次提交的 amd64、arm64、manifest 与 OCI revision。 |
-| 备用槽部署及观测 | 合并后发布流程 | Actions 成功后仅更新 NewAPI standby；公网/容器系统级检查至少 300 秒。 |
-
-### 最终审查结论
-
-- 自研保护范围为本节列出的 28 项行为、数据和配置契约；这不是对 RC-44 删除/重构代码的
-  禁令。
-- 生产库未读写；隔离矩阵数据已清理。这里记录源代码与提交前门禁；Actions、线上镜像、切流与
-  5 分钟运行观测必须使用本次推送后的实时数据核实，不能由提交前结果代替。
-- 清单中删除的项目及 Git 历史不可逆向删除的旧提交对象需区分：当前代码和文档不再保留
-  相关实现/追踪条目，但不重写共享分支的已发布提交历史。
-
-### 最终审查边界
-
-- 源码保护结论：28 项现行契约全部保留，没有本轮自研退休或数据库数据删除。
-- 上游新增范围令牌和管理员 step-up 属明确版本行为变化，不伪称所有上游行为逐字不变。
-  旧面板令牌在首次升级后有 30 天过渡截止；新令牌只存哈希，令牌管理需浏览器登录。
-  外部自动化需在过渡期内自行迁移，本轮不擅自轮换生产凭据。
-- 本文件记录源码与提交前门禁。Actions、镜像身份及生产 5 分钟观测必须取本轮实时结果，
-  不能从历史发布记录推断或把预定步骤写成已完成。
-
-### 首轮发布与现场复查补充
-
-- 合并提交 `54e3fb3859e3ef4feebca1db92d760cca314e7f2` 已推送 `main`。
-  [Actions 38017506491](https://github.com/QLHazyCoder/new-api/actions/runs/38017506491)
-  的 amd64、arm64、manifest 全部成功；部署镜像 `main-54e3fb3` 的 OCI revision
-  与提交一致，manifest 为 `sha256:ce43f1e8bab64fd651869851b46e01c0d400e12d0c203ebf43bd0ee707b1f1a1`。
-- 2026-10-10 02:45:34 UTC 从蓝槽位切到已健康的绿槽位，观察到 02:51:41 UTC，
-  累计 367 秒、21 轮三公网入口与 Docker/Tools 健康检查均通过。桌面 1440x960、
-  手机 390x844 登录页面 HTTP 200，无 JavaScript 异常、页面资源 5xx 或水平溢出；
-  Tools 数据库健康检查为 connected，未重建 Tools、Sub2API 或公网 Caddy。
-- 该固定观察窗处理 1171 个请求；无 panic/OOM、数据库/迁移错误或管理接口 5xx。
-  9 个 relay 5xx 按请求 ID 核对：8 个请求的模型/分组没有可用渠道，1 个上游渠道失败。
-  不能把这些业务/上游错误隐去或将健康结果写成所有请求零错误。
-- 现场还有 3 次 `claim playground image tasks: record not found`。旧蓝槽位原日志已有
-  430 次同类记录，相关自研队列代码本轮未变；但不能因此忽略。隔离回归已确认
-  `ExpireStaleSystemTaskLocks` 会把没有租约的 `playground_image_queue` 永久互斥锁删除，
-  与领取任务的加锁读取并发时可导致记录缺失。
-- 最小修复只调整 `model/system_task.go` 的过期选择条件，排除该永久互斥锁；
-  不改变图片任务的资金、并发、状态、保留时间或上游实现。新增断言放在既有
-  `model/system_task_test.go` 三数据库矩阵，验证永久锁保留、真实过期租约清理、
-  活跃租约保留和重复清理幂等。修复前 SQLite 用例确定失败，修复后三真实方言
-  `GOWORK=off go test -json ./model -run '^TestSystemTaskHistoryDatabaseMatrix$' -count=2`
-  全通过（14 个通过项，无跳过），测试库为空后清理，未触碰生产数据。修复后根模块
-  vet/build/全量 test 再次通过（4982 个通过项、54 个明确跳过），前端和独立模块无新改动。
-- 旧蓝槽位于 02:54:09 UTC 开始停止，02:56:09 UTC 退出码 0；停止后三公网入口
-  和新槽位健康仍正常。修复须重新提交、等待对应 Actions、按相反备用槽位发布，
-  并从修复版切流后重新完整观察至少 5 分钟，不能使用本段首轮窗口代替。
+- 当前保护项数量：34。
+- 当前条目中的路径、配置、验证入口和行为描述是唯一维护对象。
+- P-01 的 GitHub Actions、P-05 的 390px/768px/桌面响应式 smoke、P-39 的 Canvas 真实浏览器验收由用户或发布流程执行。
+- 任何后续维护只更新当前功能状态，不追加提交历史或变更时间线。
