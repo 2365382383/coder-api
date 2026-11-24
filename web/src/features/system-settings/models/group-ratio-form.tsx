@@ -62,6 +62,7 @@ import {
 } from '../components/settings-form-layout'
 import { SettingsPageActionsPortal } from '../components/settings-page-context'
 import { safeNumberFieldProps } from '../utils/numeric-field'
+import { sortGroupPricingSettings } from './group-pricing-order'
 import {
   GroupRatioVisualEditor,
   type GroupSettingsSection,
@@ -108,6 +109,14 @@ export const GroupRatioForm = memo(function GroupRatioForm({
       })
     },
     [form]
+  )
+
+  const handleSave = useCallback(
+    async (values: GroupFormValues) => {
+      const orderedSettings = sortGroupPricingSettings(values)
+      await onSave({ ...values, ...orderedSettings })
+    },
+    [onSave]
   )
 
   const toggleEditMode = useCallback(() => {
@@ -162,7 +171,7 @@ export const GroupRatioForm = memo(function GroupRatioForm({
           <Button
             type='button'
             size='sm'
-            onClick={form.handleSubmit(onSave, (errors) => {
+            onClick={form.handleSubmit(handleSave, (errors) => {
               if (errors.MaxTokenAutoGroups) {
                 setEditMode('visual')
                 setSection('auto')
@@ -244,7 +253,7 @@ export const GroupRatioForm = memo(function GroupRatioForm({
             }
           />
         ) : (
-          <SettingsForm onSubmit={form.handleSubmit(onSave)}>
+          <SettingsForm onSubmit={form.handleSubmit(handleSave)}>
             <FormField
               control={form.control}
               name='GroupRatio'

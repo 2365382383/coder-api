@@ -87,14 +87,22 @@ import { formatNumber } from '@/lib/format'
 import { getLobeIcon } from '@/lib/lobe-icon'
 
 import { safeJsonParse } from '../utils/json-parser'
+import {
+  buildGroupPricingRows,
+  createGroupPricingId,
+  normalizeGroupTypeAssignments,
+  normalizeRatio,
+  parseRatioMap,
+  parseUsableMap,
+  serializeGroupPricingRows,
+  type GroupPricingRow,
+} from './group-pricing-order'
 import { GroupSpecialUsableRulesEditor } from './group-special-usable-editor'
 import {
   parseGroupTypeMap,
   parseGroupTypes,
-  serializeGroupTypeMap,
   serializeGroupTypes,
   type GroupTypeDefinition,
-  type GroupTypeMap,
 } from './group-type'
 import { GroupTypeManagerDialog } from './group-type-manager-dialog'
 
@@ -121,16 +129,6 @@ type GroupRatioVisualEditorProps = {
   onChange: (field: string, value: string) => void
 }
 
-type GroupPricingRow = {
-  _id: string
-  name: string
-  ratio: string
-  topupRatio: string
-  selectable: boolean
-  description: string
-  typeId: string
-}
-
 type RegistryEntry = {
   name: string
   ratio: number
@@ -144,72 +142,6 @@ const GROUP_TYPE_FILTER_PREFIX = 'type:'
 
 type GroupVisibilityFilter = 'all' | 'public' | 'not-public'
 
-let groupPricingIdCounter = 0
-function createGroupPricingId() {
-  groupPricingIdCounter += 1
-  return `gpr_${groupPricingIdCounter}`
-}
-
-function normalizeRatio(value: unknown): number {
-  const parsed = Number(value)
-  return Number.isFinite(parsed) ? parsed : 1
-}
-
-function groupPricingRatioValue(row: GroupPricingRow): number | null {
-  const value = row.ratio.trim()
-  if (!value) return null
-  const ratio = Number(value)
-  return Number.isFinite(ratio) ? ratio : null
-}
-
-function sortGroupPricingRows(
-  rows: GroupPricingRow[],
-  typeDefinitions: GroupTypeDefinition[]
-): GroupPricingRow[] {
-  const typeOrder = new Map(
-    typeDefinitions.map((type, index) => [type.id, index])
-  )
-
-  return [...rows].sort((a, b) => {
-    const aIsAuto = a.name.trim() === 'auto'
-    const bIsAuto = b.name.trim() === 'auto'
-    if (aIsAuto !== bIsAuto) return aIsAuto ? 1 : -1
-
-    const aTypeOrder = typeOrder.get(a.typeId)
-    const bTypeOrder = typeOrder.get(b.typeId)
-    if (aTypeOrder === undefined && bTypeOrder !== undefined) return 1
-    if (aTypeOrder !== undefined && bTypeOrder === undefined) return -1
-    if (aTypeOrder !== bTypeOrder) {
-      return (aTypeOrder ?? 0) - (bTypeOrder ?? 0)
-    }
-
-    const aRatio = groupPricingRatioValue(a)
-    const bRatio = groupPricingRatioValue(b)
-    if (aRatio === null && bRatio !== null) return 1
-    if (aRatio !== null && bRatio === null) return -1
-    if (aRatio !== bRatio) {
-      return (aRatio ?? 0) - (bRatio ?? 0)
-    }
-
-    const nameOrder = a.name.localeCompare(b.name)
-    return nameOrder !== 0 ? nameOrder : a._id.localeCompare(b._id)
-  })
-}
-
-function parseRatioMap(value: string): Record<string, number> {
-  return safeJsonParse<Record<string, number>>(value, {
-    fallback: {},
-    silent: true,
-  })
-}
-
-function parseUsableMap(value: string): Record<string, string> {
-  return safeJsonParse<Record<string, string>>(value, {
-    fallback: {},
-    silent: true,
-  })
-}
-
 function parseNestedRatioMap(
   value: string
 ): Record<string, Record<string, number>> {
@@ -217,83 +149,6 @@ function parseNestedRatioMap(
     fallback: {},
     silent: true,
   })
-}
-
-function normalizeGroupTypeAssignments(
-  value: string,
-  validTypeIDs: ReadonlySet<string>
-): GroupTypeMap {
-  const assignments = parseGroupTypeMap(value)
-  const normalized: GroupTypeMap = {}
-  for (const [groupName, typeID] of Object.entries(assignments)) {
-    if (!validTypeIDs.has(typeID)) continue
-    normalized[groupName] = typeID
-  }
-  return normalized
-}
-
-function buildGroupPricingRows(
-  groupRatio: string,
-  userUsableGroups: string,
-  topupGroupRatio: string,
-  groupTypeMap: string,
-  validTypeIDs: ReadonlySet<string>
-): GroupPricingRow[] {
-  const ratioMap = parseRatioMap(groupRatio)
-  const usableMap = parseUsableMap(userUsableGroups)
-  const topupMap = parseRatioMap(topupGroupRatio)
-  const typeAssignments = normalizeGroupTypeAssignments(
-    groupTypeMap,
-    validTypeIDs
-  )
-  const names = new Set([
-    ...Object.keys(ratioMap),
-    ...Object.keys(usableMap),
-    ...Object.keys(topupMap),
-  ])
-
-  return [...names].map((name) => ({
-    _id: createGroupPricingId(),
-    name,
-    ratio: String(normalizeRatio(ratioMap[name])),
-    topupRatio: Object.hasOwn(topupMap, name) ? String(topupMap[name]) : '',
-    selectable: Object.hasOwn(usableMap, name),
-    description: String(usableMap[name] ?? ''),
-    typeId: typeAssignments[name] ?? '',
-  }))
-}
-
-function serializeGroupPricingRows(
-  rows: GroupPricingRow[],
-  validTypeIDs: ReadonlySet<string>
-) {
-  const groupRatio: Record<string, number> = {}
-  const userUsableGroups: Record<string, string> = {}
-  const topupGroupRatio: Record<string, number> = {}
-  const groupTypeMap: GroupTypeMap = {}
-
-  for (const row of rows) {
-    const name = row.name.trim()
-    if (!name) continue
-    groupRatio[name] = normalizeRatio(row.ratio)
-    if (row.selectable) {
-      userUsableGroups[name] = row.description
-    }
-    const topup = row.topupRatio.trim()
-    if (topup !== '' && Number.isFinite(Number(topup))) {
-      topupGroupRatio[name] = Number(topup)
-    }
-    if (row.typeId && validTypeIDs.has(row.typeId)) {
-      groupTypeMap[name] = row.typeId
-    }
-  }
-
-  return {
-    GroupRatio: JSON.stringify(groupRatio, null, 2),
-    UserUsableGroups: JSON.stringify(userUsableGroups, null, 2),
-    TopupGroupRatio: JSON.stringify(topupGroupRatio, null, 2),
-    GroupTypeMap: serializeGroupTypeMap(groupTypeMap, validTypeIDs),
-  }
 }
 
 function groupPricingSignature(
@@ -779,11 +634,7 @@ function GroupPricingTable({
   }, [rows])
 
   const query = search.trim().toLowerCase()
-  const orderedRows = useMemo(
-    () => sortGroupPricingRows(rows, typeDefinitions),
-    [rows, typeDefinitions]
-  )
-  const visibleRows = orderedRows.filter((row) => {
+  const visibleRows = rows.filter((row) => {
     if (
       typeFilter === UNCLASSIFIED_GROUP_TYPE_FILTER &&
       (row.typeId || row.name.trim() === 'auto')

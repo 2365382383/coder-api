@@ -146,7 +146,7 @@ describe('group settings workspace', () => {
     expect(screen.getAllByRole('textbox', { name: 'Group name' })).toHaveLength(
       2
     )
-    expect(screen.getAllByRole('spinbutton', { name: 'Ratio' })[0]).toHaveValue(
+    expect(screen.getAllByRole('spinbutton', { name: 'Ratio' })[1]).toHaveValue(
       0.6
     )
     await user.type(search, 'missing')
@@ -157,8 +157,8 @@ describe('group settings workspace', () => {
       screen
         .getAllByRole<HTMLInputElement>('textbox', { name: 'Group name' })
         .map((input) => input.value)
-    ).toEqual(['vip', 'default', 'group_1'])
-    expect(screen.getAllByRole('spinbutton', { name: 'Ratio' })[0]).toHaveValue(
+    ).toEqual(['group_1', 'default', 'vip'])
+    expect(screen.getAllByRole('spinbutton', { name: 'Ratio' })[2]).toHaveValue(
       0.6
     )
   })
@@ -179,7 +179,7 @@ describe('group settings workspace', () => {
       screen
         .getAllByRole<HTMLInputElement>('textbox', { name: 'Group name' })
         .map((input) => input.value)
-    ).toEqual(['alpha-low', 'alpha-high', 'zeta-low', 'unclassified-low'])
+    ).toEqual(['alpha-low', 'zeta-low', 'alpha-high', 'unclassified-low'])
 
     await user.selectOptions(typeFilter, 'type:vendor-a')
     expect(
@@ -240,7 +240,7 @@ describe('group settings workspace', () => {
       screen
         .getAllByRole<HTMLInputElement>('textbox', { name: 'Group name' })
         .map((input) => input.value)
-    ).toEqual(['vip', 'default', 'group_1', 'group_2'])
+    ).toEqual(['group_2', 'group_1', 'default', 'vip'])
 
     await user.click(
       screen.getByRole('button', { name: 'Save group settings' })
@@ -263,9 +263,12 @@ describe('group settings workspace', () => {
     expect(saved.AutoGroups).toBe(defaults.AutoGroups)
   })
 
-  it('orders groups by configured type, then ascending ratio with Auto last', () => {
+  it('sorts groups on save and keeps newly added groups at the top while editing', async () => {
+    const user = userEvent.setup()
+    const onSave = vi.fn(async (_values: typeof defaults) => {})
     render(
       <Fixture
+        onSave={onSave}
         initial={{
           GroupRatio: JSON.stringify({
             'alpha-high': 2,
@@ -303,11 +306,29 @@ describe('group settings workspace', () => {
         .getAllByRole<HTMLInputElement>('textbox', { name: 'Group name' })
         .map((input) => input.value)
     ).toEqual([
+      'alpha-high',
+      'zeta-low',
+      'alpha-low',
+      'zeta-high',
+      'unclassified-low',
+      'auto',
+    ])
+
+    await user.click(screen.getByRole('button', { name: 'Add group' }))
+    expect(screen.getAllByDisplayValue(/^group_/)[0]).toHaveValue('group_1')
+
+    await user.click(
+      screen.getByRole('button', { name: 'Save group settings' })
+    )
+    await waitFor(() => expect(onSave).toHaveBeenCalled())
+    const saved = onSave.mock.calls[0][0]
+    expect(Object.keys(JSON.parse(saved.GroupRatio))).toEqual([
       'alpha-low',
       'alpha-high',
       'zeta-low',
       'zeta-high',
       'unclassified-low',
+      'group_1',
       'auto',
     ])
   })
