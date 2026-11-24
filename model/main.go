@@ -350,6 +350,9 @@ func migrateDB() error {
 	if err := migrateOptionPrimaryKey(DB); err != nil {
 		common.SysError(common.LogText("failed to migrate options primary key: %s", err.Error()))
 	}
+	if err := migrateUsageLogStatsIndex(DB); err != nil {
+		return err
+	}
 
 	err := DB.AutoMigrate(
 		&Channel{},
@@ -462,6 +465,9 @@ func migrateLOGDB() error {
 	}
 	if common.UsingLogDatabase(common.DatabaseTypeClickHouse) {
 		return migrateClickHouseLogDB()
+	}
+	if err := migrateUsageLogStatsIndex(LOG_DB); err != nil {
+		return err
 	}
 	return LOG_DB.AutoMigrate(&Log{})
 }
