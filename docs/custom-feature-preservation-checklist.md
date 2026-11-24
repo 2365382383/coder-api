@@ -684,12 +684,16 @@
 - 必须保留：`/api/option/group-types`、`/api/user/groups.group_types`、API Key 分组类型
   选择、可用分组路由和系统设置编辑器保持同一份类型/映射事实源；部分更新不得清空另一
   张表或留下数据库与内存不一致。
+- 必须保留：分组定价表的显示顺序先遵循类型配置顺序，同类型内按倍率升序，未分类分组
+  位于有类型分组之后，`auto` 固定置底；该排序只影响显示，不改变持久化映射或编辑状态。
 - 当前位置：`model/option.go`、`setting/ratio_setting/group_ratio.go`、`service/group.go`、
   `controller/group.go`、`controller/option.go`、`router/api-router.go`、
   `web/src/features/keys/**`、`web/src/features/system-settings/models/group-type.ts`、
-  `web/src/features/system-settings/models/group-type-manager-dialog.tsx`。
+  `web/src/features/system-settings/models/group-type-manager-dialog.tsx`、
+  `web/src/features/system-settings/models/group-ratio-visual-editor.tsx`。
 - 验证入口：`controller/billing_option_test.go`、`model/option_test.go`、
   `service/group_test.go`、`web/src/features/system-settings/models/__tests__/group-type.test.tsx`、
+  `web/src/features/system-settings/models/__tests__/group-settings.test.tsx`、
   `web/src/features/keys/components/__tests__/api-keys-mutate-drawer.test.tsx`。
 
 ### P-41 动态分组定价目录与类型分类

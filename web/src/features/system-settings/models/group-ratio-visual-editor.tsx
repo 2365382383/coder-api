@@ -149,6 +149,47 @@ function normalizeRatio(value: unknown): number {
   return Number.isFinite(parsed) ? parsed : 1
 }
 
+function groupPricingRatioValue(row: GroupPricingRow): number | null {
+  const value = row.ratio.trim()
+  if (!value) return null
+  const ratio = Number(value)
+  return Number.isFinite(ratio) ? ratio : null
+}
+
+function sortGroupPricingRows(
+  rows: GroupPricingRow[],
+  typeDefinitions: GroupTypeDefinition[]
+): GroupPricingRow[] {
+  const typeOrder = new Map(
+    typeDefinitions.map((type, index) => [type.id, index])
+  )
+
+  return [...rows].sort((a, b) => {
+    const aIsAuto = a.name.trim() === 'auto'
+    const bIsAuto = b.name.trim() === 'auto'
+    if (aIsAuto !== bIsAuto) return aIsAuto ? 1 : -1
+
+    const aTypeOrder = typeOrder.get(a.typeId)
+    const bTypeOrder = typeOrder.get(b.typeId)
+    if (aTypeOrder === undefined && bTypeOrder !== undefined) return 1
+    if (aTypeOrder !== undefined && bTypeOrder === undefined) return -1
+    if (aTypeOrder !== bTypeOrder) {
+      return (aTypeOrder ?? 0) - (bTypeOrder ?? 0)
+    }
+
+    const aRatio = groupPricingRatioValue(a)
+    const bRatio = groupPricingRatioValue(b)
+    if (aRatio === null && bRatio !== null) return 1
+    if (aRatio !== null && bRatio === null) return -1
+    if (aRatio !== bRatio) {
+      return (aRatio ?? 0) - (bRatio ?? 0)
+    }
+
+    const nameOrder = a.name.localeCompare(b.name)
+    return nameOrder !== 0 ? nameOrder : a._id.localeCompare(b._id)
+  })
+}
+
 function parseRatioMap(value: string): Record<string, number> {
   return safeJsonParse<Record<string, number>>(value, {
     fallback: {},
@@ -722,7 +763,11 @@ function GroupPricingTable({
   }, [rows])
 
   const query = search.trim().toLowerCase()
-  const visibleRows = rows.filter((row) => {
+  const orderedRows = useMemo(
+    () => sortGroupPricingRows(rows, typeDefinitions),
+    [rows, typeDefinitions]
+  )
+  const visibleRows = orderedRows.filter((row) => {
     if (!query) return true
     const typeName = typeNameByID.get(row.typeId) ?? ''
     return (

@@ -123,7 +123,7 @@ describe('group settings workspace', () => {
     expect(screen.getAllByRole('textbox', { name: 'Group name' })).toHaveLength(
       2
     )
-    expect(screen.getAllByRole('spinbutton', { name: 'Ratio' })[1]).toHaveValue(
+    expect(screen.getAllByRole('spinbutton', { name: 'Ratio' })[0]).toHaveValue(
       0.6
     )
     await user.type(search, 'missing')
@@ -134,8 +134,8 @@ describe('group settings workspace', () => {
       screen
         .getAllByRole<HTMLInputElement>('textbox', { name: 'Group name' })
         .map((input) => input.value)
-    ).toEqual(['group_1', 'default', 'vip'])
-    expect(screen.getAllByRole('spinbutton', { name: 'Ratio' })[2]).toHaveValue(
+    ).toEqual(['vip', 'default', 'group_1'])
+    expect(screen.getAllByRole('spinbutton', { name: 'Ratio' })[0]).toHaveValue(
       0.6
     )
   })
@@ -151,7 +151,7 @@ describe('group settings workspace', () => {
       screen
         .getAllByRole<HTMLInputElement>('textbox', { name: 'Group name' })
         .map((input) => input.value)
-    ).toEqual(['group_2', 'group_1', 'default', 'vip'])
+    ).toEqual(['vip', 'default', 'group_1', 'group_2'])
 
     await user.click(
       screen.getByRole('button', { name: 'Save group settings' })
@@ -172,6 +172,55 @@ describe('group settings workspace', () => {
     })
     expect(JSON.parse(saved.TopupGroupRatio)).toEqual({ vip: 1.2 })
     expect(saved.AutoGroups).toBe(defaults.AutoGroups)
+  })
+
+  it('orders groups by configured type, then ascending ratio with Auto last', () => {
+    render(
+      <Fixture
+        initial={{
+          GroupRatio: JSON.stringify({
+            'alpha-high': 2,
+            'zeta-low': 0.1,
+            'alpha-low': 0.5,
+            'zeta-high': 1.5,
+            'unclassified-low': 0.1,
+            auto: 1,
+          }),
+          UserUsableGroups: JSON.stringify({
+            'alpha-high': '',
+            'zeta-low': '',
+            'alpha-low': '',
+            'zeta-high': '',
+            'unclassified-low': '',
+            auto: '',
+          }),
+          TopupGroupRatio: '{}',
+          GroupTypes: JSON.stringify({
+            'vendor-z': { name: 'Vendor Z', order: 1 },
+            'vendor-a': { name: 'Vendor A', order: 0 },
+          }),
+          GroupTypeMap: JSON.stringify({
+            'alpha-high': 'vendor-a',
+            'zeta-low': 'vendor-z',
+            'alpha-low': 'vendor-a',
+            'zeta-high': 'vendor-z',
+          }),
+        }}
+      />
+    )
+
+    expect(
+      screen
+        .getAllByRole<HTMLInputElement>('textbox', { name: 'Group name' })
+        .map((input) => input.value)
+    ).toEqual([
+      'alpha-low',
+      'alpha-high',
+      'zeta-low',
+      'zeta-high',
+      'unclassified-low',
+      'auto',
+    ])
   })
 
   it('keeps unfinished visibility rules while switching sections and supports keyboard tabs', async () => {
