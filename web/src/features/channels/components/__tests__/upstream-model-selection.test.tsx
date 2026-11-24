@@ -271,7 +271,13 @@ test('long model names remain fully labeled and selectable in a container-respon
   const grid = checkbox.parentElement?.parentElement
   expect(grid).toHaveClass('@lg:grid-cols-2')
   expect(grid).not.toHaveClass('sm:grid-cols-2')
-  expect(screen.getByText(model)).toBeVisible()
+  const modelLabel = screen.getByText(model)
+  expect(modelLabel).toHaveClass('min-w-0', 'break-all')
+  expect(modelLabel.closest('[data-slot="label"]')).toHaveClass(
+    'min-w-0',
+    'flex-1'
+  )
+  expect(modelLabel).toBeVisible()
   await user.click(checkbox)
   expect(onChange).toHaveBeenCalledWith([model])
 })

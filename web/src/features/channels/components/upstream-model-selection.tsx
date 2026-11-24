@@ -126,9 +126,9 @@ function ModelCategory(props: ModelCategoryProps) {
               />
               <Label
                 htmlFor={`${id}-${model}`}
-                className='min-w-0 cursor-pointer text-sm font-normal break-all'
+                className='min-w-0 flex-1 cursor-pointer text-sm font-normal'
               >
-                {model}
+                <span className='min-w-0 break-all'>{model}</span>
               </Label>
               {props.aliases?.[model] && (
                 <Badge
