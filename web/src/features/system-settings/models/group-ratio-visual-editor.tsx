@@ -71,6 +71,7 @@ import {
   InputGroupInput,
 } from '@/components/ui/input-group'
 import { Label } from '@/components/ui/label'
+import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
 import { Separator } from '@/components/ui/separator'
 import {
   Sheet,
@@ -137,6 +138,11 @@ type RegistryEntry = {
 
 const sectionCardClassName = 'min-w-0 shadow-none'
 const sectionHeaderClassName = 'gap-2 border-b'
+const ALL_GROUP_TYPE_FILTER = '__all_group_types__'
+const UNCLASSIFIED_GROUP_TYPE_FILTER = '__unclassified_group_type__'
+const GROUP_TYPE_FILTER_PREFIX = 'type:'
+
+type GroupVisibilityFilter = 'all' | 'public' | 'not-public'
 
 let groupPricingIdCounter = 0
 function createGroupPricingId() {
@@ -594,6 +600,9 @@ function GroupPricingTable({
 }: GroupPricingTableProps) {
   const { t } = useTranslation()
   const [search, setSearch] = useState('')
+  const [typeFilter, setTypeFilter] = useState(ALL_GROUP_TYPE_FILTER)
+  const [visibilityFilter, setVisibilityFilter] =
+    useState<GroupVisibilityFilter>('all')
   const [typeManagerOpen, setTypeManagerOpen] = useState(false)
   const typeDefinitions = useMemo(
     () => parseGroupTypes(groupTypes),
@@ -607,6 +616,13 @@ function GroupPricingTable({
     () => new Map(typeDefinitions.map((type) => [type.id, type.name])),
     [typeDefinitions]
   )
+
+  useEffect(() => {
+    if (!typeFilter.startsWith(GROUP_TYPE_FILTER_PREFIX)) return
+    const typeID = typeFilter.slice(GROUP_TYPE_FILTER_PREFIX.length)
+    if (!validTypeIDs.has(typeID)) setTypeFilter(ALL_GROUP_TYPE_FILTER)
+  }, [typeFilter, validTypeIDs])
+
   const [rows, setRows] = useState<GroupPricingRow[]>(() =>
     buildGroupPricingRows(
       groupRatio,
@@ -768,6 +784,24 @@ function GroupPricingTable({
     [rows, typeDefinitions]
   )
   const visibleRows = orderedRows.filter((row) => {
+    if (
+      typeFilter === UNCLASSIFIED_GROUP_TYPE_FILTER &&
+      (row.typeId || row.name.trim() === 'auto')
+    ) {
+      return false
+    }
+    if (
+      typeFilter.startsWith(GROUP_TYPE_FILTER_PREFIX) &&
+      row.typeId !== typeFilter.slice(GROUP_TYPE_FILTER_PREFIX.length)
+    ) {
+      return false
+    }
+    if (
+      visibilityFilter !== 'all' &&
+      row.selectable !== (visibilityFilter === 'public')
+    ) {
+      return false
+    }
     if (!query) return true
     const typeName = typeNameByID.get(row.typeId) ?? ''
     return (
@@ -776,6 +810,14 @@ function GroupPricingTable({
       typeName.toLowerCase().includes(query)
     )
   })
+  const hasActiveFilters =
+    typeFilter !== ALL_GROUP_TYPE_FILTER || visibilityFilter !== 'all'
+  const hasActiveView = Boolean(search) || hasActiveFilters
+  const clearView = () => {
+    setSearch('')
+    setTypeFilter(ALL_GROUP_TYPE_FILTER)
+    setVisibilityFilter('all')
+  }
 
   return (
     <Card className={sectionCardClassName}>
@@ -828,28 +870,67 @@ function GroupPricingTable({
               </ul>
             </div>
           )}
-          <InputGroup className='max-w-sm'>
-            <InputGroupAddon>
-              <Search aria-hidden='true' />
-            </InputGroupAddon>
-            <InputGroupInput
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              aria-label={t('Search groups by name or description')}
-              placeholder={t('Search groups by name or description')}
-            />
-            {search && (
-              <InputGroupAddon align='inline-end'>
-                <InputGroupButton
-                  size='icon-xs'
-                  aria-label={t('Clear search')}
-                  onClick={() => setSearch('')}
-                >
-                  <X aria-hidden='true' />
-                </InputGroupButton>
+          <div className='flex min-w-0 flex-wrap items-center gap-2'>
+            <InputGroup className='w-full max-w-sm'>
+              <InputGroupAddon>
+                <Search aria-hidden='true' />
               </InputGroupAddon>
-            )}
-          </InputGroup>
+              <InputGroupInput
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                aria-label={t('Search groups by name or description')}
+                placeholder={t('Search groups by name or description')}
+              />
+              {search && (
+                <InputGroupAddon align='inline-end'>
+                  <InputGroupButton
+                    size='icon-xs'
+                    aria-label={t('Clear search')}
+                    onClick={() => setSearch('')}
+                  >
+                    <X aria-hidden='true' />
+                  </InputGroupButton>
+                </InputGroupAddon>
+              )}
+            </InputGroup>
+            <NativeSelect
+              aria-label={t('Filter groups by type')}
+              className='max-w-56 min-w-32'
+              value={typeFilter}
+              onChange={(event) => setTypeFilter(event.target.value)}
+            >
+              <NativeSelectOption value={ALL_GROUP_TYPE_FILTER}>
+                {t('All Types')}
+              </NativeSelectOption>
+              {typeDefinitions.map((type) => (
+                <NativeSelectOption
+                  key={type.id}
+                  value={`${GROUP_TYPE_FILTER_PREFIX}${type.id}`}
+                >
+                  {type.name || type.id}
+                </NativeSelectOption>
+              ))}
+              <NativeSelectOption value={UNCLASSIFIED_GROUP_TYPE_FILTER}>
+                {t('Unclassified')}
+              </NativeSelectOption>
+            </NativeSelect>
+            <NativeSelect
+              aria-label={t('Filter groups by visibility')}
+              className='min-w-32'
+              value={visibilityFilter}
+              onChange={(event) =>
+                setVisibilityFilter(event.target.value as GroupVisibilityFilter)
+              }
+            >
+              <NativeSelectOption value='all'>{t('All')}</NativeSelectOption>
+              <NativeSelectOption value='public'>
+                {t('Public')}
+              </NativeSelectOption>
+              <NativeSelectOption value='not-public'>
+                {t('Not public')}
+              </NativeSelectOption>
+            </NativeSelect>
+          </div>
           {typeModeActive && untypedSelectableCount > 0 && (
             <div
               role='status'
@@ -885,18 +966,16 @@ function GroupPricingTable({
               <EmptyState
                 className='min-h-40'
                 title={
-                  query
+                  hasActiveView
                     ? t('No results found')
                     : t('No groups yet. Add a group to get started.')
                 }
                 action={
-                  query ? (
-                    <Button
-                      variant='outline'
-                      size='sm'
-                      onClick={() => setSearch('')}
-                    >
-                      {t('Clear search')}
+                  hasActiveView ? (
+                    <Button variant='outline' size='sm' onClick={clearView}>
+                      {hasActiveFilters
+                        ? t('Clear filters')
+                        : t('Clear search')}
                     </Button>
                   ) : undefined
                 }

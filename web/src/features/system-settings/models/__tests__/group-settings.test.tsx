@@ -64,6 +64,29 @@ const schema = z.object({
   GroupTypeMap: z.string(),
 })
 
+const filterInitial = {
+  GroupRatio: JSON.stringify({
+    'alpha-low': 0.5,
+    'zeta-low': 0.1,
+    'alpha-high': 2,
+    'unclassified-low': 0.1,
+  }),
+  TopupGroupRatio: '{}',
+  UserUsableGroups: JSON.stringify({
+    'alpha-low': 'Public alpha',
+    'zeta-low': 'Public zeta',
+  }),
+  GroupTypes: JSON.stringify({
+    'vendor-z': { name: 'Vendor Z', order: 1 },
+    'vendor-a': { name: 'Vendor A', order: 0 },
+  }),
+  GroupTypeMap: JSON.stringify({
+    'alpha-low': 'vendor-a',
+    'alpha-high': 'vendor-a',
+    'zeta-low': 'vendor-z',
+  }),
+}
+
 function Fixture(props: {
   onSave?: (values: typeof defaults) => Promise<void>
   initial?: Partial<typeof defaults>
@@ -138,6 +161,72 @@ describe('group settings workspace', () => {
     expect(screen.getAllByRole('spinbutton', { name: 'Ratio' })[0]).toHaveValue(
       0.6
     )
+  })
+
+  it('defaults group filters to all and filters by configured type', async () => {
+    const user = userEvent.setup()
+    render(<Fixture initial={filterInitial} />)
+    const typeFilter = screen.getByRole('combobox', {
+      name: 'Filter groups by type',
+    })
+    const visibilityFilter = screen.getByRole('combobox', {
+      name: 'Filter groups by visibility',
+    })
+
+    expect(typeFilter).toHaveDisplayValue('All Types')
+    expect(visibilityFilter).toHaveDisplayValue('All')
+    expect(
+      screen
+        .getAllByRole<HTMLInputElement>('textbox', { name: 'Group name' })
+        .map((input) => input.value)
+    ).toEqual(['alpha-low', 'alpha-high', 'zeta-low', 'unclassified-low'])
+
+    await user.selectOptions(typeFilter, 'type:vendor-a')
+    expect(
+      screen
+        .getAllByRole<HTMLInputElement>('textbox', { name: 'Group name' })
+        .map((input) => input.value)
+    ).toEqual(['alpha-low', 'alpha-high'])
+
+    await user.selectOptions(typeFilter, '__unclassified_group_type__')
+    expect(
+      screen
+        .getAllByRole<HTMLInputElement>('textbox', { name: 'Group name' })
+        .map((input) => input.value)
+    ).toEqual(['unclassified-low'])
+  })
+
+  it('filters public groups from the user-selectable state', async () => {
+    const user = userEvent.setup()
+    render(<Fixture initial={filterInitial} />)
+    const visibilityFilter = screen.getByRole('combobox', {
+      name: 'Filter groups by visibility',
+    })
+
+    await user.selectOptions(visibilityFilter, 'public')
+    expect(
+      screen
+        .getAllByRole<HTMLInputElement>('textbox', { name: 'Group name' })
+        .map((input) => input.value)
+    ).toEqual(['alpha-low', 'zeta-low'])
+
+    const alphaRow = screen.getByDisplayValue('alpha-low').closest('tr')
+    if (!alphaRow) throw new Error('Expected an alpha-low group row')
+    await user.click(
+      within(alphaRow).getByRole('checkbox', { name: 'User selectable' })
+    )
+    expect(
+      screen
+        .getAllByRole<HTMLInputElement>('textbox', { name: 'Group name' })
+        .map((input) => input.value)
+    ).toEqual(['zeta-low'])
+
+    await user.selectOptions(visibilityFilter, 'not-public')
+    expect(
+      screen
+        .getAllByRole<HTMLInputElement>('textbox', { name: 'Group name' })
+        .map((input) => input.value)
+    ).toEqual(['alpha-low', 'alpha-high', 'unclassified-low'])
   })
 
   it('prepends consecutive new groups and saves them without changing existing settings', async () => {

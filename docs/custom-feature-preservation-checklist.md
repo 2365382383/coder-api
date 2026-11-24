@@ -686,6 +686,9 @@
   张表或留下数据库与内存不一致。
 - 必须保留：分组定价表的显示顺序先遵循类型配置顺序，同类型内按倍率升序，未分类分组
   位于有类型分组之后，`auto` 固定置底；该排序只影响显示，不改变持久化映射或编辑状态。
+- 必须保留：分组定价搜索栏提供类型筛选（全部、各配置类型、未分类）和公开状态筛选
+  （全部、公开、未公开），两者默认全部；公开状态直接取“用户可选”复选框，不另设
+  持久化字段。
 - 当前位置：`model/option.go`、`setting/ratio_setting/group_ratio.go`、`service/group.go`、
   `controller/group.go`、`controller/option.go`、`router/api-router.go`、
   `web/src/features/keys/**`、`web/src/features/system-settings/models/group-type.ts`、
