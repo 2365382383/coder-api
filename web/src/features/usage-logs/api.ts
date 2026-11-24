@@ -79,7 +79,9 @@ async function fetchLogStats<T>(
 // ============================================================================
 
 export const getAllLogs = (params: GetLogsParams = {}) =>
-  fetchLogs('/api/log', params, true)
+  // The administrator route is registered at /api/log/. Keeping the
+  // trailing slash here avoids Gin's redirect before every list request.
+  fetchLogs('/api/log/', params, true)
 
 export const getUserLogs = (
   params: Omit<GetLogsParams, 'username' | 'channel'> = {}
