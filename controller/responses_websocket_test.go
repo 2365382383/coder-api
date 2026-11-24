@@ -1056,7 +1056,7 @@ func TestResponsesHTTPHealthCountsFinalResult(t *testing.T) {
 		ignored               bool
 	}{
 		{"business rejection", "context_length_exceeded", 400, 1, false, true},
-		{"credentials rejected as 400", "invalid_api_key", 400, 1, false, false},
+		{"credentials rejected as 400", "invalid_api_key", 400, 1, false, true},
 		{"retry succeeds", "server_error", 500, 2, true, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

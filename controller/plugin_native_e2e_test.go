@@ -419,7 +419,7 @@ func TestDoubaoRelayedImageStreamSettlement(t *testing.T) {
 			assert.Equal(t, relayed, recorder.Body.String(), "nothing follows the relayed events")
 			var user model.User
 			require.NoError(t, database.First(&user, 7).Error)
-			assert.Equal(t, 1_000_000-tc.wantQuota, user.Quota, "the delivered images are charged")
+			assert.Equal(t, int64(1_000_000-tc.wantQuota), user.Quota, "the delivered images are charged")
 			var consumeLogs []model.Log
 			require.NoError(t, database.Where("type = ?", model.LogTypeConsume).Find(&consumeLogs).Error)
 			require.Len(t, consumeLogs, 1)
