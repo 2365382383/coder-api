@@ -1480,7 +1480,7 @@ func PreConsumeUserSubscriptionTx(tx *gorm.DB, requestId string, userId int, mod
 	if tx != nil {
 		err = apply(tx)
 	} else {
-		err = withBillingTransaction(context.Background(), apply)
+		err = withBillingTransactionForUser(context.Background(), userId, apply)
 	}
 	if err != nil {
 		return nil, err
@@ -1644,7 +1644,7 @@ func PreConsumeUserSubscriptionPartialTx(tx *gorm.DB, requestId string, userId i
 	if tx != nil {
 		err = apply(tx)
 	} else {
-		err = withBillingTransaction(context.Background(), apply)
+		err = withBillingTransactionForUser(context.Background(), userId, apply)
 	}
 	if err != nil {
 		return nil, err
@@ -1657,7 +1657,7 @@ func RefundSubscriptionPreConsume(requestId string) error {
 	if strings.TrimSpace(requestId) == "" {
 		return errors.New("requestId is empty")
 	}
-	return withBillingTransaction(context.Background(), func(tx *gorm.DB) error {
+	return withBillingTransactionForRequest(context.Background(), requestId, func(tx *gorm.DB) error {
 		return refundSubscriptionPreConsumeTx(tx, requestId)
 	})
 }
@@ -1784,7 +1784,7 @@ func PostConsumeUserSubscriptionDelta(userSubscriptionId int, delta int64) error
 	if delta == 0 {
 		return nil
 	}
-	return withBillingTransaction(context.Background(), func(tx *gorm.DB) error {
+	return withBillingTransactionForSubscription(context.Background(), userSubscriptionId, func(tx *gorm.DB) error {
 		return postConsumeUserSubscriptionDeltaTx(tx, userSubscriptionId, delta)
 	})
 }

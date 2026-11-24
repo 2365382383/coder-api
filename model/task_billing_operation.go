@@ -35,7 +35,7 @@ func FinalizeTaskBillingWithStatus(task *Task, actual int, refund bool, fromStat
 		return false, err
 	}
 	var updated *Task
-	err := withBillingTransaction(context.Background(), func(tx *gorm.DB) error {
+	apply := func(tx *gorm.DB) error {
 		requestRoot, err := lockTaskBillingOperation(tx, task.ID)
 		if err != nil {
 			return err
@@ -162,7 +162,13 @@ func FinalizeTaskBillingWithStatus(task *Task, actual int, refund bool, fromStat
 		}
 		updated = &current
 		return nil
-	})
+	}
+	var err error
+	if actual != task.Quota && task.ChannelId > 0 {
+		err = withBillingTransactionForUserAndChannel(context.Background(), task.UserId, task.ChannelId, apply)
+	} else {
+		err = withBillingTransactionForUser(context.Background(), task.UserId, apply)
+	}
 	if err == nil && updated != nil {
 		*task = *updated
 	}
@@ -177,7 +183,7 @@ func ensureTaskBillingRoot(task *Task) error {
 		return errors.New("invalid task billing root request")
 	}
 	requestID := fmt.Sprintf("task:%d", task.ID)
-	return withBillingTransaction(context.Background(), func(tx *gorm.DB) error {
+	return withBillingTransactionForUser(context.Background(), task.UserId, func(tx *gorm.DB) error {
 		var root BillingOperation
 		found := tx.Where("task_id = ? AND phase = ?", task.ID, "initial").Limit(1).Find(&root)
 		if found.Error != nil {
@@ -327,7 +333,7 @@ func MarkTaskBillingReviewRequired(task *Task, fromStatus TaskStatus) (bool, err
 		return false, err
 	}
 	var updated *Task
-	err := withBillingTransaction(context.Background(), func(tx *gorm.DB) error {
+	err := withBillingTransactionForUser(context.Background(), task.UserId, func(tx *gorm.DB) error {
 		root, err := lockTaskBillingOperation(tx, int64(task.ID))
 		if err != nil {
 			return err

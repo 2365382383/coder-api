@@ -92,7 +92,7 @@ func ChargeMidjourneyTask(task *Midjourney, quota, tokenID int) (bool, error) {
 		requestID = midjourneyBillingRequestID(task.Id)
 	}
 	var billed bool
-	err := withBillingTransaction(context.Background(), func(tx *gorm.DB) error {
+	err := withBillingTransactionForUserAndChannel(context.Background(), task.UserId, task.GetBillingChannelId(), func(tx *gorm.DB) error {
 		var existing BillingOperation
 		found := lockForUpdate(tx).Where("request_id = ? AND phase = ?", requestID, "initial").Limit(1).Find(&existing)
 		if found.Error != nil {
@@ -295,7 +295,7 @@ func RefundMidjourneyTask(task *Midjourney) (bool, error) {
 		return false, err
 	}
 	var refunded bool
-	err := withBillingTransaction(context.Background(), func(tx *gorm.DB) error {
+	err := withBillingTransactionForUserAndChannel(context.Background(), task.UserId, task.GetBillingChannelId(), func(tx *gorm.DB) error {
 		root, err := lockBillingOperation(tx, requestID)
 		if err != nil {
 			return err

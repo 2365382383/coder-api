@@ -68,6 +68,16 @@ var (
 		},
 		[]string{"operation", "result"},
 	)
+	transactionQueueWait = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Namespace: "new_api",
+			Subsystem: "billing_transaction",
+			Name:      "queue_wait_seconds",
+			Help:      "Time spent waiting for the in-process billing resource queue before a transaction starts.",
+			Buckets:   prometheus.DefBuckets,
+		},
+		[]string{"operation"},
+	)
 )
 
 func init() {
@@ -78,6 +88,7 @@ func init() {
 		transactionDuration,
 		transactionAttemptDuration,
 		transactionRetriesPerRequest,
+		transactionQueueWait,
 	)
 }
 
@@ -96,6 +107,10 @@ func ObserveFinal(operation, result, errorCode string, duration time.Duration, r
 	transactionFinal.WithLabelValues(operation, result, errorCode).Inc()
 	transactionDuration.WithLabelValues(operation, result).Observe(duration.Seconds())
 	transactionRetriesPerRequest.WithLabelValues(operation, result).Observe(float64(retries))
+}
+
+func ObserveQueueWait(operation string, duration time.Duration) {
+	transactionQueueWait.WithLabelValues(operation).Observe(duration.Seconds())
 }
 
 func Handler() http.Handler {

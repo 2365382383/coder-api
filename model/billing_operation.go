@@ -73,7 +73,8 @@ func CreateBillingReservation(op *BillingOperation, apply func(*gorm.DB) error) 
 		return errors.New("invalid billing reservation")
 	}
 	baseOp := *op
-	return withBillingTransaction(context.Background(), func(tx *gorm.DB) error {
+	rememberBillingOwner(op.RequestId, op.UserId, op.ChannelId)
+	return withBillingTransactionForUser(context.Background(), op.UserId, func(tx *gorm.DB) error {
 		attemptOp := baseOp
 		attemptOp.Id = 0
 		attemptOp.Phase = "initial"
@@ -152,7 +153,7 @@ func requestBillingSettlement(requestId string, walletDelta, subscriptionDelta, 
 		walletDelta == common.MinWalletQuota || subscriptionDelta == common.MinWalletQuota || tokenDelta == common.MinWalletQuota {
 		return errors.New("invalid billing settlement request")
 	}
-	return withBillingTransaction(context.Background(), func(tx *gorm.DB) error {
+	return withBillingTransactionForRequestNamed(context.Background(), requestId, billingTransactionCaller(1), func(tx *gorm.DB) error {
 		root, err := lockBillingOperation(tx, requestId)
 		if err != nil {
 			return err
@@ -228,7 +229,8 @@ func ApplyBillingAdjustmentWithResult(requestId, phase string, walletDelta, subs
 
 	var committed BillingAdjustmentResult
 	var updatedTask *Task
-	err := withBillingTransaction(context.Background(), func(tx *gorm.DB) error {
+	var err error
+	apply := func(tx *gorm.DB) error {
 		var currentTask *Task
 		var taskToCommit *Task
 		root, err := lockBillingOperation(tx, requestId)
@@ -459,9 +461,18 @@ func ApplyBillingAdjustmentWithResult(requestId, phase string, walletDelta, subs
 		}
 		committed = result
 		return nil
-	})
+	}
+	operation := billingTransactionCaller(1)
+	if settle && actual > 0 {
+		err = withBillingTransactionForRequestAndChannelNamed(context.Background(), requestId, operation, apply)
+	} else {
+		err = withBillingTransactionForRequestNamed(context.Background(), requestId, operation, apply)
+	}
 	if err != nil {
 		return BillingAdjustmentResult{}, err
+	}
+	if settle {
+		forgetBillingOwner(requestId)
 	}
 	if commit != nil && updatedTask != nil {
 		*commit.Task = *updatedTask
@@ -491,7 +502,7 @@ func InsertTaskWithBillingIntent(ctx context.Context, requestId string, task *Ta
 	}
 	desired := *task
 	var staged Task
-	err := withBillingTransaction(ctx, func(tx *gorm.DB) error {
+	err := withBillingTransactionForUserAndChannel(ctx, task.UserId, task.ChannelId, func(tx *gorm.DB) error {
 		staged = desired
 		staged.ID = 0
 		staged.Quota = 0
@@ -621,7 +632,7 @@ func RecoverBillingTaskSettlement(requestId string) error {
 // RequestBillingRefund durably records a known failure before attempting any
 // credit. An unknown upstream outcome must never call this function.
 func RequestBillingRefund(requestId string) error {
-	return withBillingTransaction(context.Background(), func(tx *gorm.DB) error {
+	return withBillingTransactionForRequest(context.Background(), requestId, func(tx *gorm.DB) error {
 		op, err := lockBillingOperation(tx, requestId)
 		if err != nil {
 			return err
@@ -643,7 +654,7 @@ func RequestBillingRefund(requestId string) error {
 }
 
 func RefundBillingOperation(requestId string) error {
-	return withBillingTransaction(context.Background(), func(tx *gorm.DB) error {
+	err := withBillingTransactionForRequest(context.Background(), requestId, func(tx *gorm.DB) error {
 		op, err := lockBillingOperation(tx, requestId)
 		if err != nil {
 			return err
@@ -700,6 +711,10 @@ func RefundBillingOperation(requestId string) error {
 			WalletAmount: -op.WalletAmount, SubscriptionAmount: -op.SubscriptionAmount,
 			TokenAmount: -op.TokenAmount, CreatedAt: common.GetTimestamp(), UpdatedAt: common.GetTimestamp()}).Error
 	})
+	if err == nil {
+		forgetBillingOwner(requestId)
+	}
+	return err
 }
 
 func ListPendingBillingRefunds(limit int) ([]BillingOperation, error) {
@@ -762,7 +777,7 @@ func ApplyLegacyBillingDelta(requestId, phase string, userId, channelId, tokenId
 	if settles && (usage < 0 || usage > int64(common.MaxChargeQuota)) {
 		return errors.New("legacy billing usage exceeds the single-request charge range")
 	}
-	return withBillingTransaction(context.Background(), func(tx *gorm.DB) error {
+	apply := func(tx *gorm.DB) error {
 		fundingSource := "wallet"
 		if subscriptionId > 0 {
 			fundingSource = "subscription"
@@ -916,5 +931,10 @@ func ApplyLegacyBillingDelta(requestId, phase string, userId, channelId, tokenId
 			updates["usage_counted"] = countRequest
 		}
 		return tx.Model(&root).Updates(updates).Error
-	})
+	}
+	operation := billingTransactionCaller(1)
+	if settles && usage > 0 && channelId > 0 {
+		return withBillingTransactionForUserAndChannelNamed(context.Background(), userId, channelId, operation, apply)
+	}
+	return withBillingTransactionForUserNamed(context.Background(), userId, operation, apply)
 }

@@ -735,9 +735,14 @@
 - 必须保留：`/api/status` 读取 `OptionMap` 时只复制所需字段并立即释放读锁，响应组装和
   JSON 写出不能持有 `OptionMapRWMutex`。配置同步必须在锁外完成数据库读取、规范化和运行时
   后处理，最后一次性发布内存选项，不能逐项持写锁更新。
-- 必须保留：计费事务每次尝试、重试、最终成功/失败、单次耗时、总耗时和重试次数继续通过
-  `/metrics` 暴露；指标按真实计费调用方区分，并且中间 1205/1213 重试不能直接等同于最终
-  失败。现有 `BILLING_LOCK_WAIT_TIMEOUT_SECONDS`、整事务重试、幂等阶段和账务语义继续有效。
+- 必须保留：计费事务每次尝试、重试、最终成功/失败、队列等待、单次耗时、总耗时和重试
+  次数继续通过 `/metrics` 暴露；指标按真实计费调用方区分，并且中间 1205/1213 重试不能
+  直接等同于最终失败。现有 `BILLING_LOCK_WAIT_TIMEOUT_SECONDS`、整事务重试、幂等阶段和
+  账务语义继续有效。
+- 必须保留：计费事务进入数据库前按 `user_id` 在进程内串行化预扣、结算、退款和任务账务
+  阶段；会更新共享渠道使用量的结算阶段同时按 `channel_id` 串行化。数据库行锁继续承担
+  跨进程一致性，队列等待不能跳过或改变 quota、订阅、令牌、request_count、channel 使用量
+  和账务阶段提交。
 - 当前位置：`controller/misc.go`、`controller/health_test.go`、`router/main.go`、
   `model/option.go`、`model/request_policy.go`、`model/billing_transaction.go`、
   `pkg/billing_metrics/**`、`deploy/docker-compose.yml`。

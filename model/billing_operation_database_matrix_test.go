@@ -37,6 +37,51 @@ func TestBillingTransactionRetriesMySQLDeadlock(t *testing.T) {
 	require.Equal(t, billingTransactionAttempts, attempts)
 }
 
+func TestBillingUserQueueHonorsCancellationAndUserIsolation(t *testing.T) {
+	firstStarted := make(chan struct{})
+	firstRelease := make(chan struct{})
+	firstDone := make(chan error, 1)
+	go func() {
+		firstDone <- withBillingUserQueue(context.Background(), 501, func() error {
+			close(firstStarted)
+			<-firstRelease
+			return nil
+		})
+	}()
+	<-firstStarted
+
+	otherUserEntered := make(chan struct{})
+	otherUserDone := make(chan error, 1)
+	go func() {
+		otherUserDone <- withBillingUserQueue(context.Background(), 502, func() error {
+			close(otherUserEntered)
+			return nil
+		})
+	}()
+	<-otherUserEntered
+	require.NoError(t, <-otherUserDone)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	queuedDone := make(chan error, 1)
+	queuedCallbackEntered := make(chan struct{})
+	go func() {
+		queuedDone <- withBillingUserQueue(ctx, 501, func() error {
+			close(queuedCallbackEntered)
+			return nil
+		})
+	}()
+	cancel()
+	require.ErrorIs(t, <-queuedDone, context.Canceled)
+	select {
+	case <-queuedCallbackEntered:
+		t.Fatal("cancelled user queue callback must not run")
+	default:
+	}
+
+	close(firstRelease)
+	require.NoError(t, <-firstDone)
+}
+
 func TestBillingSettlementConcurrentHotAccount(t *testing.T) {
 	db := openSensitiveWordMatrixDB(t, "sqlite", "")
 	sqlDB, err := db.DB()

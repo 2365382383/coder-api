@@ -6,6 +6,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -18,6 +19,173 @@ import (
 const billingTransactionAttempts = 5
 
 const billingLockWaitTimeoutEnv = "BILLING_LOCK_WAIT_TIMEOUT_SECONDS"
+
+type billingQueueKey struct {
+	kind string
+	id   int
+}
+
+type billingQueueEntry struct {
+	slot chan struct{}
+	refs int
+}
+
+type billingOwnerEntry struct {
+	userID    int
+	channelID int
+	expiresAt time.Time
+}
+
+var billingQueues = struct {
+	sync.Mutex
+	entries map[billingQueueKey]*billingQueueEntry
+}{entries: make(map[billingQueueKey]*billingQueueEntry)}
+
+var billingOwners = struct {
+	sync.Mutex
+	entries map[string]billingOwnerEntry
+}{entries: make(map[string]billingOwnerEntry)}
+
+const (
+	billingOwnerCacheTTL        = 10 * time.Minute
+	billingOwnerCacheMaxEntries = 10_000
+)
+
+func rememberBillingOwner(requestID string, userID, channelID int) {
+	if requestID == "" || userID <= 0 {
+		return
+	}
+	billingOwners.Lock()
+	if len(billingOwners.entries) >= billingOwnerCacheMaxEntries {
+		now := time.Now()
+		for requestID, entry := range billingOwners.entries {
+			if !now.Before(entry.expiresAt) {
+				delete(billingOwners.entries, requestID)
+			}
+		}
+		if len(billingOwners.entries) >= billingOwnerCacheMaxEntries {
+			for requestID := range billingOwners.entries {
+				delete(billingOwners.entries, requestID)
+				break
+			}
+		}
+	}
+	billingOwners.entries[requestID] = billingOwnerEntry{
+		userID:    userID,
+		channelID: channelID,
+		expiresAt: time.Now().Add(billingOwnerCacheTTL),
+	}
+	billingOwners.Unlock()
+}
+
+func forgetBillingOwner(requestID string) {
+	if requestID == "" {
+		return
+	}
+	billingOwners.Lock()
+	delete(billingOwners.entries, requestID)
+	billingOwners.Unlock()
+}
+
+func cachedBillingOwner(requestID string) (userID, channelID int, found bool) {
+	if requestID == "" {
+		return 0, 0, false
+	}
+	now := time.Now()
+	billingOwners.Lock()
+	entry, found := billingOwners.entries[requestID]
+	if found && now.Before(entry.expiresAt) {
+		billingOwners.Unlock()
+		return entry.userID, entry.channelID, true
+	}
+	if found {
+		delete(billingOwners.entries, requestID)
+	}
+	billingOwners.Unlock()
+	return 0, 0, false
+}
+
+// withBillingQueue serializes short database transaction phases that mutate
+// the same balance or usage counter. The database row lock remains the
+// correctness boundary across processes. The in-process queue keeps requests
+// from piling up inside MySQL while waiting for that row and consuming
+// connections that could be used by other users.
+func withBillingQueue(ctx context.Context, keys []billingQueueKey, fn func() error) error {
+	if fn == nil {
+		return errors.New("billing queue callback is nil")
+	}
+	if len(keys) == 0 {
+		return fn()
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	validKeys := make([]billingQueueKey, 0, len(keys))
+	entries := make([]*billingQueueEntry, 0, len(keys))
+	billingQueues.Lock()
+	for _, key := range keys {
+		if key.id <= 0 {
+			continue
+		}
+		entry := billingQueues.entries[key]
+		if entry == nil {
+			entry = &billingQueueEntry{slot: make(chan struct{}, 1)}
+			entry.slot <- struct{}{}
+			billingQueues.entries[key] = entry
+		}
+		entry.refs++
+		validKeys = append(validKeys, key)
+		entries = append(entries, entry)
+	}
+	billingQueues.Unlock()
+	if len(entries) == 0 {
+		return fn()
+	}
+
+	releaseReferences := func() {
+		billingQueues.Lock()
+		for i, key := range validKeys {
+			entry := entries[i]
+			entry.refs--
+			if entry.refs == 0 {
+				delete(billingQueues.entries, key)
+			}
+		}
+		billingQueues.Unlock()
+	}
+
+	for i, entry := range entries {
+		select {
+		case <-ctx.Done():
+			for j := i - 1; j >= 0; j-- {
+				entries[j].slot <- struct{}{}
+			}
+			releaseReferences()
+			return ctx.Err()
+		case <-entry.slot:
+		}
+	}
+
+	defer func() {
+		for i := len(entries) - 1; i >= 0; i-- {
+			entries[i].slot <- struct{}{}
+		}
+		releaseReferences()
+	}()
+	return fn()
+}
+
+func withBillingUserQueue(ctx context.Context, userID int, fn func() error) error {
+	return withBillingQueue(ctx, []billingQueueKey{{kind: "user", id: userID}}, fn)
+}
+
+func withBillingUserAndChannelQueue(ctx context.Context, userID, channelID int, fn func() error) error {
+	return withBillingQueue(ctx, []billingQueueKey{
+		{kind: "user", id: userID},
+		{kind: "channel", id: channelID},
+	}, fn)
+}
 
 // withRetryableDatabaseTransaction retries the complete database transaction
 // after a transient deadlock or serialization failure. Retrying the whole
@@ -67,7 +235,100 @@ func withRetryableDatabaseTransactionObserved(ctx context.Context, fn func(*gorm
 }
 
 func withBillingTransaction(ctx context.Context, fn func(*gorm.DB) error) error {
-	return withBillingTransactionNamed(ctx, billingTransactionCaller(), fn)
+	return withBillingTransactionNamed(ctx, billingTransactionCaller(2), fn)
+}
+
+func withBillingTransactionForUser(ctx context.Context, userID int, fn func(*gorm.DB) error) error {
+	return withBillingTransactionForUserNamed(ctx, userID, billingTransactionCaller(2), fn)
+}
+
+func withBillingTransactionForUserNamed(ctx context.Context, userID int, operation string, fn func(*gorm.DB) error) error {
+	waitStarted := time.Now()
+	return withBillingUserQueue(ctx, userID, func() error {
+		billingmetrics.ObserveQueueWait(operation, time.Since(waitStarted))
+		return withBillingTransactionNamed(ctx, operation, fn)
+	})
+}
+
+func withBillingTransactionForUserAndChannel(ctx context.Context, userID, channelID int, fn func(*gorm.DB) error) error {
+	return withBillingTransactionForUserAndChannelNamed(ctx, userID, channelID, billingTransactionCaller(2), fn)
+}
+
+func withBillingTransactionForUserAndChannelNamed(ctx context.Context, userID, channelID int, operation string, fn func(*gorm.DB) error) error {
+	waitStarted := time.Now()
+	return withBillingUserAndChannelQueue(ctx, userID, channelID, func() error {
+		billingmetrics.ObserveQueueWait(operation, time.Since(waitStarted))
+		return withBillingTransactionNamed(ctx, operation, fn)
+	})
+}
+
+func billingTransactionOwner(ctx context.Context, requestID string) (userID, channelID int) {
+	if userID, channelID, found := cachedBillingOwner(requestID); found {
+		return userID, channelID
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	var root BillingOperation
+	if err := DB.WithContext(ctx).Select("user_id", "channel_id").Where("request_id = ? AND phase = ?", requestID, "initial").First(&root).Error; err != nil {
+		return 0, 0
+	}
+	rememberBillingOwner(requestID, root.UserId, root.ChannelId)
+	return root.UserId, root.ChannelId
+}
+
+func withBillingTransactionForRequest(ctx context.Context, requestID string, fn func(*gorm.DB) error) error {
+	return withBillingTransactionForRequestNamed(ctx, requestID, billingTransactionCaller(2), fn)
+}
+
+func withBillingTransactionForRequestNamed(ctx context.Context, requestID, operation string, fn func(*gorm.DB) error) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	userID, _ := billingTransactionOwner(ctx, requestID)
+	if userID > 0 {
+		waitStarted := time.Now()
+		return withBillingUserQueue(ctx, userID, func() error {
+			billingmetrics.ObserveQueueWait(operation, time.Since(waitStarted))
+			return withBillingTransactionNamed(ctx, operation, fn)
+		})
+	}
+	return withBillingTransactionNamed(ctx, operation, fn)
+}
+
+func withBillingTransactionForRequestAndChannel(ctx context.Context, requestID string, fn func(*gorm.DB) error) error {
+	return withBillingTransactionForRequestAndChannelNamed(ctx, requestID, billingTransactionCaller(2), fn)
+}
+
+func withBillingTransactionForRequestAndChannelNamed(ctx context.Context, requestID, operation string, fn func(*gorm.DB) error) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	userID, channelID := billingTransactionOwner(ctx, requestID)
+	if userID > 0 {
+		waitStarted := time.Now()
+		return withBillingUserAndChannelQueue(ctx, userID, channelID, func() error {
+			billingmetrics.ObserveQueueWait(operation, time.Since(waitStarted))
+			return withBillingTransactionNamed(ctx, operation, fn)
+		})
+	}
+	return withBillingTransactionNamed(ctx, operation, fn)
+}
+
+func withBillingTransactionForSubscription(ctx context.Context, subscriptionID int, fn func(*gorm.DB) error) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	operation := billingTransactionCaller(2)
+	var subscription UserSubscription
+	if err := DB.WithContext(ctx).Select("user_id").Where("id = ?", subscriptionID).First(&subscription).Error; err == nil && subscription.UserId > 0 {
+		waitStarted := time.Now()
+		return withBillingUserQueue(ctx, subscription.UserId, func() error {
+			billingmetrics.ObserveQueueWait(operation, time.Since(waitStarted))
+			return withBillingTransactionNamed(ctx, operation, fn)
+		})
+	}
+	return withBillingTransactionNamed(ctx, operation, fn)
 }
 
 func withBillingTransactionNamed(ctx context.Context, operation string, fn func(*gorm.DB) error) error {
@@ -94,8 +355,8 @@ func withBillingTransactionNamed(ctx context.Context, operation string, fn func(
 	return err
 }
 
-func billingTransactionCaller() string {
-	pc, _, _, ok := runtime.Caller(3)
+func billingTransactionCaller(skip int) string {
+	pc, _, _, ok := runtime.Caller(skip)
 	if !ok {
 		return "unknown"
 	}

@@ -11,6 +11,7 @@ func TestHandlerExposesBillingTransactionOutcomes(t *testing.T) {
 	ObserveAttempt("test_operation", "retry", "mysql_1205", 10*time.Millisecond)
 	ObserveAttempt("test_operation", "success", "none", 2*time.Millisecond)
 	ObserveFinal("test_operation", "success", "none", 12*time.Millisecond, 1)
+	ObserveQueueWait("test_operation", time.Millisecond)
 
 	response := httptest.NewRecorder()
 	Handler().ServeHTTP(response, httptest.NewRequest("GET", "/metrics", nil))
@@ -21,5 +22,8 @@ func TestHandlerExposesBillingTransactionOutcomes(t *testing.T) {
 	}
 	if !strings.Contains(body, "new_api_billing_transaction_final_total") {
 		t.Fatalf("final outcome metric is missing: %s", body)
+	}
+	if !strings.Contains(body, "new_api_billing_transaction_queue_wait_seconds") {
+		t.Fatalf("queue wait metric is missing: %s", body)
 	}
 }
