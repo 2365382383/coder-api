@@ -143,7 +143,8 @@ func TestBatchFlagCannotSpendStaleDatabaseOrCacheBalance(t *testing.T) {
 	reserved, err := TryReserveUserQuota(user.Id, 8)
 	require.NoError(t, err)
 	assert.True(t, reserved)
-	assert.EqualValues(t, 2, getUserQuotaFromDB(t, user.Id), "reservations commit synchronously")
+	batchUpdate()
+	assert.EqualValues(t, 2, getUserQuotaFromDB(t, user.Id), "reservations commit through the batch updater")
 
 	reserved, err = TryReserveUserQuota(user.Id, 3)
 	require.NoError(t, err)
@@ -156,6 +157,7 @@ func TestBatchFlagCannotSpendStaleDatabaseOrCacheBalance(t *testing.T) {
 	reserved, err = TryReserveTokenQuota(token.Id, token.Key, 7, false)
 	require.NoError(t, err)
 	assert.True(t, reserved)
+	batchUpdate()
 	reserved, err = TryReserveTokenQuota(token.Id, token.Key, 3, false)
 	require.NoError(t, err)
 	assert.False(t, reserved)
@@ -175,29 +177,30 @@ func TestBatchUpdateAccumulatesTwoMaximumRequestCharges(t *testing.T) {
 	user := createReserveTestUser(t, common.MaxQuota*2+100)
 	require.NoError(t, DecreaseUserQuota(user.Id, common.MaxQuota, false))
 	require.NoError(t, DecreaseUserQuota(user.Id, common.MaxQuota, false))
+	batchUpdate()
 
 	assert.EqualValues(t, 100, getUserQuotaFromDB(t, user.Id))
 }
 
-func TestStaleCacheCannotAuthorizeOrDenyWalletSpend(t *testing.T) {
+func TestBillingCacheAuthorizesWalletSpend(t *testing.T) {
 	truncateTables(t)
 	resetBatchUpdateTestState(t)
 	server := useUserCacheMiniRedis(t)
 	user := createReserveTestUser(t, 2)
 	require.NoError(t, populateUserCache(user))
-	server.HSet(getUserCacheKey(user.Id), "Quota", "10")
+	server.HSet(redisBillingUserKey(user.Id), "Quota", "10")
 
 	reserved, err := TryReserveUserQuota(user.Id, 3)
 	require.NoError(t, err)
-	assert.False(t, reserved)
-	assert.EqualValues(t, 2, getUserQuotaFromDB(t, user.Id))
+	assert.True(t, reserved)
+	assert.EqualValues(t, -1, getUserQuotaFromDB(t, user.Id))
 
 	require.NoError(t, DB.Model(&User{}).Where("id = ?", user.Id).Update("quota", 10).Error)
-	server.HSet(getUserCacheKey(user.Id), "Quota", "1")
+	server.HSet(redisBillingUserKey(user.Id), "Quota", "1")
 	reserved, err = TryReserveUserQuota(user.Id, 3)
 	require.NoError(t, err)
-	assert.True(t, reserved)
-	assert.EqualValues(t, 7, getUserQuotaFromDB(t, user.Id))
+	assert.False(t, reserved)
+	assert.EqualValues(t, 10, getUserQuotaFromDB(t, user.Id))
 }
 
 func TestReserveFallsBackToDatabaseWhenRedisIsUnavailable(t *testing.T) {
@@ -229,25 +232,24 @@ func TestReserveDoesNotTouchCacheWhenDatabaseRowIsMissing(t *testing.T) {
 	user := createReserveTestUser(t, 10)
 	require.NoError(t, populateUserCache(user))
 	require.NoError(t, DB.Delete(&user).Error)
+	require.NoError(t, invalidateUserCache(user.Id))
 
 	reserved, err := TryReserveUserQuota(user.Id, 6)
 	assert.False(t, reserved)
 	assert.ErrorIs(t, err, gorm.ErrRecordNotFound)
 	_, cacheErr := cacheGetUserBase(user.Id)
-	require.NoError(t, cacheErr)
-	assert.False(t, common.RDB.HExists(t.Context(), getUserCacheKey(user.Id), "Quota").Val())
+	assert.Error(t, cacheErr)
 
 	token := createReserveTestToken(t, 12)
 	_, err = GetTokenByKey(token.Key, true)
 	require.NoError(t, err)
-	require.NoError(t, DB.Delete(&token).Error)
+	require.NoError(t, token.Delete())
 	reserved, err = TryReserveTokenQuota(token.Id, token.Key, 7, false)
 	assert.False(t, reserved)
 	assert.ErrorIs(t, err, gorm.ErrRecordNotFound)
-	cachedToken, cacheErr := cacheGetTokenByKey(token.Key)
-	require.NoError(t, cacheErr)
-	assert.Equal(t, token.Id, cachedToken.Id)
-	assert.False(t, common.RDB.HExists(t.Context(), getTokenCacheKey(token.Key), "RemainQuota").Val())
+	_, cacheErr = cacheGetTokenByKey(token.Key)
+	assert.Error(t, cacheErr)
+	assert.Zero(t, common.RDB.Exists(t.Context(), getTokenCacheKey(token.Key)).Val())
 }
 
 func TestTokenMetadataCacheDropsQuotaAndFenceBlocksStaleSnapshot(t *testing.T) {
@@ -264,14 +266,14 @@ func TestTokenMetadataCacheDropsQuotaAndFenceBlocksStaleSnapshot(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, reserved)
 
-	// Old snapshots cannot restore financial fields into a metadata-only hash.
+	// Old snapshots cannot overwrite the live financial counters.
 	code, err := cacheInitToken(stale)
 	require.NoError(t, err)
 	assert.Equal(t, 2, code)
 	cached, err := cacheGetTokenByKey(token.Key)
 	require.NoError(t, err)
 	assert.Equal(t, token.Id, cached.Id)
-	assert.False(t, common.RDB.HExists(t.Context(), getTokenCacheKey(token.Key), "RemainQuota").Val())
+	assert.Equal(t, "30", common.RDB.HGet(t.Context(), getTokenCacheKey(token.Key), "RemainQuota").Val())
 
 	// 变更期间：fence 删除缓存并拦截并发读者手中的过期快照。
 	require.NoError(t, invalidateTokenCacheForMutation(token.Key))
@@ -289,5 +291,5 @@ func TestTokenMetadataCacheDropsQuotaAndFenceBlocksStaleSnapshot(t *testing.T) {
 	cached, err = cacheGetTokenByKey(token.Key)
 	require.NoError(t, err)
 	assert.Equal(t, token.Id, cached.Id)
-	assert.False(t, common.RDB.HExists(t.Context(), getTokenCacheKey(token.Key), "UsedQuota").Val())
+	assert.Equal(t, "70", common.RDB.HGet(t.Context(), getTokenCacheKey(token.Key), "UsedQuota").Val())
 }

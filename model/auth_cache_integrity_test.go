@@ -65,7 +65,7 @@ func TestAuthCacheIntegrityDatabaseMatrix(t *testing.T) {
 			require.NoError(t, DB.Create(&user).Error)
 			t.Cleanup(func() { assert.NoError(t, db.Unscoped().Delete(&user).Error) })
 			require.NoError(t, populateUserCache(user))
-			assert.False(t, common.RDB.HExists(t.Context(), getUserCacheKey(user.Id), "Quota").Val())
+			assert.Equal(t, "100", common.RDB.HGet(t.Context(), getUserCacheKey(user.Id), "Quota").Val())
 
 			t.Run("user_metadata_and_partial_refresh", func(t *testing.T) {
 				for _, fields := range []map[string]any{
@@ -87,7 +87,7 @@ func TestAuthCacheIntegrityDatabaseMatrix(t *testing.T) {
 					assert.Equal(t, user.Status, loaded.Status)
 					cached, err := cacheGetUserBase(user.Id)
 					require.NoError(t, err)
-					assert.Zero(t, cached.Quota)
+					assert.EqualValues(t, 100, cached.Quota)
 				}
 				require.NoError(t, common.RDB.HSet(t.Context(), getUserCacheKey(user.Id), "Role", common.RoleRootUser).Err())
 				require.NoError(t, DB.Model(&User{}).Where("id = ?", user.Id).Update("group", "paid").Error)
@@ -96,7 +96,7 @@ func TestAuthCacheIntegrityDatabaseMatrix(t *testing.T) {
 				require.NoError(t, err)
 				assert.Equal(t, common.RoleCommonUser, cached.Role)
 				assert.Equal(t, "paid", cached.Group)
-				assert.Zero(t, cached.Quota)
+				assert.EqualValues(t, 100, cached.Quota)
 			})
 
 			allowIPs := "192.168.0.0/16"
@@ -136,7 +136,7 @@ func TestAuthCacheIntegrityDatabaseMatrix(t *testing.T) {
 					assert.False(t, cached.CrossGroupRetry)
 					assert.Equal(t, token.Status, cached.Status)
 					assert.Equal(t, token.ExpiredTime, cached.ExpiredTime)
-					assert.Zero(t, cached.RemainQuota)
+					assert.EqualValues(t, 100, cached.RemainQuota)
 					assert.Zero(t, cached.UsedQuota)
 					assert.Positive(t, cached.AccessedTime)
 				}
@@ -226,7 +226,7 @@ func TestAuthCacheIntegrityDatabaseMatrix(t *testing.T) {
 				}))
 				defer func() { require.NoError(t, DB.Callback().Query().Remove("auth_cache_db_failure")) }()
 				_, err = GetTokenByKey(token.Key, false)
-				assert.Error(t, err, "token quota and status remain database-authoritative")
+				require.NoError(t, err, "valid token cache is authoritative while Redis billing fast path is enabled")
 				_, err = GetUserSessionCached(session.SID)
 				require.NoError(t, err, "valid session cache must not query the database")
 				require.NoError(t, common.RDB.HSet(t.Context(), getTokenCacheKey(token.Key), "CacheMAC", "invalid").Err())
@@ -256,13 +256,13 @@ func TestAuthCacheIntegrityDatabaseMatrix(t *testing.T) {
 				require.NoError(t, err)
 				cachedUser, err := cacheGetUserBase(user.Id)
 				require.NoError(t, err)
-				assert.Zero(t, cachedUser.Quota)
-				assert.False(t, common.RDB.HExists(t.Context(), getUserCacheKey(user.Id), "Quota").Val())
+				assert.EqualValues(t, 100, cachedUser.Quota)
+				assert.Equal(t, "100", common.RDB.HGet(t.Context(), getUserCacheKey(user.Id), "Quota").Val())
 				cachedToken, err := cacheGetTokenByKey(token.Key)
 				require.NoError(t, err)
-				assert.Zero(t, cachedToken.RemainQuota)
+				assert.EqualValues(t, 100, cachedToken.RemainQuota)
 				assert.Zero(t, cachedToken.UsedQuota)
-				assert.False(t, common.RDB.HExists(t.Context(), getTokenCacheKey(token.Key), "RemainQuota").Val())
+				assert.Equal(t, "100", common.RDB.HGet(t.Context(), getTokenCacheKey(token.Key), "RemainQuota").Val())
 			})
 		})
 	}

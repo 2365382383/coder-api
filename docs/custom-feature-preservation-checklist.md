@@ -448,21 +448,23 @@
   防止技术溢出的边界，不重新设置 int32 产品余额上限。现有额度单位和 `QuotaPerUnit` 不变。
 - 必须保留：单次请求费用、任务费用和历史消费日志仍在 int32 charge domain 中，异常价格
   或请求参数经过饱和/严格错误处理，不能为了放开钱包而取消单次计费溢出保护。
-- 必须保留：钱包和 Token 的 Redis 快速路径只在 Redis 可用时启用；Redis Lua 同时完成额度
-  原子变更、`request_id + phase` 幂等标记和 Stream 账务事件，不能恢复为没有事件记录的
-  Redis 预扣。Stream 消费者按批次、幂等地把事件物化到 MySQL `BillingOperation`、钱包、
-  Token、渠道和用量字段；Redis 不可用时回退到现有数据库条件更新。订阅、任务和
-  Midjourney 继续使用持久数据库事务，不能被 Redis 钱包路径旁路。
-- 必须保留：`BATCH_UPDATE_ENABLED=true` 仅输出弃用与 SQL 压力告警；Redis Stream 物化是
-  带请求 ID、可重放、可幂等确认的持久队列，不能退化为进程内内存批量队列。
-- 必须保留：计费会话的初始预扣、图片追加预扣、差额结算与明确失败退款使用持久操作
-  状态和事务，Token、钱包、订阅同时提交；退款先持久标记、可重试且不重复加账。任务
-  提交结果先与 settlement intent 同事务持久化，资金、Token、分摊、用量和任务最终状态
-  再同事务提交；进程退出可重试已确认结算。Midjourney 在请求上游前原子预留钱包与
-  Token，收到响应后先持久记录上游任务 ID/响应码，再把任务与 settlement/refund 状态
-  同事务关联；明确拒绝可重试释放预留。传输错误、结果未知或任务事务失败时保留预留，
-  用持久上游 ID 供人工核查，禁止按超时自动退款/补扣。无 BillingSession 的实时流兼容
-  预扣/结算也必须共享 `initial` 根记录与幂等阶段；中途退出的预扣进入同一待核查清单。
+- 必须保留：普通钱包请求使用上游原有的 Redis 配额缓存模型。用户余额和 Token
+  `RemainQuota`/`UsedQuota` 的检查与扣减在 Lua 中原子完成，成功增量通过
+  `BATCH_UPDATE_ENABLED=true` 的进程内批量更新器落库；认证缓存与计费缓存必须使用同一
+  用户/Token hash，不能让 Token 授权读取另一份落后余额。Redis 不可用时回退到数据库
+  条件更新并失效旧缓存。该路径不创建异步 Stream、不物化 `BillingOperation`，也不按请求
+  写多张账务表。
+- 必须保留：`used_quota`、`request_count` 和渠道 `used_quota` 继续随正常请求累计，
+  启用批量更新时由同一个 5 秒批量更新器合并写入；禁用批量更新时保持同步 SQL。普通
+  钱包预扣与差额结算不能重复累计相同的用量或请求次数。
+- 必须保留：订阅、混合资金、异步任务和 Midjourney 继续使用持久操作状态和数据库事务，
+  不能改走普通钱包的 Redis 快速路径。任务提交结果先与 settlement intent 同事务持久化，
+  资金、Token、分摊、用量和任务最终状态再同事务提交；退款先持久标记、可重试且不重复
+  加账。Midjourney 在请求上游前原子预留钱包与 Token，收到响应后先持久记录上游任务 ID/
+  响应码，再把任务与 settlement/refund 状态同事务关联。传输错误、结果未知或任务事务
+  失败时保留预留，用持久上游 ID 供人工核查。
+- 必须保留：无 BillingSession 的实时流及兼容预扣/结算继续使用 `initial` 根记录和
+  `request_id + phase` 幂等阶段；中途退出的预扣可进入待核查清单。
 - 必须保留：旧数据库值不缩放、不重算；标准/快速迁移后校验所有钱包字段为有符号 BIGINT，
   并记录超出旧 int32 范围但被保留的历史值。API 写入兼容 JSON number/string，查询提供
   `quota_raw`、`used_quota_raw`、`remain_quota_raw` 等精确字符串字段，前端使用 BigInt。
@@ -478,8 +480,9 @@
   默认 10 秒，设为 `0` 时使用数据库服务端默认值；事务结束前恢复连接 session 原值，
   非 MySQL 方言保持原有事务路径和重试语义。
 - 当前位置：`common/wallet_quota.go`、`common/quota_math.go`、`model/wallet_quota.go`、
-  `model/wallet_quota_schema.go`、`model/quota_reserve.go`、`model/user.go`、
-  `model/token.go`、`model/billing_operation.go`、`model/task_billing_operation.go`、
+  `model/wallet_quota_schema.go`、`model/quota_reserve.go`、`model/redis_billing.go`、
+  `model/utils.go`、`model/user.go`、`model/token.go`、`model/billing_operation.go`、
+  `model/task_billing_operation.go`、
   `model/midjourney.go`、`model/midjourney_billing_operation.go`、`model/subscription.go`、
   `service/billing_session.go`、`service/task_billing.go`、`service/task_polling.go`、
   `service/billing_recovery.go`、`service/midjourney.go`、`relay/mjproxy_handler.go`、
@@ -494,7 +497,8 @@
   停止旧实例处理在途账务后再切流，
   历史不可判定差额只生成审计报告，不自动改账。
 - 验证入口：`common/wallet_quota_test.go`、`model/wallet_quota_test.go`、
-  `model/quota_reserve_test.go`、`model/billing_operation_database_matrix_test.go`、
+  `model/quota_reserve_test.go`、`model/user_update_test.go`、
+  `model/billing_operation_database_matrix_test.go`、
   `controller/token_quota_int64_test.go`、`service/task_billing_test.go`、
   `controller/midjourney_billing_test.go`、`controller/user_manage_test.go`、
   `controller/topup_quota_limit_test.go`、`model/task_openai_video_test.go`、
@@ -743,29 +747,29 @@
   次数继续通过 `/metrics` 暴露；指标按真实计费调用方区分，并且中间 1205/1213 重试不能
   直接等同于最终失败。现有 `BILLING_LOCK_WAIT_TIMEOUT_SECONDS`、整事务重试、幂等阶段和
   账务语义继续有效。
-- 必须保留：Redis 快速路径不进入进程内 MySQL 用户队列；其 Stream 物化按稳定 ID 顺序批量
-  更新账户，重复消费不得重复扣款；批内暂时找不到 initial 根记录的 settlement/refund
-  事件必须保持 pending，不能回滚同批已经具备根记录的事件。数据库降级路径、订阅、任务和其他跨表账务仍保持现有
-  用户/渠道队列与数据库行锁约束，队列不能跳过或改变 quota、订阅、令牌、request_count、
-  channel 使用量和账务阶段提交。
-- 必须保留：`/metrics` 同时暴露 Redis 热路径成功/不足/降级/未知结果、Stream 物化成功/失败
-  和数据库计费事务指标；Redis 热路径不可用或结果未知时回退到原有数据库计费事务，不能
-  因 Redis 传输不确定直接阻断请求。数据库阶段继续以 `request_id + phase` 幂等，Redis
-  已执行但响应丢失的阶段由同一幂等边界和 Stream 物化重放；可能的 Redis/数据库短暂差异
-  保留指标与请求 ID 供人工核对。明确的 Redis 额度不足仍按业务不足返回，不能当作传输错误回退。
+- 必须保留：普通钱包 Redis 快速路径不进入进程内 MySQL 用户队列，也不写 Redis Stream；
+  Redis 配额变更成功后的数据库增量走上游批量更新器。Redis 不可用时回退到数据库条件
+  更新并失效旧缓存；批量更新器的每次落库必须经过计费事务重试/用户队列，失败增量必须
+  重新入队。订阅、任务和其他跨表账务继续使用用户/渠道队列、数据库行锁、幂等阶段和
+  整事务重试，队列不能跳过或改变 quota、订阅、令牌、request_count、channel 使用量和
+  账务提交。
+- 必须保留：`/metrics` 继续暴露数据库计费事务的尝试、1205/1213 重试、最终成功/失败、
+  队列等待、单次耗时、总耗时和重试次数。Redis 缓存路径不因传输异常再生成无法确认结果
+  的异步账务事件；可能出现的 Redis/数据库短期差异由批量落库延迟说明，部署后重点检查
+  MySQL `data_lock_waits`、提交时延、批量更新错误和 Redis 命令延迟。
 - 当前位置：`controller/misc.go`、`controller/health_test.go`、`router/main.go`、
   `model/option.go`、`model/request_policy.go`、`model/billing_transaction.go`、
   `model/redis_billing.go`、`service/billing_session.go`、`pkg/billing_metrics/**`、
   `.env.example`、`deploy/docker-compose.yml`。
 - 数据/配置：`BILLING_LOCK_WAIT_TIMEOUT_SECONDS` 默认 10 秒，设为 0 使用数据库服务端默认值；
-  `BILLING_REDIS_FAST_PATH` 默认在 Redis 可用时启用，设为 `false` 回退数据库计费路径。
-  Redis Stream 的 `request_id + phase` 是幂等边界，`/metrics` 不写业务表；健康检查切换不改变
-  公开 `/api/status` 响应契约。
+  `BILLING_REDIS_FAST_PATH` 默认在 Redis 可用时启用，设为 `false` 回退数据库计费路径；
+  `BATCH_UPDATE_ENABLED=true` 与 `BATCH_UPDATE_INTERVAL=5` 控制普通钱包和统计增量落库。
+  `/metrics` 不写业务表；健康检查切换不改变公开 `/api/status` 响应契约。
 - 验证入口：`controller/health_test.go`、`controller/misc_observation_status_test.go`、
-  `model/option_test.go`、`model/request_policy_test.go`、`model/billing_operation_database_matrix_test.go`、
-  `model/redis_billing_test.go`、`pkg/billing_metrics/metrics_test.go`；发布后检查容器 health、
-  `/health`、`/api/status`、`/metrics`、Redis Stream lag/materializer failures 和 MySQL
-  `data_lock_waits`/`handler commit`。
+  `model/option_test.go`、`model/request_policy_test.go`、`model/quota_reserve_test.go`、
+  `model/user_update_test.go`、`model/billing_operation_database_matrix_test.go`、
+  `pkg/billing_metrics/metrics_test.go`；发布后检查容器 health、`/health`、`/api/status`、
+  `/metrics`、Redis 命令延迟、批量更新错误和 MySQL `data_lock_waits`/handler commit。
 
 ### P-44 Task Plugin 图片协议异步提交与查询
 

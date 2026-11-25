@@ -299,14 +299,16 @@ func GetTokenById(id int) (*Token, error) {
 }
 
 func GetTokenByKey(key string, fromDB bool) (token *Token, err error) {
-	// The hash still caches metadata, but never authorizes a spend or reports
-	// account balances: every token read must observe committed quota and status.
+	if !fromDB && common.RedisEnabled {
+		if token, err = cacheGetTokenByKey(key); err == nil {
+			return token, nil
+		}
+	}
 	token = &Token{}
 	if err = DB.Where(commonKeyCol+" = ?", key).First(token).Error; err != nil {
 		return nil, err
 	}
 	if common.RedisEnabled {
-		// Metadata is best-effort; the database snapshot is returned to callers.
 		if _, cacheErr := cacheInitToken(*token); cacheErr != nil {
 			common.SysLog(common.LogText("failed to init token cache: %s", cacheErr.Error()))
 		}
@@ -393,10 +395,19 @@ func IncreaseTokenQuota(tokenId int, key string, quota int) (err error) {
 	if quota < 0 {
 		return errors.New("quota cannot be negative")
 	}
+	if common.BatchUpdateEnabled {
+		addNewRecord(BatchUpdateTypeTokenQuota, tokenId, int64(quota))
+		if err := adjustRedisBillingTokenQuota(tokenId, key, int64(quota)); err != nil {
+			common.SysLog(common.LogText("failed to increase token quota cache: %s", err.Error()))
+		}
+		return nil
+	}
 	if err := increaseTokenQuota(tokenId, int64(quota)); err != nil {
 		return err
 	}
-	_ = adjustRedisBillingTokenQuota(tokenId, key, int64(quota))
+	if err := adjustRedisBillingTokenQuota(tokenId, key, int64(quota)); err != nil {
+		common.SysLog(common.LogText("failed to increase token quota cache: %s", err.Error()))
+	}
 	return nil
 }
 
@@ -408,10 +419,19 @@ func DecreaseTokenQuota(id int, key string, quota int) (err error) {
 	if quota < 0 {
 		return errors.New("quota cannot be negative")
 	}
+	if common.BatchUpdateEnabled {
+		addNewRecord(BatchUpdateTypeTokenQuota, id, -int64(quota))
+		if err := adjustRedisBillingTokenQuota(id, key, -int64(quota)); err != nil {
+			common.SysLog(common.LogText("failed to decrease token quota cache: %s", err.Error()))
+		}
+		return nil
+	}
 	if err := decreaseTokenQuota(id, int64(quota)); err != nil {
 		return err
 	}
-	_ = adjustRedisBillingTokenQuota(id, key, -int64(quota))
+	if err := adjustRedisBillingTokenQuota(id, key, -int64(quota)); err != nil {
+		common.SysLog(common.LogText("failed to decrease token quota cache: %s", err.Error()))
+	}
 	return nil
 }
 

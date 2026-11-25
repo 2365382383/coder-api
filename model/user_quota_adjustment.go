@@ -67,6 +67,12 @@ func AdjustUserQuota(userID, operatorRole int, mode string, value int64) (*UserQ
 		return nil
 	})
 	if err != nil {
+		// A failed absolute adjustment must not leave a stale Redis balance
+		// authorizing requests. The next read will hydrate from the unchanged DB
+		// row.
+		if cacheErr := InvalidateRedisBillingUserQuota(userID); cacheErr != nil {
+			common.SysLog(common.LogText("failed to invalidate user quota cache after rejected adjustment for user %d: %s", userID, cacheErr.Error()))
+		}
 		return nil, err
 	}
 

@@ -131,12 +131,13 @@ func TestUsageAccountingSupportsSignedDirectAndBatchDeltas(t *testing.T) {
 	UpdateUserUsedQuota(user.Id, -100)
 	UpdateChannelUsedQuota(channel.Id, 400)
 	UpdateChannelUsedQuota(channel.Id, -100)
+	batchUpdate()
 
 	require.NoError(t, DB.Select("used_quota", "request_count").First(&got, user.Id).Error)
-	assert.EqualValues(t, 1150, got.UsedQuota, "usage is committed even with the legacy batch flag")
+	assert.EqualValues(t, 1150, got.UsedQuota, "usage is committed by the batch updater")
 	assert.Equal(t, 3, got.RequestCount)
 	require.NoError(t, DB.Select("used_quota").First(&gotChannel, channel.Id).Error)
-	assert.Equal(t, int64(1150), gotChannel.UsedQuota, "channel usage is committed synchronously")
+	assert.Equal(t, int64(1150), gotChannel.UsedQuota, "channel usage is committed by the batch updater")
 
 	require.NoError(t, DB.Select("used_quota", "request_count").First(&got, user.Id).Error)
 	assert.EqualValues(t, 1150, got.UsedQuota)

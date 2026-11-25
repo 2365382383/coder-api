@@ -35,6 +35,7 @@ func FinalizeTaskBillingWithStatus(task *Task, actual int, refund bool, fromStat
 		return false, err
 	}
 	var updated *Task
+	var committedWalletDelta, committedTokenDelta int64
 	apply := func(tx *gorm.DB) error {
 		requestRoot, err := lockTaskBillingOperation(tx, task.ID)
 		if err != nil {
@@ -160,6 +161,8 @@ func FinalizeTaskBillingWithStatus(task *Task, actual int, refund bool, fromStat
 		}).Error; err != nil {
 			return err
 		}
+		committedWalletDelta = walletDelta
+		committedTokenDelta = tokenDelta
 		updated = &current
 		return nil
 	}
@@ -170,6 +173,16 @@ func FinalizeTaskBillingWithStatus(task *Task, actual int, refund bool, fromStat
 		err = withBillingTransactionForUser(context.Background(), task.UserId, apply)
 	}
 	if err == nil && updated != nil {
+		if committedWalletDelta != 0 {
+			if cacheErr := AdjustRedisBillingUserQuota(task.UserId, -committedWalletDelta); cacheErr != nil {
+				common.SysLog(common.LogText("failed to sync task wallet quota cache: %s", cacheErr.Error()))
+			}
+		}
+		if committedTokenDelta != 0 {
+			if cacheErr := AdjustRedisBillingTokenQuotaByID(task.PrivateData.TokenId, -committedTokenDelta); cacheErr != nil {
+				common.SysLog(common.LogText("failed to sync task token quota cache: %s", cacheErr.Error()))
+			}
+		}
 		*task = *updated
 	}
 	return updated != nil, err

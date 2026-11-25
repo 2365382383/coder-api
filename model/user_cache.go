@@ -157,14 +157,12 @@ func cacheGetUserBase(userId int) (*UserBase, error) {
 	return &userCache, nil
 }
 
-// Cached metadata never grants quota. Expire the legacy quota snapshot after
-// a committed credit so older non-authoritative displays do not linger.
+// Credits update the same authenticated user hash used by the billing Lua
+// scripts. A cold hash is left untouched because the next read hydrates it
+// from the committed database row.
 func syncCreditUserQuotaCache(userId int, quota int64, operation string) {
 	if quota <= 0 {
 		return
-	}
-	if err := invalidateUserCache(userId); err != nil {
-		common.SysLog(fmt.Sprintf("failed to invalidate %s user cache: %s", operation, err.Error()))
 	}
 	if err := AdjustRedisBillingUserQuota(userId, quota); err != nil {
 		common.SysLog(fmt.Sprintf("failed to adjust %s Redis billing quota: %s", operation, err.Error()))

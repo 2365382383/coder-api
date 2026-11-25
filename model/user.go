@@ -1524,10 +1524,19 @@ func IncreaseUserQuota(id int, quota int64, db bool) error {
 	if quota == 0 {
 		return nil
 	}
+	if !db && common.BatchUpdateEnabled {
+		addNewRecord(BatchUpdateTypeUserQuota, id, quota)
+		if err := AdjustRedisBillingUserQuota(id, quota); err != nil {
+			common.SysLog(common.LogText("failed to increase user quota cache: %s", err.Error()))
+		}
+		return nil
+	}
 	if err := increaseUserQuota(id, quota); err != nil {
 		return err
 	}
-	_ = AdjustRedisBillingUserQuota(id, quota)
+	if err := AdjustRedisBillingUserQuota(id, quota); err != nil {
+		common.SysLog(common.LogText("failed to increase user quota cache: %s", err.Error()))
+	}
 	return nil
 }
 
@@ -1542,10 +1551,19 @@ func DecreaseUserQuota(id int, quota int64, db bool) error {
 	if quota == 0 {
 		return nil
 	}
+	if !db && common.BatchUpdateEnabled {
+		addNewRecord(BatchUpdateTypeUserQuota, id, -quota)
+		if err := AdjustRedisBillingUserQuota(id, -quota); err != nil {
+			common.SysLog(common.LogText("failed to decrease user quota cache: %s", err.Error()))
+		}
+		return nil
+	}
 	if err := decreaseUserQuota(id, quota); err != nil {
 		return err
 	}
-	_ = AdjustRedisBillingUserQuota(id, -quota)
+	if err := AdjustRedisBillingUserQuota(id, -quota); err != nil {
+		common.SysLog(common.LogText("failed to decrease user quota cache: %s", err.Error()))
+	}
 	return nil
 }
 
@@ -1608,11 +1626,20 @@ func UpdateUserLastLoginAt(id int) {
 }
 
 func UpdateUserUsedQuotaAndRequestCount(id int, quota int) {
+	if common.BatchUpdateEnabled {
+		addNewRecord(BatchUpdateTypeUsedQuota, id, int64(quota))
+		addNewRecord(BatchUpdateTypeRequestCount, id, 1)
+		return
+	}
 	updateUserUsedQuotaAndRequestCount(id, quota, 1)
 }
 
 // UpdateUserUsedQuota adjusts accumulated usage without changing request count.
 func UpdateUserUsedQuota(id int, quota int) {
+	if common.BatchUpdateEnabled {
+		addNewRecord(BatchUpdateTypeUsedQuota, id, int64(quota))
+		return
+	}
 	if err := updateUserQuotaFieldDeltaTx(DB, id, "used_quota", int64(quota)); err != nil {
 		common.SysLog(common.LogText("failed to update user used quota: %s", err.Error()))
 	}
@@ -1620,10 +1647,7 @@ func UpdateUserUsedQuota(id int, quota int) {
 
 func updateUserUsedQuotaAndRequestCount(id int, quota int, count int) {
 	err := DB.Transaction(func(tx *gorm.DB) error {
-		if err := updateUserQuotaFieldDeltaTx(tx, id, "used_quota", int64(quota)); err != nil {
-			return err
-		}
-		return tx.Model(&User{}).Where("id = ?", id).Update("request_count", gorm.Expr("request_count + ?", count)).Error
+		return updateUserUsedQuotaAndRequestCountTx(tx, id, int64(quota), int64(count))
 	})
 	if err != nil {
 		common.SysLog(common.LogText("failed to update user used quota and request count: %s", err.Error()))
@@ -1636,27 +1660,40 @@ func updateUserUsedQuotaAndRequestCount(id int, quota int, count int) {
 	//}
 }
 
+func updateUserUsedQuotaAndRequestCountTx(tx *gorm.DB, id int, usedQuota, requestCount int64) error {
+	if usedQuota != 0 {
+		if err := updateUserQuotaFieldDeltaTx(tx, id, "used_quota", usedQuota); err != nil {
+			return err
+		}
+	}
+	if requestCount == 0 {
+		return nil
+	}
+	result := tx.Model(&User{}).Where("id = ? AND request_count <= ?", id, int64(2147483647)-requestCount).
+		Update("request_count", gorm.Expr("request_count + ?", requestCount))
+	return walletDeltaUpdateResult(tx, id, result)
+}
+
 func updateUserQuotaUsedQuotaAndRequestCount(id int, quota int64, usedQuota int64, requestCount int64) {
 	if quota == 0 && usedQuota == 0 && requestCount == 0 {
 		return
 	}
 
 	err := DB.Transaction(func(tx *gorm.DB) error {
-		if quota != 0 {
-			if err := updateUserQuotaWithDeltaTx(tx, id, quota, nil); err != nil {
-				return err
-			}
-		}
-		if usedQuota != 0 {
-			if err := updateUserQuotaFieldDeltaTx(tx, id, "used_quota", usedQuota); err != nil {
-				return err
-			}
-		}
-		return tx.Model(&User{}).Where("id = ?", id).Update("request_count", gorm.Expr("request_count + ?", requestCount)).Error
+		return updateUserQuotaAndUsageTx(tx, id, quota, usedQuota, requestCount)
 	})
 	if err != nil {
 		common.SysLog(common.LogText("failed to batch update user quota, used quota and request count: %s", err.Error()))
 	}
+}
+
+func updateUserQuotaAndUsageTx(tx *gorm.DB, id int, quota, usedQuota, requestCount int64) error {
+	if quota != 0 {
+		if err := updateUserQuotaWithDeltaTx(tx, id, quota, nil); err != nil {
+			return err
+		}
+	}
+	return updateUserUsedQuotaAndRequestCountTx(tx, id, usedQuota, requestCount)
 }
 
 // GetUsernameById gets username from Redis first, falls back to DB if needed

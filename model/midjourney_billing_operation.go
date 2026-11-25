@@ -26,7 +26,7 @@ func CreateMidjourneyBillingReservation(requestID string, userID, channelID, tok
 		FundingSource: "midjourney_wallet", WalletAmount: int64(quota), TokenAmount: tokenAmount,
 		PreConsumed: int64(quota), Actual: int64(quota),
 	}
-	return CreateBillingReservation(operation, func(tx *gorm.DB) error {
+	err := CreateBillingReservation(operation, func(tx *gorm.DB) error {
 		reserved, err := TryReserveUserQuotaTx(tx, userID, int64(quota))
 		if err != nil {
 			return err
@@ -52,6 +52,18 @@ func CreateMidjourneyBillingReservation(requestID string, userID, channelID, tok
 		}
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+	if err := AdjustRedisBillingUserQuota(userID, -int64(quota)); err != nil {
+		common.SysLog(common.LogText("failed to sync Midjourney wallet reservation cache: %s", err.Error()))
+	}
+	if tokenID > 0 {
+		if err := AdjustRedisBillingTokenQuotaByID(tokenID, -int64(quota)); err != nil {
+			common.SysLog(common.LogText("failed to sync Midjourney token reservation cache: %s", err.Error()))
+		}
+	}
+	return nil
 }
 
 func RecordMidjourneySubmissionResult(requestID, upstreamTaskID string, upstreamCode int, billable bool) error {
@@ -295,6 +307,8 @@ func RefundMidjourneyTask(task *Midjourney) (bool, error) {
 		return false, err
 	}
 	var refunded bool
+	var refundAmount int64
+	var refundTokenID int
 	err := withBillingTransactionForUserAndChannel(context.Background(), task.UserId, task.GetBillingChannelId(), func(tx *gorm.DB) error {
 		root, err := lockBillingOperation(tx, requestID)
 		if err != nil {
@@ -347,10 +361,20 @@ func RefundMidjourneyTask(task *Midjourney) (bool, error) {
 			CreatedAt: now, UpdatedAt: now}).Error; err != nil {
 			return err
 		}
+		refundAmount = amount
+		refundTokenID = current.TokenId
 		refunded = true
 		return nil
 	})
 	if err == nil && refunded {
+		if err := AdjustRedisBillingUserQuota(task.UserId, refundAmount); err != nil {
+			common.SysLog(common.LogText("failed to sync Midjourney wallet refund cache: %s", err.Error()))
+		}
+		if refundTokenID > 0 {
+			if err := AdjustRedisBillingTokenQuotaByID(refundTokenID, refundAmount); err != nil {
+				common.SysLog(common.LogText("failed to sync Midjourney token refund cache: %s", err.Error()))
+			}
+		}
 		task.Quota = 0
 	}
 	return refunded, err

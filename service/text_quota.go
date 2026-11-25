@@ -459,12 +459,15 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		extraContent = append(extraContent, common.NewMessage("Upstream returned no usage, so nothing was charged (possibly an upstream timeout)"))
 		logger.LogError(ctx, common.LogText("total tokens is 0, cannot consume quota, userId %d, channelId %d, tokenId %d, model %s， pre-consumed quota %d", relayInfo.UserId, relayInfo.ChannelId, relayInfo.TokenId, summary.ModelName, relayInfo.FinalPreConsumedQuota))
 	} else {
+		if billingSession, ok := relayInfo.Billing.(*BillingSession); !ok || !billingSession.UsesDurableAccounting() {
+			model.UpdateUserUsedQuotaAndRequestCount(relayInfo.UserId, summary.Quota)
+			model.UpdateChannelUsedQuota(relayInfo.ChannelId, summary.Quota)
+		}
 		relayInfo.BillableUsageObserved = true
 	}
 
 	if err := SettleBilling(ctx, relayInfo, summary.Quota); err != nil {
 		logger.LogError(ctx, common.LogText("error settling billing: %s", err.Error()))
-		return
 	}
 
 	logModel := summary.ModelName

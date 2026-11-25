@@ -229,6 +229,8 @@ func ApplyBillingAdjustmentWithResult(requestId, phase string, walletDelta, subs
 
 	var committed BillingAdjustmentResult
 	var updatedTask *Task
+	var cacheSyncUserID, cacheSyncTokenID int
+	var cacheSync bool
 	var err error
 	apply := func(tx *gorm.DB) error {
 		var currentTask *Task
@@ -460,6 +462,9 @@ func ApplyBillingAdjustmentWithResult(requestId, phase string, walletDelta, subs
 			updatedTask = currentTask
 		}
 		committed = result
+		cacheSyncUserID = root.UserId
+		cacheSyncTokenID = root.TokenId
+		cacheSync = true
 		return nil
 	}
 	operation := billingTransactionCaller(1)
@@ -470,6 +475,18 @@ func ApplyBillingAdjustmentWithResult(requestId, phase string, walletDelta, subs
 	}
 	if err != nil {
 		return BillingAdjustmentResult{}, err
+	}
+	if cacheSync {
+		if committed.WalletDelta != 0 {
+			if cacheErr := AdjustRedisBillingUserQuota(cacheSyncUserID, -committed.WalletDelta); cacheErr != nil {
+				common.SysLog(common.LogText("failed to sync billing user quota cache: %s", cacheErr.Error()))
+			}
+		}
+		if committed.TokenDelta != 0 {
+			if cacheErr := AdjustRedisBillingTokenQuotaByID(cacheSyncTokenID, -committed.TokenDelta); cacheErr != nil {
+				common.SysLog(common.LogText("failed to sync billing token quota cache: %s", cacheErr.Error()))
+			}
+		}
 	}
 	if settle {
 		forgetBillingOwner(requestId)
@@ -654,6 +671,7 @@ func RequestBillingRefund(requestId string) error {
 }
 
 func RefundBillingOperation(requestId string) error {
+	refundedApplied := false
 	err := withBillingTransactionForRequest(context.Background(), requestId, func(tx *gorm.DB) error {
 		op, err := lockBillingOperation(tx, requestId)
 		if err != nil {
@@ -706,12 +724,32 @@ func RefundBillingOperation(requestId string) error {
 		if err := tx.Model(op).Updates(map[string]any{"state": BillingRefunded, "updated_at": common.GetTimestamp()}).Error; err != nil {
 			return err
 		}
-		return tx.Create(&BillingOperation{RequestId: requestId, Phase: "refund", State: BillingRefunded,
+		if err := tx.Create(&BillingOperation{RequestId: requestId, Phase: "refund", State: BillingRefunded,
 			UserId: op.UserId, TokenId: op.TokenId, SubscriptionId: op.SubscriptionId,
 			WalletAmount: -op.WalletAmount, SubscriptionAmount: -op.SubscriptionAmount,
-			TokenAmount: -op.TokenAmount, CreatedAt: common.GetTimestamp(), UpdatedAt: common.GetTimestamp()}).Error
+			TokenAmount: -op.TokenAmount, CreatedAt: common.GetTimestamp(), UpdatedAt: common.GetTimestamp()}).Error; err != nil {
+			return err
+		}
+		refundedApplied = true
+		return nil
 	})
-	if err == nil {
+	if err == nil && refundedApplied {
+		var committed BillingOperation
+		if cacheErr := DB.Select("user_id", "token_id", "wallet_amount", "token_amount").
+			Where("request_id = ? AND phase = ?", requestId, "initial").First(&committed).Error; cacheErr != nil {
+			common.SysLog(common.LogText("failed to load refunded billing operation for cache sync: %s", cacheErr.Error()))
+		} else {
+			if committed.WalletAmount != 0 {
+				if cacheErr := AdjustRedisBillingUserQuota(committed.UserId, committed.WalletAmount); cacheErr != nil {
+					common.SysLog(common.LogText("failed to sync refunded user quota cache: %s", cacheErr.Error()))
+				}
+			}
+			if committed.TokenAmount != 0 {
+				if cacheErr := AdjustRedisBillingTokenQuotaByID(committed.TokenId, committed.TokenAmount); cacheErr != nil {
+					common.SysLog(common.LogText("failed to sync refunded token quota cache: %s", cacheErr.Error()))
+				}
+			}
+		}
 		forgetBillingOwner(requestId)
 	}
 	return err
@@ -777,6 +815,7 @@ func ApplyLegacyBillingDelta(requestId, phase string, userId, channelId, tokenId
 	if settles && (usage < 0 || usage > int64(common.MaxChargeQuota)) {
 		return errors.New("legacy billing usage exceeds the single-request charge range")
 	}
+	applied := false
 	apply := func(tx *gorm.DB) error {
 		fundingSource := "wallet"
 		if subscriptionId > 0 {
@@ -930,11 +969,31 @@ func ApplyLegacyBillingDelta(requestId, phase string, userId, channelId, tokenId
 			updates["actual"] = usage
 			updates["usage_counted"] = countRequest
 		}
-		return tx.Model(&root).Updates(updates).Error
+		if err := tx.Model(&root).Updates(updates).Error; err != nil {
+			return err
+		}
+		applied = true
+		return nil
 	}
 	operation := billingTransactionCaller(1)
+	var err error
 	if settles && usage > 0 && channelId > 0 {
-		return withBillingTransactionForUserAndChannelNamed(context.Background(), userId, channelId, operation, apply)
+		err = withBillingTransactionForUserAndChannelNamed(context.Background(), userId, channelId, operation, apply)
+	} else {
+		err = withBillingTransactionForUserNamed(context.Background(), userId, operation, apply)
 	}
-	return withBillingTransactionForUserNamed(context.Background(), userId, operation, apply)
+	if err != nil || !applied {
+		return err
+	}
+	if subscriptionId == 0 && delta != 0 {
+		if cacheErr := AdjustRedisBillingUserQuota(userId, -delta); cacheErr != nil {
+			common.SysLog(common.LogText("failed to sync legacy user quota cache: %s", cacheErr.Error()))
+		}
+	}
+	if tokenId > 0 && delta != 0 {
+		if cacheErr := AdjustRedisBillingTokenQuotaByID(tokenId, -delta); cacheErr != nil {
+			common.SysLog(common.LogText("failed to sync legacy token quota cache: %s", cacheErr.Error()))
+		}
+	}
+	return nil
 }

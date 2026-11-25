@@ -787,7 +787,7 @@ func TestManageUserQuotaIgnoresStaleCachedBalance(t *testing.T) {
 				if server.Exists(quotaKey) {
 					assert.Equal(t, strconv.Itoa(user.Id), server.HGet(quotaKey, "Id"))
 					assert.NotEmpty(t, server.HGet(quotaKey, "CacheSchema"))
-					assert.Empty(t, server.HGet(quotaKey, "Quota"))
+					assert.Equal(t, strconv.FormatInt(tc.after, 10), server.HGet(quotaKey, "Quota"))
 				}
 			}
 		})
