@@ -4,8 +4,10 @@ import (
 	"context"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/go-redis/redis/v8"
 	"github.com/stretchr/testify/require"
 )
 
@@ -64,6 +66,44 @@ func TestRedisBillingEventIsAtomicAndIdempotent(t *testing.T) {
 	require.EqualValues(t, 65, persistedToken.RemainQuota)
 	require.EqualValues(t, 35, persistedToken.UsedQuota)
 	require.Equal(t, "1", server.HGet(redisBillingIdempotencyKey(reserve.RequestID, reserve.Phase), "result"))
+}
+
+func TestRedisBillingClaimsOnlyIdlePendingMessages(t *testing.T) {
+	server := useUserCacheMiniRedis(t)
+	ctx := context.Background()
+	now := time.Now()
+	server.SetTime(now)
+	require.NoError(t, common.RDB.XGroupCreateMkStream(ctx, redisBillingStream, redisBillingConsumerGroup, "0").Err())
+	id, err := common.RDB.XAdd(ctx, &redis.XAddArgs{
+		Stream: redisBillingStream, Values: map[string]any{"request_id": "claim-test"},
+	}).Result()
+	require.NoError(t, err)
+	read, err := common.RDB.XReadGroup(ctx, &redis.XReadGroupArgs{
+		Group: redisBillingConsumerGroup, Consumer: "original",
+		Streams: []string{redisBillingStream, ">"}, Count: 1,
+	}).Result()
+	require.NoError(t, err)
+	require.Len(t, read, 1)
+	require.Len(t, read[0].Messages, 1)
+	require.Equal(t, id, read[0].Messages[0].ID)
+
+	claimed, err := claimRedisBillingPendingMessages(ctx, "recovery")
+	require.NoError(t, err)
+	require.Empty(t, claimed)
+
+	server.SetTime(now.Add(redisBillingPendingMinIdle + time.Second))
+	claimed, err = claimRedisBillingPendingMessages(ctx, "recovery")
+	require.NoError(t, err)
+	require.Len(t, claimed, 1)
+	require.Equal(t, id, claimed[0].ID)
+
+	pending, err := common.RDB.XPendingExt(ctx, &redis.XPendingExtArgs{
+		Stream: redisBillingStream, Group: redisBillingConsumerGroup,
+		Start: "-", End: "+", Count: 10,
+	}).Result()
+	require.NoError(t, err)
+	require.Len(t, pending, 1)
+	require.Equal(t, "recovery", pending[0].Consumer)
 }
 
 func TestRedisBillingMaterializerDatabaseMatrix(t *testing.T) {

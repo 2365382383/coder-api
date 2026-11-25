@@ -22,6 +22,7 @@ const (
 	redisBillingCacheTTL       = 15 * time.Minute
 	redisBillingIdempotencyTTL = 7 * 24 * time.Hour
 	redisBillingBatchSize      = 100
+	redisBillingPendingMinIdle = 30 * time.Second
 )
 
 var (
@@ -780,6 +781,24 @@ func StartRedisBillingMaterializer() {
 	})
 }
 
+func claimRedisBillingPendingMessages(ctx context.Context, consumer string) ([]redis.XMessage, error) {
+	pending, err := common.RDB.XPendingExt(ctx, &redis.XPendingExtArgs{
+		Stream: redisBillingStream, Group: redisBillingConsumerGroup,
+		Idle: redisBillingPendingMinIdle, Start: "-", End: "+", Count: redisBillingBatchSize,
+	}).Result()
+	if err != nil || len(pending) == 0 {
+		return nil, err
+	}
+	ids := make([]string, 0, len(pending))
+	for _, message := range pending {
+		ids = append(ids, message.ID)
+	}
+	return common.RDB.XClaim(ctx, &redis.XClaimArgs{
+		Stream: redisBillingStream, Group: redisBillingConsumerGroup,
+		Consumer: consumer, MinIdle: redisBillingPendingMinIdle, Messages: ids,
+	}).Result()
+}
+
 func redisBillingMaterializerLoop() {
 	ctx := context.Background()
 	groupErr := common.RDB.XGroupCreateMkStream(ctx, redisBillingStream, redisBillingConsumerGroup, "0").Err()
@@ -790,12 +809,11 @@ func redisBillingMaterializerLoop() {
 	consumer := common.NodeName + "-" + common.GetRandomString(8)
 	observeRedisBillingStreamState(ctx)
 	for {
-		messages, _, err := common.RDB.XAutoClaim(ctx, &redis.XAutoClaimArgs{
-			Stream: redisBillingStream, Group: redisBillingConsumerGroup, Consumer: consumer,
-			MinIdle: 30 * time.Second, Start: "-", Count: redisBillingBatchSize,
-		}).Result()
+		messages, err := claimRedisBillingPendingMessages(ctx, consumer)
 		if err != nil && !errors.Is(err, redis.Nil) {
 			common.SysError("Redis billing pending claim failed: " + err.Error())
+			time.Sleep(time.Second)
+			continue
 		}
 		if len(messages) == 0 {
 			read, readErr := common.RDB.XReadGroup(ctx, &redis.XReadGroupArgs{
