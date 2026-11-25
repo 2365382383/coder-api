@@ -49,6 +49,7 @@ import {
 } from '../hooks/use-update-option'
 import { safeJsonParse } from '../utils/json-parser'
 import { positiveIntegerSchema } from '../utils/numeric-field'
+import { sortGroupPricingSettings } from './group-pricing-order'
 import { GroupRatioForm } from './group-ratio-form'
 import {
   parseGroupTypeMap,
@@ -277,6 +278,10 @@ export function RatioSettingsCard({
         : initialModelDefaults,
     [initialModelDefaults, pricingBaseline]
   )
+  const normalizedGroupDefaults = useMemo(
+    () => ({ ...groupDefaults, ...sortGroupPricingSettings(groupDefaults) }),
+    [groupDefaults]
+  )
   const resetMutation = useMutation({
     mutationFn: async () => {
       if (!pricingBaseline) return
@@ -319,19 +324,27 @@ export function RatioSettingsCard({
   )
 
   const groupNormalizedDefaults = useRef({
-    GroupRatio: normalizeJsonString(groupDefaults.GroupRatio),
-    TopupGroupRatio: normalizeJsonString(groupDefaults.TopupGroupRatio),
-    UserUsableGroups: normalizeJsonString(groupDefaults.UserUsableGroups),
-    GroupDescriptions: normalizeJsonString(groupDefaults.GroupDescriptions),
-    GroupGroupRatio: normalizeJsonString(groupDefaults.GroupGroupRatio),
-    AutoGroups: normalizeJsonString(groupDefaults.AutoGroups),
-    MaxTokenAutoGroups: groupDefaults.MaxTokenAutoGroups,
-    DefaultUseAutoGroup: groupDefaults.DefaultUseAutoGroup,
-    GroupSpecialUsableGroup: normalizeJsonString(
-      groupDefaults.GroupSpecialUsableGroup
+    GroupRatio: normalizeJsonString(normalizedGroupDefaults.GroupRatio),
+    TopupGroupRatio: normalizeJsonString(
+      normalizedGroupDefaults.TopupGroupRatio
     ),
-    GroupTypes: normalizeJsonString(groupDefaults.GroupTypes),
-    GroupTypeMap: normalizeJsonString(groupDefaults.GroupTypeMap),
+    UserUsableGroups: normalizeJsonString(
+      normalizedGroupDefaults.UserUsableGroups
+    ),
+    GroupDescriptions: normalizeJsonString(
+      normalizedGroupDefaults.GroupDescriptions
+    ),
+    GroupGroupRatio: normalizeJsonString(
+      normalizedGroupDefaults.GroupGroupRatio
+    ),
+    AutoGroups: normalizeJsonString(normalizedGroupDefaults.AutoGroups),
+    MaxTokenAutoGroups: normalizedGroupDefaults.MaxTokenAutoGroups,
+    DefaultUseAutoGroup: normalizedGroupDefaults.DefaultUseAutoGroup,
+    GroupSpecialUsableGroup: normalizeJsonString(
+      normalizedGroupDefaults.GroupSpecialUsableGroup
+    ),
+    GroupTypes: normalizeJsonString(normalizedGroupDefaults.GroupTypes),
+    GroupTypeMap: normalizeJsonString(normalizedGroupDefaults.GroupTypeMap),
   })
   const modelSchema = useMemo(() => createModelSchema(t), [t])
   const groupSchema = useMemo(() => createGroupSchema(t), [t])
@@ -361,18 +374,26 @@ export function RatioSettingsCard({
     resolver: zodResolver(groupSchema),
     mode: 'onChange',
     defaultValues: {
-      ...groupDefaults,
-      GroupRatio: formatJsonForTextarea(groupDefaults.GroupRatio),
-      TopupGroupRatio: formatJsonForTextarea(groupDefaults.TopupGroupRatio),
-      UserUsableGroups: formatJsonForTextarea(groupDefaults.UserUsableGroups),
-      GroupDescriptions: formatJsonForTextarea(groupDefaults.GroupDescriptions),
-      GroupGroupRatio: formatJsonForTextarea(groupDefaults.GroupGroupRatio),
-      AutoGroups: formatJsonForTextarea(groupDefaults.AutoGroups),
-      GroupSpecialUsableGroup: formatJsonForTextarea(
-        groupDefaults.GroupSpecialUsableGroup
+      ...normalizedGroupDefaults,
+      GroupRatio: formatJsonForTextarea(normalizedGroupDefaults.GroupRatio),
+      TopupGroupRatio: formatJsonForTextarea(
+        normalizedGroupDefaults.TopupGroupRatio
       ),
-      GroupTypes: formatJsonForTextarea(groupDefaults.GroupTypes),
-      GroupTypeMap: formatJsonForTextarea(groupDefaults.GroupTypeMap),
+      UserUsableGroups: formatJsonForTextarea(
+        normalizedGroupDefaults.UserUsableGroups
+      ),
+      GroupDescriptions: formatJsonForTextarea(
+        normalizedGroupDefaults.GroupDescriptions
+      ),
+      GroupGroupRatio: formatJsonForTextarea(
+        normalizedGroupDefaults.GroupGroupRatio
+      ),
+      AutoGroups: formatJsonForTextarea(normalizedGroupDefaults.AutoGroups),
+      GroupSpecialUsableGroup: formatJsonForTextarea(
+        normalizedGroupDefaults.GroupSpecialUsableGroup
+      ),
+      GroupTypes: formatJsonForTextarea(normalizedGroupDefaults.GroupTypes),
+      GroupTypeMap: formatJsonForTextarea(normalizedGroupDefaults.GroupTypeMap),
     },
   })
 
@@ -415,44 +436,60 @@ export function RatioSettingsCard({
 
   useEffect(() => {
     groupNormalizedDefaults.current = {
-      GroupRatio: normalizeJsonString(groupDefaults.GroupRatio),
-      TopupGroupRatio: normalizeJsonString(groupDefaults.TopupGroupRatio),
-      UserUsableGroups: normalizeJsonString(groupDefaults.UserUsableGroups),
-      GroupDescriptions: normalizeJsonString(groupDefaults.GroupDescriptions),
-      GroupGroupRatio: normalizeJsonString(groupDefaults.GroupGroupRatio),
-      AutoGroups: normalizeJsonString(groupDefaults.AutoGroups),
-      MaxTokenAutoGroups: groupDefaults.MaxTokenAutoGroups,
-      DefaultUseAutoGroup: groupDefaults.DefaultUseAutoGroup,
-      GroupSpecialUsableGroup: normalizeJsonString(
-        groupDefaults.GroupSpecialUsableGroup
+      GroupRatio: normalizeJsonString(normalizedGroupDefaults.GroupRatio),
+      TopupGroupRatio: normalizeJsonString(
+        normalizedGroupDefaults.TopupGroupRatio
       ),
-      GroupTypes: normalizeJsonString(groupDefaults.GroupTypes),
-      GroupTypeMap: normalizeJsonString(groupDefaults.GroupTypeMap),
+      UserUsableGroups: normalizeJsonString(
+        normalizedGroupDefaults.UserUsableGroups
+      ),
+      GroupDescriptions: normalizeJsonString(
+        normalizedGroupDefaults.GroupDescriptions
+      ),
+      GroupGroupRatio: normalizeJsonString(
+        normalizedGroupDefaults.GroupGroupRatio
+      ),
+      AutoGroups: normalizeJsonString(normalizedGroupDefaults.AutoGroups),
+      MaxTokenAutoGroups: normalizedGroupDefaults.MaxTokenAutoGroups,
+      DefaultUseAutoGroup: normalizedGroupDefaults.DefaultUseAutoGroup,
+      GroupSpecialUsableGroup: normalizeJsonString(
+        normalizedGroupDefaults.GroupSpecialUsableGroup
+      ),
+      GroupTypes: normalizeJsonString(normalizedGroupDefaults.GroupTypes),
+      GroupTypeMap: normalizeJsonString(normalizedGroupDefaults.GroupTypeMap),
     }
 
     groupForm.reset(
       {
-        ...groupDefaults,
-        GroupRatio: formatJsonForTextarea(groupDefaults.GroupRatio),
-        TopupGroupRatio: formatJsonForTextarea(groupDefaults.TopupGroupRatio),
-        UserUsableGroups: formatJsonForTextarea(groupDefaults.UserUsableGroups),
+        ...normalizedGroupDefaults,
+        GroupRatio: formatJsonForTextarea(normalizedGroupDefaults.GroupRatio),
+        TopupGroupRatio: formatJsonForTextarea(
+          normalizedGroupDefaults.TopupGroupRatio
+        ),
+        UserUsableGroups: formatJsonForTextarea(
+          normalizedGroupDefaults.UserUsableGroups
+        ),
         GroupDescriptions: formatJsonForTextarea(
-          groupDefaults.GroupDescriptions
+          normalizedGroupDefaults.GroupDescriptions
         ),
-        GroupGroupRatio: formatJsonForTextarea(groupDefaults.GroupGroupRatio),
-        AutoGroups: formatJsonForTextarea(groupDefaults.AutoGroups),
+        GroupGroupRatio: formatJsonForTextarea(
+          normalizedGroupDefaults.GroupGroupRatio
+        ),
+        AutoGroups: formatJsonForTextarea(normalizedGroupDefaults.AutoGroups),
         GroupSpecialUsableGroup: formatJsonForTextarea(
-          groupDefaults.GroupSpecialUsableGroup
+          normalizedGroupDefaults.GroupSpecialUsableGroup
         ),
-        GroupTypes: formatJsonForTextarea(groupDefaults.GroupTypes),
-        GroupTypeMap: formatJsonForTextarea(groupDefaults.GroupTypeMap),
+        GroupTypes: formatJsonForTextarea(normalizedGroupDefaults.GroupTypes),
+        GroupTypeMap: formatJsonForTextarea(
+          normalizedGroupDefaults.GroupTypeMap
+        ),
       },
       {
         keepDirtyValues:
           Object.keys(groupForm.formState.dirtyFields).length > 0,
       }
     )
-  }, [groupDefaults, groupForm])
+  }, [normalizedGroupDefaults, groupForm])
 
   const saveModelRatios = useCallback(
     async (values: ModelFormValues) => {

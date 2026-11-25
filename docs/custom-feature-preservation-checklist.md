@@ -685,9 +685,10 @@
 - 必须保留：`/api/option/group-types`、`/api/user/groups.group_types`、API Key 分组类型
   选择、可用分组路由和系统设置编辑器保持同一份类型/映射事实源；部分更新不得清空另一
   张表或留下数据库与内存不一致。
-- 必须保留：分组定价表在保存时按类型配置顺序、同类型倍率升序排序，未分类分组位于有
-  类型分组之后，`auto` 固定置底；保存前保持当前编辑顺序，新增分组置顶，输入倍率时不
-  实时跳行。排序不改变映射语义或并发的未保存编辑。
+- 必须保留：分组定价表加载已保存配置时按类型配置顺序、同类型倍率升序显示，未分类
+  分组位于有类型分组之后，`auto` 固定置底；编辑期间保持当前行序，新增分组置顶，修改
+  倍率或类型时不实时跳行；保存成功后再按规则重排。仅加载时规范显示不应要求用户额外
+  保存，也不应覆盖并发的未保存编辑。
 - 必须保留：分组定价搜索栏提供类型筛选（全部、各配置类型、未分类）和公开状态筛选
   （全部、公开、未公开），两者默认全部；公开状态直接取“用户可选”复选框，不另设
   持久化字段。
@@ -695,7 +696,9 @@
   `controller/group.go`、`controller/option.go`、`router/api-router.go`、
   `web/src/features/keys/**`、`web/src/features/system-settings/models/group-type.ts`、
   `web/src/features/system-settings/models/group-type-manager-dialog.tsx`、
-  `web/src/features/system-settings/models/group-ratio-visual-editor.tsx`。
+  `web/src/features/system-settings/models/group-ratio-visual-editor.tsx`、
+  `web/src/features/system-settings/models/group-pricing-order.ts`、
+  `web/src/features/system-settings/models/ratio-settings-card.tsx`。
 - 验证入口：`controller/billing_option_test.go`、`model/option_test.go`、
   `service/group_test.go`、`web/src/features/system-settings/models/__tests__/group-type.test.tsx`、
   `web/src/features/system-settings/models/__tests__/group-settings.test.tsx`、
