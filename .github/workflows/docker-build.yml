@@ -18,7 +18,6 @@ on:
 
 env:
   DOCKERHUB_IMAGE: calciumion/new-api
-  GHCR_OWNER: qlhazycoder
 
 jobs:
   build_single_arch:
@@ -124,7 +123,8 @@ jobs:
         id: registry_names
         shell: bash
         run: |
-          GHCR_IMAGE="ghcr.io/${GHCR_OWNER}/new-api"
+          OWNER_LC="$(printf '%s' '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
+          GHCR_IMAGE="ghcr.io/${OWNER_LC}/new-api"
           echo "GHCR_IMAGE=${GHCR_IMAGE}" >> "$GITHUB_ENV"
           echo "ghcr_image=${GHCR_IMAGE}" >> "$GITHUB_OUTPUT"
 
@@ -218,7 +218,8 @@ jobs:
       - name: Set image version
         shell: bash
         run: |
-          echo "GHCR_IMAGE=ghcr.io/${GHCR_OWNER}/new-api" >> $GITHUB_ENV
+          OWNER_LC="$(printf '%s' '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
+          echo "GHCR_IMAGE=ghcr.io/${OWNER_LC}/new-api" >> $GITHUB_ENV
           echo "IMAGE_VERSION=${{ needs.build_single_arch.outputs.image_version }}" >> $GITHUB_ENV
           echo "PUBLISH_LATEST=${{ needs.build_single_arch.outputs.publish_latest }}" >> $GITHUB_ENV
           echo "DOCKERHUB_ENABLED=${{ needs.build_single_arch.outputs.dockerhub_enabled }}" >> $GITHUB_ENV
