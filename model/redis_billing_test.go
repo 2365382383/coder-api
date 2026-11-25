@@ -68,6 +68,61 @@ func TestRedisBillingEventIsAtomicAndIdempotent(t *testing.T) {
 	require.Equal(t, "1", server.HGet(redisBillingIdempotencyKey(reserve.RequestID, reserve.Phase), "result"))
 }
 
+func TestRedisBillingMaterializerDefersOrphanWithoutBlockingReadyEvents(t *testing.T) {
+	truncateTables(t)
+	useUserCacheMiniRedis(t)
+	user := createReserveTestUser(t, 100)
+	token := Token{UserId: user.Id, Key: "redis-billing-order-key", Status: common.TokenStatusEnabled,
+		RemainQuota: 100, ExpiredTime: -1}
+	require.NoError(t, DB.Create(&token).Error)
+
+	ctx := context.Background()
+	_, err := common.RDB.XAdd(ctx, &redis.XAddArgs{
+		Stream: redisBillingStream,
+		Values: map[string]any{
+			"request_id": "redis-billing-orphan", "phase": "settle", "kind": "settle",
+			"user_id": user.Id, "channel_id": 0, "token_id": token.Id,
+			"wallet_delta": 0, "token_delta": 0, "actual": 1, "count_request": "1",
+			"pre_consumed": 0, "token_unlimited": "0", "funding_source": "wallet",
+		},
+	}).Result()
+	require.NoError(t, err)
+
+	initial := RedisBillingEventRequest{
+		RequestID: "redis-billing-ready", Phase: "initial", Kind: "reserve",
+		UserID: user.Id, TokenID: token.Id, TokenKey: token.Key,
+		WalletDelta: 30, TokenDelta: 30, PreConsumed: 30, FundingSource: "wallet",
+	}
+	require.NoError(t, ApplyRedisBillingEvent(initial))
+	settle := initial
+	settle.Phase = "settle"
+	settle.Kind = "settle"
+	settle.WalletDelta = 5
+	settle.TokenDelta = 5
+	settle.Actual = 35
+	settle.CountRequest = true
+	require.NoError(t, ApplyRedisBillingEvent(settle))
+
+	messages, err := common.RDB.XRange(ctx, redisBillingStream, "-", "+").Result()
+	require.NoError(t, err)
+	outcome, err := materializeRedisBillingBatchWithDeferred(ctx, messages)
+	require.NoError(t, err)
+	require.Len(t, outcome.deferred, 1)
+	require.Len(t, outcome.acknowledged, 2)
+
+	var persistedUser User
+	require.NoError(t, DB.First(&persistedUser, user.Id).Error)
+	require.EqualValues(t, 65, persistedUser.Quota)
+	require.EqualValues(t, 35, persistedUser.UsedQuota)
+	require.EqualValues(t, 1, persistedUser.RequestCount)
+	var operationCount int64
+	require.NoError(t, DB.Model(&BillingOperation{}).Where("request_id = ?", "redis-billing-ready").Count(&operationCount).Error)
+	require.EqualValues(t, 2, operationCount)
+	var orphanCount int64
+	require.NoError(t, DB.Model(&BillingOperation{}).Where("request_id = ?", "redis-billing-orphan").Count(&orphanCount).Error)
+	require.Zero(t, orphanCount)
+}
+
 func TestRedisBillingClaimsOnlyIdlePendingMessages(t *testing.T) {
 	server := useUserCacheMiniRedis(t)
 	ctx := context.Background()

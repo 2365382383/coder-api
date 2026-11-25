@@ -743,32 +743,68 @@ func applyRedisBillingAggregate(tx *gorm.DB, aggregate *redisBillingAggregate) e
 	return nil
 }
 
-func materializeRedisBillingBatch(ctx context.Context, messages []redis.XMessage) error {
+type redisBillingBatchOutcome struct {
+	acknowledged []redis.XMessage
+	deferred     []redis.XMessage
+}
+
+// materializeRedisBillingBatchWithDeferred prevents one out-of-order event
+// from rolling back unrelated ready events in the same stream batch. A
+// settlement or refund may arrive before its initial reservation is visible
+// to the materializer; that event remains pending for a later retry.
+func materializeRedisBillingBatchWithDeferred(ctx context.Context, messages []redis.XMessage) (redisBillingBatchOutcome, error) {
 	events := make([]redisBillingEvent, 0, len(messages))
 	for _, message := range messages {
 		event, err := parseRedisBillingEvent(message)
 		if err != nil {
-			return err
+			return redisBillingBatchOutcome{}, err
 		}
 		events = append(events, event)
+	}
+	outcome := redisBillingBatchOutcome{
+		acknowledged: make([]redis.XMessage, 0, len(messages)),
+		deferred:     make([]redis.XMessage, 0),
 	}
 	aggregate := newRedisBillingAggregate()
 	transactionCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
+	ready := make([]redis.XMessage, 0, len(messages))
 	err := withRetryableDatabaseTransaction(transactionCtx, func(tx *gorm.DB) error {
-		for _, event := range events {
+		for i, event := range events {
 			if err := materializeRedisBillingEvent(tx, event, aggregate); err != nil {
+				if errors.Is(err, errRedisBillingEventRetry) {
+					outcome.deferred = append(outcome.deferred, messages[i])
+					continue
+				}
 				return err
 			}
+			ready = append(ready, messages[i])
 		}
 		return applyRedisBillingAggregate(tx, aggregate)
 	})
 	if err != nil {
 		billingmetrics.ObserveRedisMaterialized("failure")
+		return redisBillingBatchOutcome{}, err
+	}
+	for range ready {
+		billingmetrics.ObserveRedisMaterialized("success")
+	}
+	for range outcome.deferred {
+		billingmetrics.ObserveRedisMaterialized("deferred")
+	}
+	outcome.acknowledged = ready
+	return outcome, nil
+}
+
+// materializeRedisBillingBatch keeps the all-or-nothing helper used by tests
+// and callers that require every message in a batch to be ready.
+func materializeRedisBillingBatch(ctx context.Context, messages []redis.XMessage) error {
+	outcome, err := materializeRedisBillingBatchWithDeferred(ctx, messages)
+	if err != nil {
 		return err
 	}
-	for range events {
-		billingmetrics.ObserveRedisMaterialized("success")
+	if len(outcome.deferred) > 0 {
+		return errRedisBillingEventRetry
 	}
 	return nil
 }
@@ -839,17 +875,29 @@ func redisBillingMaterializerLoop() {
 			observeRedisBillingStreamState(ctx)
 			continue
 		}
-		if err := materializeRedisBillingBatch(ctx, messages); err != nil {
+		outcome, err := materializeRedisBillingBatchWithDeferred(ctx, messages)
+		if err != nil {
 			common.SysError("Redis billing materialization failed: " + err.Error())
 			time.Sleep(time.Second)
 			continue
 		}
-		ids := make([]string, 0, len(messages))
-		for _, message := range messages {
+		ids := make([]string, 0, len(outcome.acknowledged))
+		for _, message := range outcome.acknowledged {
 			ids = append(ids, message.ID)
 		}
-		if err := common.RDB.XAck(ctx, redisBillingStream, redisBillingConsumerGroup, ids...).Err(); err != nil {
-			common.SysError("Redis billing stream ack failed: " + err.Error())
+		if len(ids) > 0 {
+			if err := common.RDB.XAck(ctx, redisBillingStream, redisBillingConsumerGroup, ids...).Err(); err != nil {
+				common.SysError("Redis billing stream ack failed: " + err.Error())
+				continue
+			}
+		}
+		if len(outcome.deferred) > 0 {
+			time.Sleep(100 * time.Millisecond)
+			continue
+		}
+		if len(ids) == 0 {
+			// Avoid a tight retry loop if a non-empty batch has no ready event.
+			time.Sleep(time.Second)
 			continue
 		}
 		observeRedisBillingStreamState(ctx)
