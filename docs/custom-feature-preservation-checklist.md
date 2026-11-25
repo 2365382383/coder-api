@@ -748,8 +748,10 @@
   用户/渠道队列与数据库行锁约束，队列不能跳过或改变 quota、订阅、令牌、request_count、
   channel 使用量和账务阶段提交。
 - 必须保留：`/metrics` 同时暴露 Redis 热路径成功/不足/降级/未知结果、Stream 物化成功/失败
-  和数据库计费事务指标；Redis 事件未知结果不能静默回退到数据库，以免重复扣款。应用退出
-  后由 Stream 消费者重放事件，未知上游结果仍进入待核查流程，不能按时间自动退款。
+  和数据库计费事务指标；Redis 热路径不可用或结果未知时回退到原有数据库计费事务，不能
+  因 Redis 传输不确定直接阻断请求。数据库阶段继续以 `request_id + phase` 幂等，Redis
+  已执行但响应丢失的阶段由同一幂等边界和 Stream 物化重放；可能的 Redis/数据库短暂差异
+  保留指标与请求 ID 供人工核对。明确的 Redis 额度不足仍按业务不足返回，不能当作传输错误回退。
 - 当前位置：`controller/misc.go`、`controller/health_test.go`、`router/main.go`、
   `model/option.go`、`model/request_policy.go`、`model/billing_transaction.go`、
   `model/redis_billing.go`、`service/billing_session.go`、`pkg/billing_metrics/**`、

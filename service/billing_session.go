@@ -48,6 +48,34 @@ type BillingSession struct {
 	settlementUnbilledQuota     int64
 }
 
+func isRedisBillingFallbackError(err error) bool {
+	return errors.Is(err, model.ErrRedisBillingUnavailable) || errors.Is(err, model.ErrRedisBillingUnknown)
+}
+
+func invalidateRedisBillingCachesAsync(userID int, tokenKey string) {
+	if userID <= 0 && tokenKey == "" {
+		return
+	}
+	gopool.Go(func() {
+		if userID > 0 {
+			if err := model.InvalidateRedisBillingUserQuota(userID); err != nil {
+				common.SysLog(fmt.Sprintf("failed to invalidate Redis billing user quota for %d: %v", userID, err))
+			}
+		}
+		if tokenKey != "" {
+			if err := model.InvalidateRedisBillingTokenQuota(tokenKey); err != nil {
+				common.SysLog("failed to invalidate Redis billing token quota after database fallback: " + err.Error())
+			}
+		}
+	})
+}
+
+func (s *BillingSession) invalidateRedisBillingCachesAsync() {
+	if s.relayInfo != nil {
+		invalidateRedisBillingCachesAsync(s.relayInfo.UserId, s.relayInfo.TokenKey)
+	}
+}
+
 // Settle applies the funding and token difference in a single durable phase.
 func (s *BillingSession) Settle(actualQuota int) error {
 	return s.settle(actualQuota, nil)
@@ -76,6 +104,7 @@ func (s *BillingSession) settle(actualQuota int, taskCommit *model.BillingTaskCo
 		tokenDelta = 0
 	}
 	var commit []*model.BillingTaskCommit
+	redisFallback := false
 	settlementPolicy := s.settlementPolicy(delta, taskCommit)
 	if taskCommit != nil {
 		commit = append(commit, taskCommit)
@@ -98,7 +127,11 @@ func (s *BillingSession) settle(actualQuota int, taskCommit *model.BillingTaskCo
 				s.settled = true
 				return nil
 			}
-			return err
+			if !isRedisBillingFallbackError(err) {
+				return err
+			}
+			s.redisFastPathActive = false
+			redisFallback = true
 		}
 		if settlementPolicy != "" {
 			if err := model.RequestBillingSettlementWithPolicy(s.relayInfo.RequestId, walletDelta, subDelta, tokenDelta, int64(actualQuota), countRequest, settlementPolicy); err != nil {
@@ -122,6 +155,9 @@ func (s *BillingSession) settle(actualQuota int, taskCommit *model.BillingTaskCo
 	// The model may cap the subscription delta under its lock and move part of it
 	// to wallet debt or an audit-only unbilled remainder.
 	s.syncRelayInfo()
+	if redisFallback {
+		s.invalidateRedisBillingCachesAsync()
+	}
 	s.settled = true
 	return nil
 }
@@ -228,13 +264,21 @@ func (s *BillingSession) Refund(c *gin.Context) {
 				WalletDelta: walletDelta, TokenDelta: tokenDelta, PreConsumed: int64(preConsumed),
 				TokenUnlimited: tokenUnlimited, FundingSource: BillingSourceWallet,
 			}, 8)
-			if errors.Is(err, model.ErrRedisBillingUnavailable) {
-				common.SysError(fmt.Sprintf("Redis billing refund pending for request %s: Redis unavailable; retry the same phase after recovery", requestID))
+			if err == nil {
 				return
 			}
-			if err != nil {
+			if !isRedisBillingFallbackError(err) {
 				common.SysError(fmt.Sprintf("Redis billing refund pending for request %s: %v", requestID, err))
+				return
 			}
+			if err := model.RequestBillingRefund(requestID); err != nil {
+				common.SysError(fmt.Sprintf("failed to persist database billing refund for request %s: %v", requestID, err))
+				return
+			}
+			if err := model.RefundBillingOperation(requestID); err != nil {
+				common.SysError(fmt.Sprintf("billing refund pending for request %s: %v", requestID, err))
+			}
+			invalidateRedisBillingCachesAsync(userID, tokenKey)
 		})
 		return
 	}
@@ -328,6 +372,7 @@ func (s *BillingSession) reserve(targetQuota int, requireAvailableQuota bool) er
 		tokenDelta = 0
 	}
 	phase := fmt.Sprintf("reserve:%d", s.reserveCount+1)
+	redisFallback := false
 	if s.redisFastPathActive {
 		err := model.ApplyRedisBillingEventWithRetry(model.RedisBillingEventRequest{
 			RequestID: s.relayInfo.RequestId, Phase: phase, Kind: "reserve",
@@ -354,7 +399,11 @@ func (s *BillingSession) reserve(targetQuota int, requireAvailableQuota bool) er
 		if errors.Is(err, model.ErrRedisBillingTokenInsufficient) {
 			return types.NewErrorWithStatusCode(err, types.ErrorCodePreConsumeTokenQuotaFailed, http.StatusForbidden, types.ErrOptionWithSkipRetry(), types.ErrOptionWithNoRecordErrorLog())
 		}
-		return err
+		if !isRedisBillingFallbackError(err) {
+			return err
+		}
+		s.redisFastPathActive = false
+		redisFallback = true
 	}
 	if err := model.ApplyBillingAdjustment(s.relayInfo.RequestId, phase, walletDelta, subDelta, tokenDelta, requireBalance, false, 0, false); err != nil {
 		if errors.Is(err, model.ErrBillingWalletInsufficient) {
@@ -374,6 +423,9 @@ func (s *BillingSession) reserve(targetQuota int, requireAvailableQuota bool) er
 		s.trusted = false
 	}
 	s.syncRelayInfo()
+	if redisFallback {
+		s.invalidateRedisBillingCachesAsync()
+	}
 	return nil
 }
 
@@ -394,6 +446,7 @@ func (s *BillingSession) preConsume(c *gin.Context, quota int) *types.NewAPIErro
 	} else if effectiveQuota > 0 {
 		logger.LogInfo(c, common.LogText("user %d needs pre-consume %s (funding=%s)", s.relayInfo.UserId, logger.FormatQuota(effectiveQuota), s.funding.Source()))
 	}
+	redisFallback := false
 	if effectiveQuota > 0 && s.redisWalletFastPathEligible() {
 		tokenDelta := int64(effectiveQuota)
 		if s.relayInfo.IsPlayground {
@@ -422,9 +475,10 @@ func (s *BillingSession) preConsume(c *gin.Context, quota int) *types.NewAPIErro
 		if errors.Is(err, model.ErrRedisBillingTokenInsufficient) {
 			return types.NewErrorWithStatusCode(err, types.ErrorCodePreConsumeTokenQuotaFailed, http.StatusForbidden, types.ErrOptionWithSkipRetry(), types.ErrOptionWithNoRecordErrorLog())
 		}
-		if !errors.Is(err, model.ErrRedisBillingUnavailable) {
+		if !isRedisBillingFallbackError(err) {
 			return types.NewError(err, types.ErrorCodeUpdateDataError, types.ErrOptionWithSkipRetry())
 		}
+		redisFallback = true
 	}
 
 	channelID := 0
@@ -478,6 +532,9 @@ func (s *BillingSession) preConsume(c *gin.Context, quota int) *types.NewAPIErro
 	s.tokenConsumed = int(op.TokenAmount)
 	s.preConsumedQuota = effectiveQuota
 	s.hydrateSubscriptionPlan()
+	if redisFallback {
+		s.invalidateRedisBillingCachesAsync()
+	}
 
 	// ---- 同步 RelayInfo 兼容字段 ----
 	s.syncRelayInfo()

@@ -273,6 +273,12 @@ func invalidateRedisBillingTokenQuota(tokenKey string) error {
 	return common.RDB.Del(context.Background(), redisBillingTokenKey(tokenKey)).Err()
 }
 
+// InvalidateRedisBillingTokenQuota invalidates the token quota after a
+// database fallback has committed a billing phase.
+func InvalidateRedisBillingTokenQuota(tokenKey string) error {
+	return invalidateRedisBillingTokenQuota(tokenKey)
+}
+
 func adjustRedisBillingTokenQuota(tokenID int, tokenKey string, delta int64) error {
 	if !common.RedisEnabled || common.RDB == nil || tokenID <= 0 || tokenKey == "" || delta == 0 {
 		return nil
