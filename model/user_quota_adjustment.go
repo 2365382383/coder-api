@@ -73,5 +73,10 @@ func AdjustUserQuota(userID, operatorRole int, mode string, value int64) (*UserQ
 	if err := invalidateUserCache(userID); err != nil {
 		common.SysError(common.LogText("failed to invalidate user cache after manual quota adjustment for user %d: %s", userID, err))
 	}
+	if mode == "override" {
+		_ = InvalidateRedisBillingUserQuota(userID)
+	} else {
+		_ = AdjustRedisBillingUserQuota(userID, adjustment.After-adjustment.Before)
+	}
 	return &adjustment, nil
 }

@@ -195,6 +195,7 @@ func main() {
 	controller.RegisterScheduledSystemTasks()
 	service.StartSystemTaskRunner()
 	service.StartBillingRecoveryWorker()
+	model.StartRedisBillingMaterializer()
 
 	// Playground image jobs use the normal relay pipeline in the background,
 	// while the service package owns queue leases and result persistence.

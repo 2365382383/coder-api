@@ -78,6 +78,50 @@ var (
 		},
 		[]string{"operation"},
 	)
+	redisEvents = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: "new_api",
+			Subsystem: "billing_redis",
+			Name:      "events_total",
+			Help:      "Redis billing events accepted by the atomic hot path.",
+		},
+		[]string{"phase", "result"},
+	)
+	redisEventDuration = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Namespace: "new_api",
+			Subsystem: "billing_redis",
+			Name:      "event_duration_seconds",
+			Help:      "Duration of Redis billing hot path operations.",
+			Buckets:   prometheus.DefBuckets,
+		},
+		[]string{"phase", "result"},
+	)
+	redisMaterialized = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: "new_api",
+			Subsystem: "billing_redis",
+			Name:      "materialized_total",
+			Help:      "Redis billing stream events materialized into MySQL.",
+		},
+		[]string{"result"},
+	)
+	redisStreamPending = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Namespace: "new_api",
+			Subsystem: "billing_redis",
+			Name:      "stream_pending",
+			Help:      "Redis billing Stream entries pending materialization.",
+		},
+	)
+	redisStreamLength = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Namespace: "new_api",
+			Subsystem: "billing_redis",
+			Name:      "stream_length",
+			Help:      "Redis billing Stream length.",
+		},
+	)
 )
 
 func init() {
@@ -89,6 +133,11 @@ func init() {
 		transactionAttemptDuration,
 		transactionRetriesPerRequest,
 		transactionQueueWait,
+		redisEvents,
+		redisEventDuration,
+		redisMaterialized,
+		redisStreamPending,
+		redisStreamLength,
 	)
 }
 
@@ -111,6 +160,20 @@ func ObserveFinal(operation, result, errorCode string, duration time.Duration, r
 
 func ObserveQueueWait(operation string, duration time.Duration) {
 	transactionQueueWait.WithLabelValues(operation).Observe(duration.Seconds())
+}
+
+func ObserveRedisEvent(phase, result string, duration time.Duration) {
+	redisEvents.WithLabelValues(phase, result).Inc()
+	redisEventDuration.WithLabelValues(phase, result).Observe(duration.Seconds())
+}
+
+func ObserveRedisMaterialized(result string) {
+	redisMaterialized.WithLabelValues(result).Inc()
+}
+
+func ObserveRedisStreamState(pending, length int64) {
+	redisStreamPending.Set(float64(pending))
+	redisStreamLength.Set(float64(length))
 }
 
 func Handler() http.Handler {

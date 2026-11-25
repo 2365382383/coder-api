@@ -30,17 +30,18 @@ import (
 // BillingSession 封装单次请求的预扣费/结算/退款生命周期。
 // 实现 relaycommon.BillingSettler 接口。
 type BillingSession struct {
-	relayInfo        *relaycommon.RelayInfo
-	funding          FundingSource
-	preConsumedQuota int  // 实际预扣额度（信任用户可能为 0）
-	tokenConsumed    int  // 令牌额度实际扣减量
-	extraReserved    int  // 发送前补充预扣的额度（订阅退款时需要单独回滚）
-	trusted          bool // 是否命中信任额度旁路
-	settled          bool // Settle 全部完成（资金 + 令牌）
-	refunded         bool // Refund 已调用
-	reserveCount     int
-	lang             string // 请求声明的语言，为空表示未声明
-	mu               sync.Mutex
+	relayInfo           *relaycommon.RelayInfo
+	funding             FundingSource
+	preConsumedQuota    int  // 实际预扣额度（信任用户可能为 0）
+	tokenConsumed       int  // 令牌额度实际扣减量
+	extraReserved       int  // 发送前补充预扣的额度（订阅退款时需要单独回滚）
+	trusted             bool // 是否命中信任额度旁路
+	settled             bool // Settle 全部完成（资金 + 令牌）
+	refunded            bool // Refund 已调用
+	reserveCount        int
+	redisFastPathActive bool
+	lang                string // 请求声明的语言，为空表示未声明
+	mu                  sync.Mutex
 
 	settlementAllocations       []relaycommon.BillingAllocation
 	settlementSubscriptionDelta int64
@@ -80,6 +81,25 @@ func (s *BillingSession) settle(actualQuota int, taskCommit *model.BillingTaskCo
 		commit = append(commit, taskCommit)
 	} else {
 		countRequest := actualQuota > 0 || s.relayInfo.BillableUsageObserved
+		if s.redisWalletFastPath() {
+			err := model.ApplyRedisBillingEventWithRetry(model.RedisBillingEventRequest{
+				RequestID: s.relayInfo.RequestId, Phase: "settle", Kind: "settle",
+				UserID: s.relayInfo.UserId, ChannelID: s.billingChannelID(), TokenID: s.redisTokenID(),
+				TokenKey: s.relayInfo.TokenKey, WalletDelta: walletDelta, TokenDelta: tokenDelta,
+				Actual: int64(actualQuota), CountRequest: countRequest, PreConsumed: int64(s.preConsumedQuota),
+				TokenUnlimited: s.relayInfo.TokenUnlimited, FundingSource: BillingSourceWallet,
+			}, 4)
+			if err == nil {
+				result := model.BillingAdjustmentResult{WalletDelta: walletDelta, TokenDelta: tokenDelta}
+				s.applyFundingDeltas(result.WalletDelta, result.SubscriptionDelta)
+				s.settlementSubscriptionDelta = 0
+				s.settlementUnbilledQuota = 0
+				s.syncRelayInfo()
+				s.settled = true
+				return nil
+			}
+			return err
+		}
 		if settlementPolicy != "" {
 			if err := model.RequestBillingSettlementWithPolicy(s.relayInfo.RequestId, walletDelta, subDelta, tokenDelta, int64(actualQuota), countRequest, settlementPolicy); err != nil {
 				return err
@@ -104,6 +124,36 @@ func (s *BillingSession) settle(actualQuota int, taskCommit *model.BillingTaskCo
 	s.syncRelayInfo()
 	s.settled = true
 	return nil
+}
+
+func (s *BillingSession) billingChannelID() int {
+	if s.relayInfo != nil && s.relayInfo.ChannelMeta != nil {
+		return s.relayInfo.ChannelId
+	}
+	return 0
+}
+
+func (s *BillingSession) redisTokenID() int {
+	if s.relayInfo == nil || s.relayInfo.IsPlayground {
+		return 0
+	}
+	return s.relayInfo.TokenId
+}
+
+func (s *BillingSession) redisWalletFastPath() bool {
+	if !s.redisFastPathActive || s.relayInfo == nil {
+		return false
+	}
+	wallet, ok := s.funding.(*WalletFunding)
+	return ok && wallet != nil && !s.relayInfo.ForcePreConsume
+}
+
+func (s *BillingSession) redisWalletFastPathEligible() bool {
+	if !model.RedisBillingFastPathEnabled() || s.relayInfo == nil {
+		return false
+	}
+	wallet, ok := s.funding.(*WalletFunding)
+	return ok && wallet != nil && !s.relayInfo.ForcePreConsume
 }
 
 func (s *BillingSession) settlementPolicy(delta int, taskCommit *model.BillingTaskCommit) string {
@@ -152,6 +202,40 @@ func (s *BillingSession) Refund(c *gin.Context) {
 	s.mu.Lock()
 	if s.settled || s.refunded || !s.needsRefundLocked() {
 		s.mu.Unlock()
+		return
+	}
+	if s.redisFastPathActive {
+		requestID := s.relayInfo.RequestId
+		userID := s.relayInfo.UserId
+		channelID := s.billingChannelID()
+		tokenID := s.redisTokenID()
+		tokenKey := s.relayInfo.TokenKey
+		walletDelta := -int64(s.preConsumedQuota)
+		tokenDelta := -int64(s.tokenConsumed)
+		tokenConsumed := s.tokenConsumed
+		preConsumed := s.preConsumedQuota
+		tokenUnlimited := s.relayInfo.TokenUnlimited
+		fundingSource := s.funding.Source()
+		s.refunded = true
+		s.mu.Unlock()
+
+		logger.LogInfo(c, common.LogText("user %d request failed, refunding the pre-consumed quota (token_quota=%s, funding=%s)",
+			userID, logger.FormatQuota(tokenConsumed), fundingSource))
+		gopool.Go(func() {
+			err := model.ApplyRedisBillingEventWithRetry(model.RedisBillingEventRequest{
+				RequestID: requestID, Phase: "refund", Kind: "refund", UserID: userID,
+				ChannelID: channelID, TokenID: tokenID, TokenKey: tokenKey,
+				WalletDelta: walletDelta, TokenDelta: tokenDelta, PreConsumed: int64(preConsumed),
+				TokenUnlimited: tokenUnlimited, FundingSource: BillingSourceWallet,
+			}, 8)
+			if errors.Is(err, model.ErrRedisBillingUnavailable) {
+				common.SysError(fmt.Sprintf("Redis billing refund pending for request %s: Redis unavailable; retry the same phase after recovery", requestID))
+				return
+			}
+			if err != nil {
+				common.SysError(fmt.Sprintf("Redis billing refund pending for request %s: %v", requestID, err))
+			}
+		})
 		return
 	}
 	if err := model.RequestBillingRefund(s.relayInfo.RequestId); err != nil {
@@ -244,6 +328,34 @@ func (s *BillingSession) reserve(targetQuota int, requireAvailableQuota bool) er
 		tokenDelta = 0
 	}
 	phase := fmt.Sprintf("reserve:%d", s.reserveCount+1)
+	if s.redisFastPathActive {
+		err := model.ApplyRedisBillingEventWithRetry(model.RedisBillingEventRequest{
+			RequestID: s.relayInfo.RequestId, Phase: phase, Kind: "reserve",
+			UserID: s.relayInfo.UserId, ChannelID: s.billingChannelID(), TokenID: s.redisTokenID(),
+			TokenKey: s.relayInfo.TokenKey, WalletDelta: walletDelta, TokenDelta: tokenDelta,
+			PreConsumed: int64(delta), TokenUnlimited: s.relayInfo.TokenUnlimited,
+			FundingSource: BillingSourceWallet,
+		}, 4)
+		if err == nil {
+			s.reserveCount++
+			s.applyFundingDeltas(walletDelta, subDelta)
+			s.preConsumedQuota += delta
+			s.tokenConsumed += int(tokenDelta)
+			s.extraReserved += delta
+			if requireBalance {
+				s.trusted = false
+			}
+			s.syncRelayInfo()
+			return nil
+		}
+		if errors.Is(err, model.ErrRedisBillingInsufficient) {
+			return types.NewErrorWithStatusCode(err, types.ErrorCodeInsufficientUserQuota, http.StatusForbidden, types.ErrOptionWithSkipRetry(), types.ErrOptionWithNoRecordErrorLog())
+		}
+		if errors.Is(err, model.ErrRedisBillingTokenInsufficient) {
+			return types.NewErrorWithStatusCode(err, types.ErrorCodePreConsumeTokenQuotaFailed, http.StatusForbidden, types.ErrOptionWithSkipRetry(), types.ErrOptionWithNoRecordErrorLog())
+		}
+		return err
+	}
 	if err := model.ApplyBillingAdjustment(s.relayInfo.RequestId, phase, walletDelta, subDelta, tokenDelta, requireBalance, false, 0, false); err != nil {
 		if errors.Is(err, model.ErrBillingWalletInsufficient) {
 			return types.NewErrorWithStatusCode(err, types.ErrorCodeInsufficientUserQuota, http.StatusForbidden, types.ErrOptionWithSkipRetry(), types.ErrOptionWithNoRecordErrorLog())
@@ -281,6 +393,38 @@ func (s *BillingSession) preConsume(c *gin.Context, quota int) *types.NewAPIErro
 		logger.LogInfo(c, common.LogText("user %d has enough quota, trusted without pre-consume (funding=%s)", s.relayInfo.UserId, s.funding.Source()))
 	} else if effectiveQuota > 0 {
 		logger.LogInfo(c, common.LogText("user %d needs pre-consume %s (funding=%s)", s.relayInfo.UserId, logger.FormatQuota(effectiveQuota), s.funding.Source()))
+	}
+	if effectiveQuota > 0 && s.redisWalletFastPathEligible() {
+		tokenDelta := int64(effectiveQuota)
+		if s.relayInfo.IsPlayground {
+			tokenDelta = 0
+		}
+		err := model.ApplyRedisBillingEvent(model.RedisBillingEventRequest{
+			RequestID: s.relayInfo.RequestId, Phase: "initial", Kind: "reserve",
+			UserID: s.relayInfo.UserId, ChannelID: s.billingChannelID(), TokenID: s.redisTokenID(),
+			TokenKey: s.relayInfo.TokenKey, WalletDelta: int64(effectiveQuota), TokenDelta: tokenDelta,
+			PreConsumed: int64(effectiveQuota), TokenUnlimited: s.relayInfo.TokenUnlimited,
+			FundingSource: BillingSourceWallet,
+		})
+		if err == nil {
+			if wallet, ok := s.funding.(*WalletFunding); ok {
+				wallet.consumed = effectiveQuota
+			}
+			s.tokenConsumed = int(tokenDelta)
+			s.preConsumedQuota = effectiveQuota
+			s.redisFastPathActive = true
+			s.syncRelayInfo()
+			return nil
+		}
+		if errors.Is(err, model.ErrRedisBillingInsufficient) {
+			return types.NewErrorWithStatusCode(ErrInsufficientWalletQuota, types.ErrorCodeInsufficientUserQuota, http.StatusForbidden, types.ErrOptionWithSkipRetry(), types.ErrOptionWithNoRecordErrorLog())
+		}
+		if errors.Is(err, model.ErrRedisBillingTokenInsufficient) {
+			return types.NewErrorWithStatusCode(err, types.ErrorCodePreConsumeTokenQuotaFailed, http.StatusForbidden, types.ErrOptionWithSkipRetry(), types.ErrOptionWithNoRecordErrorLog())
+		}
+		if !errors.Is(err, model.ErrRedisBillingUnavailable) {
+			return types.NewError(err, types.ErrorCodeUpdateDataError, types.ErrOptionWithSkipRetry())
+		}
 	}
 
 	channelID := 0

@@ -448,12 +448,13 @@
   防止技术溢出的边界，不重新设置 int32 产品余额上限。现有额度单位和 `QuotaPerUnit` 不变。
 - 必须保留：单次请求费用、任务费用和历史消费日志仍在 int32 charge domain 中，异常价格
   或请求参数经过饱和/严格错误处理，不能为了放开钱包而取消单次计费溢出保护。
-- 必须保留：数据库是唯一可授信的额度来源；钱包预扣使用 `quota >= amount` 的条件
-  SQL，有限 Token 同时检查剩余额度与双字段整数边界，无限 Token 仍可欠费但不可溢出。
-  充值、兑换、签到及管理员调整与业务记录原子提交。Redis 只缓存身份和策略元数据，
-  不缓存可支出的额度；数据库故障不得用旧缓存余额授信。
-- 必须保留：`BATCH_UPDATE_ENABLED=true` 仅输出弃用与 SQL 压力告警，不再排队钱包、
-  Token 或累计用量；不得恢复 Redis 额度先写、进程队列延迟刷库的协议。
+- 必须保留：钱包和 Token 的 Redis 快速路径只在 Redis 可用时启用；Redis Lua 同时完成额度
+  原子变更、`request_id + phase` 幂等标记和 Stream 账务事件，不能恢复为没有事件记录的
+  Redis 预扣。Stream 消费者按批次、幂等地把事件物化到 MySQL `BillingOperation`、钱包、
+  Token、渠道和用量字段；Redis 不可用时回退到现有数据库条件更新。订阅、任务和
+  Midjourney 继续使用持久数据库事务，不能被 Redis 钱包路径旁路。
+- 必须保留：`BATCH_UPDATE_ENABLED=true` 仅输出弃用与 SQL 压力告警；Redis Stream 物化是
+  带请求 ID、可重放、可幂等确认的持久队列，不能退化为进程内内存批量队列。
 - 必须保留：计费会话的初始预扣、图片追加预扣、差额结算与明确失败退款使用持久操作
   状态和事务，Token、钱包、订阅同时提交；退款先持久标记、可重试且不重复加账。任务
   提交结果先与 settlement intent 同事务持久化，资金、Token、分摊、用量和任务最终状态
@@ -739,20 +740,26 @@
   次数继续通过 `/metrics` 暴露；指标按真实计费调用方区分，并且中间 1205/1213 重试不能
   直接等同于最终失败。现有 `BILLING_LOCK_WAIT_TIMEOUT_SECONDS`、整事务重试、幂等阶段和
   账务语义继续有效。
-- 必须保留：计费事务进入数据库前按 `user_id` 在进程内串行化预扣、结算、退款和任务账务
-  阶段；会更新共享渠道使用量的结算阶段同时按 `channel_id` 串行化。数据库行锁继续承担
-  跨进程一致性，队列等待不能跳过或改变 quota、订阅、令牌、request_count、channel 使用量
-  和账务阶段提交。
+- 必须保留：Redis 快速路径不进入进程内 MySQL 用户队列；其 Stream 物化按稳定 ID 顺序批量
+  更新账户，重复消费不得重复扣款。数据库降级路径、订阅、任务和其他跨表账务仍保持现有
+  用户/渠道队列与数据库行锁约束，队列不能跳过或改变 quota、订阅、令牌、request_count、
+  channel 使用量和账务阶段提交。
+- 必须保留：`/metrics` 同时暴露 Redis 热路径成功/不足/降级/未知结果、Stream 物化成功/失败
+  和数据库计费事务指标；Redis 事件未知结果不能静默回退到数据库，以免重复扣款。应用退出
+  后由 Stream 消费者重放事件，未知上游结果仍进入待核查流程，不能按时间自动退款。
 - 当前位置：`controller/misc.go`、`controller/health_test.go`、`router/main.go`、
   `model/option.go`、`model/request_policy.go`、`model/billing_transaction.go`、
-  `pkg/billing_metrics/**`、`deploy/docker-compose.yml`。
+  `model/redis_billing.go`、`service/billing_session.go`、`pkg/billing_metrics/**`、
+  `.env.example`、`deploy/docker-compose.yml`。
 - 数据/配置：`BILLING_LOCK_WAIT_TIMEOUT_SECONDS` 默认 10 秒，设为 0 使用数据库服务端默认值；
-  `/metrics` 不写业务表，不改变 quota、结算、退款或历史账务记录；健康检查切换不改变公开
-  `/api/status` 响应契约。
+  `BILLING_REDIS_FAST_PATH` 默认在 Redis 可用时启用，设为 `false` 回退数据库计费路径。
+  Redis Stream 的 `request_id + phase` 是幂等边界，`/metrics` 不写业务表；健康检查切换不改变
+  公开 `/api/status` 响应契约。
 - 验证入口：`controller/health_test.go`、`controller/misc_observation_status_test.go`、
   `model/option_test.go`、`model/request_policy_test.go`、`model/billing_operation_database_matrix_test.go`、
-  `pkg/billing_metrics/metrics_test.go`；发布后检查容器 health、`/health`、`/api/status`、
-  `/metrics` 和 MySQL `data_lock_waits`/`handler commit`。
+  `model/redis_billing_test.go`、`pkg/billing_metrics/metrics_test.go`；发布后检查容器 health、
+  `/health`、`/api/status`、`/metrics`、Redis Stream lag/materializer failures 和 MySQL
+  `data_lock_waits`/`handler commit`。
 
 ### P-44 Task Plugin 图片协议异步提交与查询
 

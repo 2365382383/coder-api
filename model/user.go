@@ -1425,8 +1425,14 @@ func ValidateAccessToken(token string) (*User, error) {
 	return user, nil
 }
 
-// GetUserQuota always reads the committed balance. fromDB is retained for callers.
+// GetUserQuota reads the Redis real-time balance for normal request callers and
+// uses the database when fromDB is requested or Redis is unavailable.
 func GetUserQuota(id int, fromDB bool) (quota int64, err error) {
+	if !fromDB && RedisBillingFastPathEnabled() {
+		if quota, err := RedisBillingUserQuota(id); err == nil {
+			return quota, nil
+		}
+	}
 	err = DB.Model(&User{}).Where("id = ?", id).Select("quota").Take(&quota).Error
 	if err != nil {
 		return 0, err
@@ -1518,7 +1524,11 @@ func IncreaseUserQuota(id int, quota int64, db bool) error {
 	if quota == 0 {
 		return nil
 	}
-	return increaseUserQuota(id, quota)
+	if err := increaseUserQuota(id, quota); err != nil {
+		return err
+	}
+	_ = AdjustRedisBillingUserQuota(id, quota)
+	return nil
 }
 
 func increaseUserQuota(id int, quota int64) error {
@@ -1532,7 +1542,11 @@ func DecreaseUserQuota(id int, quota int64, db bool) error {
 	if quota == 0 {
 		return nil
 	}
-	return decreaseUserQuota(id, quota)
+	if err := decreaseUserQuota(id, quota); err != nil {
+		return err
+	}
+	_ = AdjustRedisBillingUserQuota(id, -quota)
+	return nil
 }
 
 func decreaseUserQuota(id int, quota int64) error {
@@ -1565,6 +1579,7 @@ func OverrideUserQuota(id int, quota int64) error {
 	if err := invalidateUserCache(id); err != nil {
 		common.SysLog("failed to invalidate user cache after quota override: " + err.Error())
 	}
+	_ = InvalidateRedisBillingUserQuota(id)
 	return nil
 }
 

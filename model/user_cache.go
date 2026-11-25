@@ -101,7 +101,7 @@ func GetUserCache(userId int) (*UserBase, error) {
 	// Try getting from Redis first
 	userCache, err := cacheGetUserBase(userId)
 	if err == nil {
-		userCache.Quota, err = GetUserQuota(userId, true)
+		userCache.Quota, err = GetUserQuota(userId, false)
 		if err != nil {
 			return nil, err
 		}
@@ -165,6 +165,9 @@ func syncCreditUserQuotaCache(userId int, quota int64, operation string) {
 	}
 	if err := invalidateUserCache(userId); err != nil {
 		common.SysLog(fmt.Sprintf("failed to invalidate %s user cache: %s", operation, err.Error()))
+	}
+	if err := AdjustRedisBillingUserQuota(userId, quota); err != nil {
+		common.SysLog(fmt.Sprintf("failed to adjust %s Redis billing quota: %s", operation, err.Error()))
 	}
 }
 

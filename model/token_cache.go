@@ -64,7 +64,10 @@ func invalidateTokenCacheForMutation(key string) error {
 	if err != nil {
 		return err
 	}
-	return common.RDB.Del(ctx, getTokenCacheKey(key)).Err()
+	if err := common.RDB.Del(ctx, getTokenCacheKey(key)).Err(); err != nil {
+		return err
+	}
+	return invalidateRedisBillingTokenQuota(key)
 }
 
 // cacheInitToken publishes signed token identity and policy metadata when the

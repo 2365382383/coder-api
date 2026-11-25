@@ -393,7 +393,11 @@ func IncreaseTokenQuota(tokenId int, key string, quota int) (err error) {
 	if quota < 0 {
 		return errors.New("quota cannot be negative")
 	}
-	return increaseTokenQuota(tokenId, int64(quota))
+	if err := increaseTokenQuota(tokenId, int64(quota)); err != nil {
+		return err
+	}
+	_ = adjustRedisBillingTokenQuota(tokenId, key, int64(quota))
+	return nil
 }
 
 func increaseTokenQuota(id int, quota int64) error {
@@ -404,7 +408,11 @@ func DecreaseTokenQuota(id int, key string, quota int) (err error) {
 	if quota < 0 {
 		return errors.New("quota cannot be negative")
 	}
-	return decreaseTokenQuota(id, int64(quota))
+	if err := decreaseTokenQuota(id, int64(quota)); err != nil {
+		return err
+	}
+	_ = adjustRedisBillingTokenQuota(id, key, -int64(quota))
+	return nil
 }
 
 func decreaseTokenQuota(id int, quota int64) error {
