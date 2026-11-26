@@ -696,27 +696,15 @@ func PinTaskPluginEndpoint() gin.HandlerFunc {
 }
 
 func jsonBodyBoolFlags(c *gin.Context) (stream, background bool) {
-	mediaType, _, mediaErr := mime.ParseMediaType(c.GetHeader("Content-Type"))
-	if mediaErr == nil && (mediaType == "multipart/form-data" || mediaType == "application/x-www-form-urlencoded") {
-		formBool := func(name string) bool {
-			return strings.EqualFold(strings.TrimSpace(c.Request.FormValue(name)), "true")
-		}
-		return formBool("stream"), formBool("background")
-	}
-	if mediaErr == nil && mediaType != "" && mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+	storage, err := common.GetBodyStorage(c)
+	if err != nil {
 		return false, false
 	}
-	{
-		storage, err := common.GetBodyStorage(c)
-		if err != nil {
-			return false, false
-		}
-		values, err := common.ReadBodyJSONFields(storage, "stream", "background")
-		if err != nil {
-			return false, false
-		}
-		return values[0].Type == ojson.True, values[1].Type == ojson.True
+	values, err := common.ReadBodyJSONFields(storage, "stream", "background")
+	if err != nil {
+		return false, false
 	}
+	return values[0].Type == ojson.True, values[1].Type == ojson.True
 }
 
 func unsupportedProtocolFormMessage(candidates []pluginruntime.ProtocolBinding, protocol string, stream, background bool) string {

@@ -100,10 +100,8 @@ func TestLookupHostProtocolOperationExcludesRetrieveWithoutModelField(t *testing
 		require.True(t, found, path)
 		assert.Equal(t, ProtocolOpenAIImage, protocol)
 		assert.Equal(t, "model", operation.ModelField)
-		assert.Equal(t, []ProtocolMode{{Name: "sync", Hook: "render"}, {Name: "background", Hook: "render"}}, operation.Modes)
+		assert.Empty(t, operation.Modes, "the synchronous image protocol has no request modes")
 	}
-	_, _, ok = LookupHostProtocolOperation(http.MethodGet, "/v1/images/generations/:task_id")
-	assert.False(t, ok, "retrieval has no top-level model field")
 }
 
 // The OpenAI Images protocol is claimed in bare-string form, binds both image
@@ -135,9 +133,9 @@ func TestOpenAIImageProtocolClaimBindsBothEndpointsAndRequiresRender(t *testing.
 
 	_, err := CompilePlugin(routingTestPluginSource("image-no-render", 17, `["image-a"]`, `protocols: ["openai_image"],`,
 		`export const protocols = {openai_image: {decodeRequest: function(ctx) { return {kind: "submit", model: ctx.model}; }}};`), Options{})
-	require.ErrorContains(t, err, `does not export protocols.openai_image.render`)
+	require.ErrorContains(t, err, `missing hook "render"`)
 	_, err = CompilePlugin(routingTestPluginSource("image-modes", 17, `["image-a"]`, `protocols: [{name: "openai_image", supports: ["sync"]}],`, exports), Options{})
-	require.NoError(t, err)
+	require.ErrorContains(t, err, "does not define modes")
 }
 
 func TestFileReferenceRoundTripAddressesRepeatedFieldFiles(t *testing.T) {

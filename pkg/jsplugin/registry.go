@@ -352,12 +352,6 @@ func (m Meta) UsageForModels(models ...string) (map[string]UsageFieldSchema, []U
 func (m Meta) ProtocolSupports(protocol, mode string) bool {
 	for _, claim := range m.Protocols {
 		if claim.Name == protocol {
-			// openai_image gained background mode after the original v1
-			// manifest shape shipped. A legacy bare/object claim remains a
-			// synchronous claim; background requires an explicit supports entry.
-			if protocol == ProtocolOpenAIImage && claim.Supports == nil {
-				return mode == "sync"
-			}
 			return slices.Contains(claim.Supports, mode)
 		}
 	}
@@ -1770,31 +1764,29 @@ func normalizeV1Meta(meta *Meta) error {
 				modeNames[modeIndex] = mode.Name
 			}
 			choosingFrom := quotedJoin(modeNames, ", ")
-			if claim.Supports == nil && claim.Name != ProtocolOpenAIImage {
+			if claim.Supports == nil {
 				if claim.objectForm {
 					return fmt.Errorf("plugin %s protocol %q must declare supports; add supports: [...] choosing from %s", meta.Key, claim.Name, choosingFrom)
 				}
 				return fmt.Errorf("plugin %s protocol %q must declare supports; replace the bare string with {name: %q, supports: [...]} choosing from %s", meta.Key, claim.Name, claim.Name, choosingFrom)
 			}
-			if claim.Supports != nil {
-				if len(claim.Supports) == 0 {
-					return fmt.Errorf("plugin %s protocol %q supports must contain at least one of %s", meta.Key, claim.Name, choosingFrom)
-				}
-				seenSupports := make(map[string]struct{}, len(claim.Supports))
-				for _, support := range claim.Supports {
-					if _, duplicate := seenSupports[support]; duplicate {
-						return fmt.Errorf("plugin %s protocol %q supports must be unique", meta.Key, claim.Name)
-					}
-					seenSupports[support] = struct{}{}
-					if !slices.Contains(modeNames, support) {
-						if support == "retrieve" {
-							return fmt.Errorf("plugin %s protocol %q has no mode %q; retrieval of a created response is always available and is never declared", meta.Key, claim.Name, support)
-						}
-						return fmt.Errorf("plugin %s protocol %q has no mode %q", meta.Key, claim.Name, support)
-					}
-				}
-				claim.Supports = orderProtocolSupports(claim.Name, claim.Supports)
+			if len(claim.Supports) == 0 {
+				return fmt.Errorf("plugin %s protocol %q supports must contain at least one of %s", meta.Key, claim.Name, choosingFrom)
 			}
+			seenSupports := make(map[string]struct{}, len(claim.Supports))
+			for _, support := range claim.Supports {
+				if _, duplicate := seenSupports[support]; duplicate {
+					return fmt.Errorf("plugin %s protocol %q supports must be unique", meta.Key, claim.Name)
+				}
+				seenSupports[support] = struct{}{}
+				if !slices.Contains(modeNames, support) {
+					if support == "retrieve" {
+						return fmt.Errorf("plugin %s protocol %q has no mode %q; retrieval of a created response is always available and is never declared", meta.Key, claim.Name, support)
+					}
+					return fmt.Errorf("plugin %s protocol %q has no mode %q", meta.Key, claim.Name, support)
+				}
+			}
+			claim.Supports = orderProtocolSupports(claim.Name, claim.Supports)
 		} else if claim.Supports != nil {
 			return fmt.Errorf("plugin %s protocol %q does not define modes; supports is not allowed", meta.Key, claim.Name)
 		}

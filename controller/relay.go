@@ -821,15 +821,6 @@ func executeTaskSubmissionWith(
 	// A request plugin instance that may report the task gets it once, at
 	// its final state.
 	task.PrivateData.RequestPlugins = requestplugin.TaskReport(c, relayInfo)
-	if pinnedValue, exists := c.Get(pluginruntime.ContextKeyPinnedEndpoint); exists {
-		if pinned, ok := pinnedValue.(pluginruntime.PinnedEndpoint); ok && pinned.Protocol == pluginruntime.ProtocolOpenAIImage {
-			if requestValue, requestExists := c.Get(pluginruntime.ContextKeyProtocolRequest); requestExists {
-				if protocolRequest, requestOK := requestValue.(pluginruntime.ProtocolRequestContext); requestOK {
-					task.PrivateData.OpenAIImageProtocol = taskPluginImageProtocolSnapshot(protocolRequest)
-				}
-			}
-		}
-	}
 	task.Action = relayInfo.Action
 	if immediate := result.Immediate; immediate != nil {
 		task.Status = model.TaskStatus(immediate.Status)
@@ -850,9 +841,10 @@ func executeTaskSubmissionWith(
 	// to immediate terminal results: the client receives the complete response
 	// once, the upstream snapshot is never persisted, and the task is not
 	// retrievable afterwards. An asynchronous result on such a route keeps its
-	// snapshot because polling and retrieval need it. OpenAI Images synchronous
-	// immediate results are delivered inline; background requests retain even
-	// an immediate result so it can be retrieved consistently.
+	// snapshot because polling and retrieval need it. The OpenAI Images
+	// protocol delivers its images inline in the same HTTP response, so its
+	// immediate results follow the same rule; an asynchronous image task is
+	// expected there and is polled inside the request.
 	var insertOmits []string
 	immediateTerminal := result.Immediate != nil && (result.Immediate.Status == model.TaskStatusSuccess || result.Immediate.Status == model.TaskStatusFailure)
 	if pinnedValue, exists := c.Get(pluginruntime.ContextKeyPinnedRoute); exists {
@@ -868,16 +860,8 @@ func executeTaskSubmissionWith(
 	}
 	if pinnedValue, exists := c.Get(pluginruntime.ContextKeyPinnedEndpoint); exists && immediateTerminal {
 		if pinned, ok := pinnedValue.(pluginruntime.PinnedEndpoint); ok && pinned.Protocol == pluginruntime.ProtocolOpenAIImage {
-			background := false
-			if requestValue, requestExists := c.Get(pluginruntime.ContextKeyProtocolRequest); requestExists {
-				if protocolRequest, requestOK := requestValue.(pluginruntime.ProtocolRequestContext); requestOK {
-					background = taskPluginImageBackground(protocolRequest)
-				}
-			}
-			if !background {
-				task.PrivateData.ResultDiscarded = true
-				insertOmits = append(insertOmits, "data")
-			}
+			task.PrivateData.ResultDiscarded = true
+			insertOmits = append(insertOmits, "data")
 		}
 	}
 	diagnostics.insertStart(task)

@@ -328,7 +328,7 @@ export const meta = {
   protocols: [
     { name: "openai_responses", supports: ["stream", "sync", "background"] },
     { name: "openai_video", models: Object.keys(VIDEO_MODELS) },
-    { name: "openai_image", models: Object.keys(IMAGE_MODELS), supports: ["sync", "background"] },
+    { name: "openai_image", models: Object.keys(IMAGE_MODELS) },
   ],
 };
 
@@ -1127,9 +1127,9 @@ export const protocols = {
       };
     },
   },
-  // OpenAI Images API. The host pins ctx.model, supports synchronous and
-  // background task delivery, and owns response_format. Requests map onto the
-  // same Ark body as the native route, so validation and usage facts are identical.
+  // OpenAI Images API. The host pins ctx.model, returns the synchronous result
+  // inline and owns response_format. Requests map onto the same Ark body as the
+  // native route, so validation and usage facts are identical.
   openai_image: {
     decodeRequest: function (ctx) {
       const model = trimmed(ctx.model);
