@@ -2,12 +2,15 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/bytedance/gopkg/util/gopool"
+	"gorm.io/gorm"
 )
 
 // RecoverBillingOnce replays persisted settlement/refund intents and reports
@@ -29,7 +32,15 @@ func RecoverBillingOnce(ctx context.Context) {
 			}
 			if claimed {
 				if err := model.RecoverBillingSettlement(op.RequestId); err != nil {
-					common.SysError(fmt.Sprintf("billing settlement still pending for %s: %v", op.RequestId, err))
+					if isPermanentBillingRecoveryError(err) {
+						if reviewErr := model.MarkBillingRecoveryReviewRequired(op.RequestId); reviewErr != nil {
+							common.SysError(fmt.Sprintf("billing settlement review mark failed for %s: %v", op.RequestId, reviewErr))
+						} else {
+							common.SysError(fmt.Sprintf("billing settlement moved to manual review for %s: %v", op.RequestId, err))
+						}
+					} else {
+						common.SysError(fmt.Sprintf("billing settlement still pending for %s: %v", op.RequestId, err))
+					}
 				}
 			}
 		}
@@ -48,7 +59,15 @@ func RecoverBillingOnce(ctx context.Context) {
 			common.SysError(fmt.Sprintf("billing refund lease failed for %s: %v", op.RequestId, err))
 		} else if claimed {
 			if err := model.RefundBillingOperation(op.RequestId); err != nil {
-				common.SysError(fmt.Sprintf("billing refund still pending for %s: %v", op.RequestId, err))
+				if isPermanentBillingRecoveryError(err) {
+					if reviewErr := model.MarkBillingRecoveryReviewRequired(op.RequestId); reviewErr != nil {
+						common.SysError(fmt.Sprintf("billing refund review mark failed for %s: %v", op.RequestId, reviewErr))
+					} else {
+						common.SysError(fmt.Sprintf("billing refund moved to manual review for %s: %v", op.RequestId, err))
+					}
+				} else {
+					common.SysError(fmt.Sprintf("billing refund still pending for %s: %v", op.RequestId, err))
+				}
 			}
 		}
 	}
@@ -93,6 +112,32 @@ func RecoverBillingOnce(ctx context.Context) {
 	} else if len(stale) > 0 {
 		common.SysError(fmt.Sprintf("%d billing reservations older than one hour need outcome review (first request %s, upstream task %s, code %d); no automatic refund", len(stale), stale[0].RequestId, stale[0].UpstreamTaskID, stale[0].UpstreamCode))
 	}
+}
+
+func isPermanentBillingRecoveryError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return true
+	}
+	message := strings.ToLower(err.Error())
+	for _, marker := range []string{
+		"subscription used exceeds total",
+		"subscription quota insufficient",
+		"subscription id missing",
+		"token id missing",
+		"billing settlement intent is incomplete",
+		"ordinary billing settlement intent is incomplete",
+		"ordinary billing settlement request is invalid",
+		"billing settlement request is invalid",
+		"unsupported billing funding source",
+	} {
+		if strings.Contains(message, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 func StartBillingRecoveryWorker() {

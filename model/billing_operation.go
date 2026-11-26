@@ -566,6 +566,30 @@ func ClaimBillingSettlement(requestId string, leaseSeconds int64) (bool, error) 
 	return result.RowsAffected == 1, result.Error
 }
 
+// MarkBillingRecoveryReviewRequired stops automatic retries for a settlement or
+// refund whose persisted inputs are permanently invalid. The original
+// reservation remains untouched so an operator can reconcile or refund the
+// already charged amount manually.
+func MarkBillingRecoveryReviewRequired(requestId string) error {
+	if !billingOperationKeyValid(requestId, "initial") {
+		return errors.New("invalid billing recovery request")
+	}
+	return withBillingTransactionForRequestNamed(context.Background(), requestId, "MarkBillingRecoveryReviewRequired", func(tx *gorm.DB) error {
+		root, err := lockBillingOperation(tx, requestId)
+		if err != nil {
+			return err
+		}
+		if root.State != BillingSettlementRequested && root.State != BillingRefundRequested {
+			return nil
+		}
+		return tx.Model(root).Updates(map[string]any{
+			"state":       BillingReviewRequired,
+			"lease_until": 0,
+			"updated_at":  common.GetTimestamp(),
+		}).Error
+	})
+}
+
 // RecoverBillingSettlement replays either an ordinary settlement request or
 // the existing task/Midjourney intent. Ordinary relay recovery never derives a
 // charge from an old reservation; it requires the persisted request row.

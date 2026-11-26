@@ -15,6 +15,8 @@ import (
 
 const redisRateLimitNamespace = "rateLimit:v2"
 
+const clientClosedRequestStatus = 499
+
 // Redis rate limiting intentionally uses a fixed window. The single Lua script
 // makes increment, expiry, and the limit decision atomic, while retaining the
 // simple fixed-window behavior: traffic at a window boundary can burst up to
@@ -115,6 +117,11 @@ func redisRateLimiter(c *gin.Context, maxRequestNum int, duration int64, mark st
 		duration,
 	)
 	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			c.Status(clientClosedRequestStatus)
+			c.Abort()
+			return
+		}
 		logger.LogError(c.Request.Context(), common.LogText("rate limit check failed (mark=%s): %v", mark, err))
 		c.Status(http.StatusInternalServerError)
 		c.Abort()
@@ -250,6 +257,11 @@ func userRateLimitFactory(maxRequestNum int, duration int64, mark string) func(c
 func userRedisRateLimiter(c *gin.Context, maxRequestNum int, duration int64, key string) {
 	allowed, _, ttlSeconds, err := redisFixedWindowTake(c.Request.Context(), key, maxRequestNum, duration)
 	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			c.Status(clientClosedRequestStatus)
+			c.Abort()
+			return
+		}
 		logger.LogError(c.Request.Context(), common.LogText("rate limit check failed (key=%s): %v", key, err))
 		c.Status(http.StatusInternalServerError)
 		c.Abort()

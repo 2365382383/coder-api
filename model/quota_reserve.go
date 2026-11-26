@@ -3,7 +3,6 @@ package model
 import (
 	"context"
 	"errors"
-	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"gorm.io/gorm"
@@ -150,7 +149,11 @@ func quotaResultFromLua(result int, err error) (cacheQuotaResult, error) {
 }
 
 func quotaCacheContext() (context.Context, context.CancelFunc) {
-	return context.WithTimeout(context.Background(), 750*time.Millisecond)
+	// Redis billing follows the upstream cache path. Do not impose a short
+	// application deadline here; Redis transport errors still fall back to the
+	// database path, while a fixed 750ms budget creates false cache failures
+	// during normal contention.
+	return context.Background(), func() {}
 }
 
 func cacheTryReserveUserQuota(userID int, amount int64) (cacheQuotaResult, error) {

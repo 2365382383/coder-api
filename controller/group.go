@@ -25,7 +25,9 @@ func GetGroups(c *gin.Context) {
 func GetUserGroups(c *gin.Context) {
 	userGroup := ""
 	userId := c.GetInt("id")
-	userGroup, _ = model.GetUserGroup(userId, false)
+	if userId > 0 {
+		userGroup, _ = model.GetUserGroup(userId, false)
+	}
 	options := service.GetUserGroupOptions(userGroup)
 	c.JSON(http.StatusOK, gin.H{
 		"success":     true,

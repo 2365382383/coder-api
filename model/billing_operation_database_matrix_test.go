@@ -327,6 +327,30 @@ func TestBillingOperationDatabaseMatrix(t *testing.T) {
 			require.NoError(t, db.Where("request_id = ? AND phase = ?", ordinaryIntent.RequestId, "initial").First(&pendingOrdinary).Error)
 			require.Equal(t, BillingSettled, pendingOrdinary.State)
 
+			reviewOp := &BillingOperation{RequestId: "test-billing-recovery-review", Phase: "initial",
+				State: BillingSettlementRequested, UserId: user.Id, TokenId: token.Id,
+				FundingSource: "wallet", WalletAmount: 40, TokenAmount: 40, PreConsumed: 40, LeaseUntil: 999}
+			require.NoError(t, db.Create(reviewOp).Error)
+			require.NoError(t, MarkBillingRecoveryReviewRequired(reviewOp.RequestId))
+			require.NoError(t, MarkBillingRecoveryReviewRequired(reviewOp.RequestId))
+			var reviewed BillingOperation
+			require.NoError(t, db.Where("request_id = ? AND phase = ?", reviewOp.RequestId, "initial").First(&reviewed).Error)
+			require.Equal(t, BillingReviewRequired, reviewed.State)
+			require.Zero(t, reviewed.LeaseUntil)
+			require.EqualValues(t, 40, reviewed.WalletAmount)
+			require.EqualValues(t, 40, reviewed.PreConsumed)
+			pending, err := ListPendingBillingSettlements(100)
+			require.NoError(t, err)
+			require.Empty(t, pending)
+
+			reservedOp := &BillingOperation{RequestId: "test-billing-recovery-reserved", Phase: "initial",
+				State: BillingReserved, UserId: user.Id, FundingSource: "wallet", WalletAmount: 10, PreConsumed: 10}
+			require.NoError(t, db.Create(reservedOp).Error)
+			require.NoError(t, MarkBillingRecoveryReviewRequired(reservedOp.RequestId))
+			var unchanged BillingOperation
+			require.NoError(t, db.Where("request_id = ? AND phase = ?", reservedOp.RequestId, "initial").First(&unchanged).Error)
+			require.Equal(t, BillingReserved, unchanged.State)
+
 			settleUser := User{Username: "billing-task", AffCode: "billing-task-" + driver.name, Quota: 100, Status: common.UserStatusEnabled}
 			require.NoError(t, db.Create(&settleUser).Error)
 			settleToken := Token{UserId: settleUser.Id, Key: "billing-task-key", Status: common.TokenStatusEnabled,
@@ -412,7 +436,7 @@ func TestBillingOperationDatabaseMatrix(t *testing.T) {
 					tx.AddError(errors.New("forced Midjourney wallet failure"))
 				}
 			}))
-			_, err := ChargeMidjourneyTask(&mjTask, 10, mjToken.Id)
+			_, err = ChargeMidjourneyTask(&mjTask, 10, mjToken.Id)
 			require.Error(t, err)
 			var pendingMidjourney BillingOperation
 			require.NoError(t, db.Where("request_id = ? AND phase = ?", mjRequestID, "initial").First(&pendingMidjourney).Error)

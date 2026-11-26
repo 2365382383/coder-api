@@ -227,6 +227,39 @@ func TestRedisFailurePolicies(t *testing.T) {
 	assert.Equal(t, http.StatusNoContent, performRateLimitRequest(router, "/email", "192.0.2.62:12345").Code)
 }
 
+func TestRedisRateLimitTreatsCanceledRequestAsClientClosed(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	useRateLimitMiniRedis(t)
+
+	router := gin.New()
+	require.NoError(t, router.SetTrustedProxies(nil))
+	router.GET("/ip", rateLimitFactory(1, 30, "CANCELED-IP"), func(c *gin.Context) {
+		c.Status(http.StatusNoContent)
+	})
+	router.GET(
+		"/user",
+		func(c *gin.Context) { c.Set("id", 7) },
+		userRateLimitFactory(1, 30, "CANCELED-USER"),
+		func(c *gin.Context) { c.Status(http.StatusNoContent) },
+	)
+
+	for _, path := range []string{"/ip", "/user"} {
+		t.Run(path, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodGet, path, nil)
+			request.RemoteAddr = "192.0.2.90:12345"
+			ctx, cancel := context.WithCancel(request.Context())
+			cancel()
+			request = request.WithContext(ctx)
+			recorder := httptest.NewRecorder()
+
+			router.ServeHTTP(recorder, request)
+
+			assert.Equal(t, clientClosedRequestStatus, recorder.Code)
+			assert.Empty(t, recorder.Body.String())
+		})
+	}
+}
+
 func TestGlobalWebRateLimitCountsFrontendFilesInStaticBucket(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	previousWebEnable, previousWebNum, previousWebDuration := common.GlobalWebRateLimitEnable, common.GlobalWebRateLimitNum, common.GlobalWebRateLimitDuration
