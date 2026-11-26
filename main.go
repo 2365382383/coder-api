@@ -203,6 +203,8 @@ func main() {
 	service.StartCanvasCleanup()
 
 	if os.Getenv("BATCH_UPDATE_ENABLED") == "true" {
+		common.BatchUpdateEnabled = true
+		common.SysLog(common.LogText("batch update enabled with interval %ss", strconv.Itoa(common.BatchUpdateInterval)))
 		model.InitBatchUpdater()
 	}
 
