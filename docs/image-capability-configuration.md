@@ -1,10 +1,10 @@
 # 图片模型能力与 Playground 参数
 
-New API 的图片工作台使用一份全局图片参数配置。Playground 与内嵌无限画布共享同一份模型目录和能力，不再为每个模型维护独立能力表。
+New API 的图片工作台从启用能力和分组类型读取模型目录。被分配为 `图片` 类型的分组中的启用模型进入图片工作台；模型参数能力按实际图片渠道协议聚合，不按模型名称维护能力表。
 
 ## 模型发现
 
-图片模型只依据持久化模型元数据中的公开端点进入图片工作台：
+图片请求的实际路由仍依据持久化模型元数据中的公开端点：
 
 ```json
 {
@@ -15,7 +15,7 @@ New API 的图片工作台使用一份全局图片参数配置。Playground 与�
 }
 ```
 
-模型名称、标签、价格和渠道默认端点都不能替代这条声明。新增图片模型时，先在模型管理中创建或更新元数据端点，再确认用户分组内的启用渠道提供该模型。
+模型名称、标签、价格和渠道默认端点都不能替代这条声明。新增图片模型时，应把分组标记为 `图片`、确认启用能力，并为实际可生成的模型配置 `image-generation` 元数据和渠道映射。分组类型负责目录归类，端点元数据负责请求路由，两者职责不同。
 
 ## GPT-Image-2.6 模型核对
 
@@ -39,14 +39,16 @@ Images 2.6 的原生字段 `complexity`、`markup`、`svg`、`frame_count`、
 本站当前的 `ModelPrice=1.5` 与 `image_count` 计量属于 New API 本地配置，必须以定价
 快照和实际运行时读回为准，不能在本文件中表述为官方价格换算。
 
-## 统一参数
+## 协议能力
 
 - 画幅与分辨率：`aspect_ratio + resolution`。
 - 默认值：`1:1 + 1K`。
 - 分辨率选项：`1K`、`2K`、`4K`。
 - 画幅包含常用比例、现有 Gemini/xAI 扩展比例以及 `auto`。
-- 质量、输出格式、编辑、审核和压缩能力统一提供。
-- 参数只描述可用选项，不保证每个上游模型都接受每个组合；上游拒绝时返回真实错误，不自动降级。
+- OpenAI 兼容图片渠道使用统一工作台预设，并提供质量、输出格式、编辑、审核和压缩能力。
+- Gemini 原生图片渠道使用 Gemini 支持的比例和分辨率，不提供 OpenAI 的质量、输出格式和编辑选项，单次最多 4 张。
+- 同一模型在多个协议渠道提供时，公开能力取候选渠道的交集。
+- 参数能力来自渠道协议和公开模型目录，不从模型名称推断；上游拒绝时返回真实错误，不自动降级。
 
 ## 请求转换
 
@@ -71,15 +73,15 @@ multipart 编辑转发沿用上游原实现：`relay/channel/openai/adaptor.go` 
 
 - 不再读取或创建 `/data/image-capabilities.json`。
 - 不再支持 `IMAGE_CAPABILITY_CONFIG_FILE`。
-- `pkg/imagecapability` 只保留能力类型、全局默认值和 OpenAI 尺寸转换。
-- Playground 的 `/api/user/image-models` 与画布的 `/api/canvas/bootstrap` 返回相同图片能力。
-- `/api/pricing` 仍按既有价格和端点缓存返回图片能力，不改变计费事实。
+- `pkg/imagecapability` 保留能力类型、OpenAI 兼容默认值、Gemini 原生能力和尺寸转换。
+- Playground 的 `/api/user/image-models` 与画布的 `/api/canvas/bootstrap` 按同一分组和渠道能力返回图片参数。
+- `/api/pricing` 按既有价格、端点和渠道协议缓存返回图片能力，不改变计费事实。
 
 ## 回归检查
 
-- 元数据声明图片端点的模型出现在 Playground 和画布图片工作台。
-- 未声明图片端点的模型不会因名称或渠道类型进入图片工作台。
-- 两个页面均显示 `1K`、`2K`、`4K`。
+- `图片` 类型分组中的启用模型出现在 Playground 和画布图片工作台。
+- 实际生成请求仍要求模型元数据声明图片端点并由渠道映射提供服务。
+- OpenAI 兼容渠道与 Gemini 原生渠道显示各自协议支持的选项。
 - OpenAI、Gemini、xAI 的请求字段符合各自协议。
 - OpenAI 生图、JSON 编辑和 multipart 编辑均保留原生参数，且工作台预设转换后不丢失尺寸；显式零值和 markup 文件保持不变。
 - 验证入口：`relay/helper/valid_image_request_test.go`、`relay/channel/openai/adaptor_image_test.go`；数量和溢出保护继续由 `relay/helper/openai_image_request_test.go` 覆盖。

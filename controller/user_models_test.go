@@ -173,7 +173,15 @@ func TestGetUserImageModelsReturnsConfiguredImageGroups(t *testing.T) {
 	model.InvalidatePricingCache()
 	catalog, err := service.CanvasModelCatalog("default")
 	require.NoError(t, err)
-	require.Contains(t, catalog, service.CanvasModelOption{Name: "gpt-image-1", Group: "default", Capability: "image"})
+	var imageOption *service.CanvasModelOption
+	for index := range catalog {
+		if catalog[index].Name == "gpt-image-1" && catalog[index].Group == "default" && catalog[index].Capability == "image" {
+			imageOption = &catalog[index]
+			break
+		}
+	}
+	require.NotNil(t, imageOption)
+	require.NotNil(t, imageOption.ImageCapabilities)
 	imageGroups, err := service.GetUserImageModelGroups("default")
 	require.NoError(t, err)
 	require.Len(t, imageGroups, 1)

@@ -18,6 +18,14 @@ var (
 		"auto", "1:1", "1:4", "1:8", "2:3", "3:2", "3:4", "4:1", "4:3", "4:5",
 		"5:4", "8:1", "9:16", "16:9", "19.5:9", "9:19.5", "20:9", "9:20", "21:9",
 	}
+	geminiNativeAspectRatios = []string{
+		"1:1", "1:4", "1:8", "2:3", "3:2", "3:4", "4:1", "4:3", "4:5",
+		"5:4", "8:1", "9:16", "16:9", "21:9",
+	}
+	xaiAspectRatios = []string{
+		"auto", "1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3",
+		"2:1", "1:2", "19.5:9", "9:19.5", "20:9", "9:20",
+	}
 	defaultResolutions = []string{"1K", "2K", "4K"}
 )
 
@@ -40,6 +48,35 @@ func DefaultCapability() Capability {
 		SupportsModeration:        true,
 		SupportsOutputCompression: true,
 		MaxImages:                 10,
+	}
+}
+
+// GeminiNativeCapability describes the shared image contract after a request
+// is routed through a native Gemini image channel. It is selected from the
+// channel protocol, never from a model name.
+func GeminiNativeCapability() Capability {
+	return Capability{
+		Provider:           ProviderGemini,
+		SizeMode:           SizeModeAspectRatioResolution,
+		AspectRatios:       append([]string(nil), geminiNativeAspectRatios...),
+		Resolutions:        append([]string(nil), defaultResolutions...),
+		DefaultAspectRatio: "1:1",
+		DefaultResolution:  "1K",
+		MaxImages:          4,
+	}
+}
+
+// XAINativeCapability describes the xAI image request contract selected by
+// the xAI channel protocol.
+func XAINativeCapability() Capability {
+	return Capability{
+		Provider:           ProviderXAI,
+		SizeMode:           SizeModeAspectRatioResolution,
+		AspectRatios:       append([]string(nil), xaiAspectRatios...),
+		Resolutions:        []string{"1K", "2K"},
+		DefaultAspectRatio: "auto",
+		DefaultResolution:  "1K",
+		MaxImages:          4,
 	}
 }
 

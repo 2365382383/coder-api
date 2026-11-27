@@ -61,12 +61,6 @@ func CanvasBootstrap(c *gin.Context) {
 		canvasError(c, err)
 		return
 	}
-	for i := range options {
-		if options[i].Capability != "image" {
-			continue
-		}
-		options[i].ImageCapabilities = service.DefaultImageCapabilities()
-	}
 	common.ApiSuccess(c, gin.H{"protocol": 1, "user_id": user.Id, "models": options, "embedded": true, "extensions": false, "max_document_bytes": model.CanvasMaxDocumentBytes})
 }
 

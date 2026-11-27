@@ -34,10 +34,14 @@ func GetUserImageModelGroups(userGroup string) ([]dto.UserImageGroupOption, erro
 				continue
 			}
 			seen[item.Name] = true
+			capabilities := item.ImageCapabilities
+			if capabilities == nil {
+				capabilities = DefaultImageCapabilities()
+			}
 			models = append(models, dto.UserImageModelOption{
 				Label:        item.Name,
 				Value:        item.Name,
-				Capabilities: *DefaultImageCapabilities(),
+				Capabilities: *capabilities,
 			})
 		}
 		if len(models) == 0 {

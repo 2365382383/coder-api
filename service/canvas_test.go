@@ -125,8 +125,8 @@ func TestCanvasCatalogUsesMediaGroupTypesWithoutEndpointFiltering(t *testing.T) 
 	model.InitColumnNamesForTest()
 	require.NoError(t, model.DB.AutoMigrate(&model.Ability{}, &model.Channel{}, &model.Model{}))
 	t.Cleanup(func() {
-		require.NoError(t, model.DB.Where("channel_id IN ?", []int{907, 908, 909, 910}).Delete(&model.Ability{}).Error)
-		require.NoError(t, model.DB.Where("id IN ?", []int{907, 908, 909, 910}).Delete(&model.Channel{}).Error)
+		require.NoError(t, model.DB.Where("channel_id IN ?", []int{907, 908, 909, 910, 911}).Delete(&model.Ability{}).Error)
+		require.NoError(t, model.DB.Where("id IN ?", []int{907, 908, 909, 910, 911}).Delete(&model.Channel{}).Error)
 		require.NoError(t, model.DB.Where("model_name = ?", "image-with-endpoint-metadata").Delete(&model.Model{}).Error)
 	})
 	for _, channel := range []model.Channel{
@@ -134,6 +134,7 @@ func TestCanvasCatalogUsesMediaGroupTypesWithoutEndpointFiltering(t *testing.T) 
 		{Id: 908, Type: constant.ChannelTypeOpenAI, Status: common.ChannelStatusEnabled, Name: "video-group"},
 		{Id: 909, Type: constant.ChannelTypeOpenAI, Status: common.ChannelStatusEnabled, Name: "audio-group"},
 		{Id: 910, Type: constant.ChannelTypeOpenAI, Status: common.ChannelStatusEnabled, Name: "untyped-image"},
+		{Id: 911, Type: constant.ChannelTypeGemini, Status: common.ChannelStatusEnabled, Name: "gemini-image-group"},
 	} {
 		require.NoError(t, model.DB.Create(&channel).Error)
 	}
@@ -142,6 +143,7 @@ func TestCanvasCatalogUsesMediaGroupTypesWithoutEndpointFiltering(t *testing.T) 
 		{Group: "video-group", Model: "video-without-endpoint-metadata", ChannelId: 908, Enabled: true},
 		{Group: "audio-group", Model: "audio-without-endpoint-metadata", ChannelId: 909, Enabled: true},
 		{Group: "untyped-image", Model: "image-with-endpoint-metadata", ChannelId: 910, Enabled: true},
+		{Group: "image-group", Model: "gemini-image-without-endpoint-metadata", ChannelId: 911, Enabled: true},
 	} {
 		require.NoError(t, model.DB.Create(&ability).Error)
 	}
@@ -152,9 +154,27 @@ func TestCanvasCatalogUsesMediaGroupTypesWithoutEndpointFiltering(t *testing.T) 
 
 	options, err := CanvasModelCatalog("default")
 	require.NoError(t, err)
-	assert.Contains(t, options, CanvasModelOption{Name: "image-without-endpoint-metadata", Group: "image-group", Capability: "image"})
+	imageOption, ok := slicesValue(options, "image-without-endpoint-metadata", "image-group", "image")
+	require.True(t, ok)
+	require.NotNil(t, imageOption.ImageCapabilities)
+	assert.Equal(t, "openai", imageOption.ImageCapabilities.Provider)
+	geminiOption, ok := slicesValue(options, "gemini-image-without-endpoint-metadata", "image-group", "image")
+	require.True(t, ok)
+	require.NotNil(t, geminiOption.ImageCapabilities)
+	assert.Equal(t, "gemini", geminiOption.ImageCapabilities.Provider)
+	assert.Empty(t, geminiOption.ImageCapabilities.Qualities)
+	assert.False(t, geminiOption.ImageCapabilities.SupportsEditing)
 	assert.Contains(t, options, CanvasModelOption{Name: "video-without-endpoint-metadata", Group: "video-group", Capability: "video", VideoAdapter: "openai"})
 	assert.Contains(t, options, CanvasModelOption{Name: "audio-without-endpoint-metadata", Group: "audio-group", Capability: "audio"})
 	assert.Contains(t, options, CanvasModelOption{Name: "image-with-endpoint-metadata", Group: "untyped-image", Capability: "text"})
 	assert.NotContains(t, options, CanvasModelOption{Name: "image-with-endpoint-metadata", Group: "untyped-image", Capability: "image"})
+}
+
+func slicesValue(options []CanvasModelOption, name, group, capability string) (CanvasModelOption, bool) {
+	for _, option := range options {
+		if option.Name == name && option.Group == group && option.Capability == capability {
+			return option, true
+		}
+	}
+	return CanvasModelOption{}, false
 }

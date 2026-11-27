@@ -151,12 +151,14 @@
 - 必须保留：Playground 图片模式支持本项目已接入的多供应商能力；模型可见性、
   OpenAI/Gemini/xAI 的图片路由和模型名保持一致，不能因上游模型识别变化错误地把
   图片请求送到文本渠道或重新开放已明确移除的 Grok 图片路径。
-- 必须保留：Playground 与画布图片模式共用全局 `aspect_ratio + resolution` 能力，模型是否
-  属于图片工作台只由持久化模型元数据端点决定。旧的 `/data/image-capabilities.json`、
-  `IMAGE_CAPABILITY_CONFIG_FILE` 和逐模型热加载规则属于历史方案，不得恢复为第二套事实源。
-- 必须保留：`gpt-image-2`、`gpt-image-2.5`、`gpt-image-2.6` 及其 Flare/Sunburst 变体和
-  `chatgpt-image-latest` 共享完整的
-  GPT 图片分辨率能力，包括横竖 4K 规格；能力注册、前端模型选项和图片 relay 必须保持一致。
+- 必须保留：Playground 与画布图片模式共用分组类型驱动的模型目录；`图片` 类型分组中的
+  启用模型进入工作台，实际生成请求仍要求持久化模型元数据声明 `image-generation` 端点。
+  分组类型负责目录归类，端点元数据负责请求路由，不能把两者混成同一事实源。旧的
+  `/data/image-capabilities.json`、`IMAGE_CAPABILITY_CONFIG_FILE` 和逐模型热加载规则属于
+  历史方案，不得恢复。
+- 必须保留：图片参数能力由实际图片渠道协议生成并聚合，OpenAI 兼容、Gemini 原生和 xAI
+  渠道分别返回各自支持的比例、分辨率、质量和编辑能力；不得按模型名称维护逐模型参数表。
+  同一模型由多个图片渠道提供时，公开能力取候选渠道交集。
 - 当前位置：`pkg/imagecapability/**`、`service/image_capability.go`、
   `controller/playground.go`、`controller/user.go`、`router/api-router.go`、
   `middleware/distributor.go`、`relay/channel/gemini/**`、`relay/channel/xai/**`、

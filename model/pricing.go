@@ -418,7 +418,7 @@ func updatePricing() {
 			}
 			groupImage := groupImages[ability.Model][ability.Group]
 			current := imageCapabilities[ability.Model]
-			capability := imagecapability.DefaultCapability()
+			capability := ImageCapabilityForChannelType(ability.ChannelType)
 			if current.initialized {
 				current.value = imagecapability.Intersect(current.value, capability)
 			} else {
@@ -643,6 +643,19 @@ func updatePricing() {
 	modelEnableGroupsLock.Unlock()
 
 	lastGetPricingTime = time.Now()
+}
+
+// imageCapabilityForChannelType keeps provider-specific image behavior tied
+// to the configured channel protocol. Model names and aliases remain data in
+// the model/channel catalog rather than source-level capability switches.
+func ImageCapabilityForChannelType(channelType int) imagecapability.Capability {
+	if channelType == constant.ChannelTypeGemini {
+		return imagecapability.GeminiNativeCapability()
+	}
+	if channelType == constant.ChannelTypeXai {
+		return imagecapability.XAINativeCapability()
+	}
+	return imagecapability.DefaultCapability()
 }
 
 // GetSupportedEndpointMap 返回全局端点到路径的映射

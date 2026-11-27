@@ -17,6 +17,24 @@ func TestDefaultCapabilityExposesAllWorkbenchPresets(t *testing.T) {
 	assert.Equal(t, []string{"1K", "2K", "4K"}, capability.Resolutions)
 }
 
+func TestGeminiNativeCapabilityUsesProtocolOptions(t *testing.T) {
+	capability := GeminiNativeCapability()
+	assert.Equal(t, ProviderGemini, capability.Provider)
+	assert.NotContains(t, capability.AspectRatios, "auto")
+	assert.NotContains(t, capability.Qualities, "low")
+	assert.False(t, capability.SupportsEditing)
+	assert.Equal(t, 4, capability.MaxImages)
+}
+
+func TestXAINativeCapabilityUsesProtocolOptions(t *testing.T) {
+	capability := XAINativeCapability()
+	assert.Equal(t, ProviderXAI, capability.Provider)
+	assert.Equal(t, "auto", capability.DefaultAspectRatio)
+	assert.Equal(t, []string{"1K", "2K"}, capability.Resolutions)
+	assert.False(t, capability.SupportsEditing)
+	assert.Equal(t, 4, capability.MaxImages)
+}
+
 func TestDimensionsForMapsSharedPresetsToOpenAI(t *testing.T) {
 	tests := []struct {
 		aspectRatio string

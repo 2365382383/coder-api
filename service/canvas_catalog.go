@@ -31,8 +31,9 @@ var canvasMediaGroupTypes = map[string]string{
 	"音频": "audio",
 }
 
-// DefaultImageCapabilities is the single image workbench configuration used by
-// Playground and the embedded canvas.
+// DefaultImageCapabilities is the OpenAI-compatible fallback used when a
+// caller has no channel-specific image capability. Cataloged image options
+// normally receive their protocol capability from CanvasModelCatalog.
 func DefaultImageCapabilities() *imagedto.ImageModelCapabilities {
 	capabilities := imagedto.ImageCapabilitiesFrom(imagecapability.DefaultCapability())
 	return &capabilities
@@ -97,6 +98,7 @@ func CanvasModelCatalog(userGroup string) ([]CanvasModelOption, error) {
 	}
 	groupTypeDefinitions, groupTypeAssignments := ratio_setting.GetGroupTypeOptionsCopy()
 	generation := jsplugin.DefaultRegistry.Generation()
+	imageCapabilities := map[string]imagecapability.Capability{}
 	for _, group := range groupNames {
 		queryGroups := []string{group}
 		if group == "auto" {
@@ -111,6 +113,15 @@ func CanvasModelCatalog(userGroup string) ([]CanvasModelOption, error) {
 			capability := canvasMediaCapabilityForGroup(ability.Group, groupTypeDefinitions, groupTypeAssignments)
 			if capability == "" {
 				capability = "text"
+			}
+			if capability == "image" {
+				imageKey := group + "\x00" + ability.Model
+				channelCapability := model.ImageCapabilityForChannelType(ability.ChannelType)
+				if current, ok := imageCapabilities[imageKey]; ok {
+					imageCapabilities[imageKey] = imagecapability.Intersect(current, channelCapability)
+				} else {
+					imageCapabilities[imageKey] = channelCapability
+				}
 			}
 			key := ability.Model + "\x00" + capability
 			if !seen[key] {
@@ -132,6 +143,17 @@ func CanvasModelCatalog(userGroup string) ([]CanvasModelOption, error) {
 				options[i].VideoAdapter = videoAdapters[options[i].Name]
 			}
 		}
+	}
+	for i := range options {
+		if options[i].Capability != "image" {
+			continue
+		}
+		capability, ok := imageCapabilities[options[i].Group+"\x00"+options[i].Name]
+		if !ok {
+			continue
+		}
+		converted := imagedto.ImageCapabilitiesFrom(capability)
+		options[i].ImageCapabilities = &converted
 	}
 	slices.SortFunc(options, func(a, b CanvasModelOption) int {
 		if a.Group != b.Group {
