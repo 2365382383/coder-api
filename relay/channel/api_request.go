@@ -593,7 +593,7 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 	}
 
 	upstreamRequestID := resp.Header.Get(common2.RequestIdKey)
-	if info.ChannelMeta != nil && info.ChannelMeta.ChannelType == constant.ChannelTypeSub2API {
+	if info.ChannelMeta != nil && info.ChannelMeta.ChannelType == appconstant.ChannelTypeSub2API {
 		if clientRequestID := strings.TrimSpace(resp.Header.Get("X-Client-Request-ID")); clientRequestID != "" {
 			// Sub2API stores usage logs as "client:<id>"; keep that exact join key.
 			upstreamRequestID = "client:" + clientRequestID
