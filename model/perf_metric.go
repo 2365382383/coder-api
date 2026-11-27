@@ -1,6 +1,8 @@
 package model
 
 import (
+	"errors"
+	"fmt"
 	"time"
 
 	"gorm.io/gorm"
@@ -26,34 +28,67 @@ func (PerfMetric) TableName() string {
 	return "perf_metrics"
 }
 
-func UpsertPerfMetric(metric *PerfMetric) error {
-	if metric == nil || metric.RequestCount == 0 {
-		return nil
+const PerfMetricWriteBatchSize = 200
+
+func perfMetricUpsertClause() clause.OnConflict {
+	add := func(column string) any {
+		if DB != nil && DB.Dialector.Name() == "postgres" {
+			return gorm.Expr(fmt.Sprintf("perf_metrics.%s + EXCLUDED.%s", column, column))
+		}
+		if DB != nil && DB.Dialector.Name() == "sqlite" {
+			return gorm.Expr(fmt.Sprintf("perf_metrics.%s + excluded.%s", column, column))
+		}
+		return gorm.Expr(fmt.Sprintf("perf_metrics.%s + VALUES(%s)", column, column))
 	}
-	return DB.Clauses(clause.OnConflict{
+	return clause.OnConflict{
 		Columns: []clause.Column{
 			{Name: "model_name"},
 			{Name: "group"},
 			{Name: "bucket_ts"},
 		},
 		DoUpdates: clause.Assignments(map[string]any{
-			"request_count":    gorm.Expr("perf_metrics.request_count + ?", metric.RequestCount),
-			"success_count":    gorm.Expr("perf_metrics.success_count + ?", metric.SuccessCount),
-			"total_latency_ms": gorm.Expr("perf_metrics.total_latency_ms + ?", metric.TotalLatencyMs),
-			"ttft_sum_ms":      gorm.Expr("perf_metrics.ttft_sum_ms + ?", metric.TtftSumMs),
-			"ttft_count":       gorm.Expr("perf_metrics.ttft_count + ?", metric.TtftCount),
-			"output_tokens":    gorm.Expr("perf_metrics.output_tokens + ?", metric.OutputTokens),
-			"generation_ms":    gorm.Expr("perf_metrics.generation_ms + ?", metric.GenerationMs),
+			"request_count":    add("request_count"),
+			"success_count":    add("success_count"),
+			"total_latency_ms": add("total_latency_ms"),
+			"ttft_sum_ms":      add("ttft_sum_ms"),
+			"ttft_count":       add("ttft_count"),
+			"output_tokens":    add("output_tokens"),
+			"generation_ms":    add("generation_ms"),
 		}),
-	}).Create(metric).Error
+	}
 }
 
-func GetPerfMetrics(modelName string, group string, startTs int64, endTs int64) ([]PerfMetric, error) {
+func UpsertPerfMetric(metric *PerfMetric) error {
+	if metric == nil || metric.RequestCount == 0 {
+		return nil
+	}
+	return UpsertPerfMetricBatch([]PerfMetric{*metric})
+}
+
+// UpsertPerfMetricBatch writes one bounded batch in one transaction. Callers
+// should retry failed batches independently so a successful batch is never
+// applied twice when a later batch fails.
+func UpsertPerfMetricBatch(metrics []PerfMetric) error {
+	if len(metrics) == 0 {
+		return nil
+	}
+	if len(metrics) > PerfMetricWriteBatchSize {
+		return errors.New("perf metric batch exceeds the write limit")
+	}
+	return DB.Clauses(perfMetricUpsertClause()).Create(&metrics).Error
+}
+
+func GetPerfMetrics(modelName string, group string, allowedGroups []string, startTs int64, endTs int64) ([]PerfMetric, error) {
 	var metrics []PerfMetric
 	query := DB.Model(&PerfMetric{}).
 		Where("model_name = ? AND bucket_ts >= ? AND bucket_ts <= ?", modelName, startTs, endTs)
 	if group != "" {
 		query = query.Where(commonGroupCol+" = ?", group)
+	} else if allowedGroups != nil {
+		if len(allowedGroups) == 0 {
+			return metrics, nil
+		}
+		query = query.Where(commonGroupCol+" IN ?", allowedGroups)
 	}
 	err := query.Order("bucket_ts ASC").Find(&metrics).Error
 	return metrics, err
@@ -110,7 +145,6 @@ func GetPerfMetricsSummaryBucketsAll(startTs int64, endTs int64, groups []string
 	err := query.
 		Group("model_name, bucket_ts").
 		Having("SUM(request_count) > 0").
-		Order("bucket_ts ASC").
 		Find(&summaries).Error
 	return summaries, err
 }
@@ -131,6 +165,26 @@ func GetRecentPerfMetricSuccessBuckets(modelName string, startTs int64, endTs in
 	var buckets []PerfMetricSummaryBucket
 	err := query.Group("model_name, " + hourBucket).
 		Order("bucket_ts DESC").Limit(limit).Find(&buckets).Error
+	return buckets, err
+}
+
+// GetRecentPerfMetricSuccessBucketsBatch loads the recent success history for
+// all requested models in one query. The caller applies the per-model sample
+// limit after aggregation, avoiding one database round trip per model.
+func GetRecentPerfMetricSuccessBucketsBatch(modelNames []string, startTs int64, endTs int64, groups []string) ([]PerfMetricSummaryBucket, error) {
+	if len(modelNames) == 0 || (groups != nil && len(groups) == 0) {
+		return nil, nil
+	}
+	const hourBucket = "bucket_ts - (bucket_ts % 3600)"
+	query := DB.Model(&PerfMetric{}).
+		Select("model_name, "+hourBucket+" AS bucket_ts, SUM(request_count) AS request_count, SUM(success_count) AS success_count").
+		Where("model_name IN ? AND bucket_ts >= ? AND bucket_ts <= ? AND request_count > 0", modelNames, startTs, endTs)
+	if groups != nil {
+		query = query.Where(commonGroupCol+" IN ?", groups)
+	}
+	var buckets []PerfMetricSummaryBucket
+	err := query.Group("model_name, " + hourBucket).
+		Order("model_name ASC, bucket_ts DESC").Find(&buckets).Error
 	return buckets, err
 }
 

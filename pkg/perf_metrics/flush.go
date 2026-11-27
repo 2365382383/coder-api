@@ -1,7 +1,6 @@
 package perfmetrics
 
 import (
-	"strconv"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -24,6 +23,12 @@ func flushLoop() {
 
 func flushCompletedBuckets() {
 	currentBucket := bucketStart(time.Now().Unix())
+	type pendingBucket struct {
+		key     bucketKey
+		bucket  *atomicBucket
+		drained counters
+	}
+	pending := make([]pendingBucket, 0)
 	hotBuckets.Range(func(key, value any) bool {
 		k := key.(bucketKey)
 		if k.bucketTs >= currentBucket {
@@ -37,27 +42,37 @@ func flushCompletedBuckets() {
 			return true
 		}
 
-		err := model.UpsertPerfMetric(&model.PerfMetric{
-			ModelName:      k.model,
-			Group:          k.group,
-			BucketTs:       k.bucketTs,
-			RequestCount:   drained.requestCount,
-			SuccessCount:   drained.successCount,
-			TotalLatencyMs: drained.totalLatencyMs,
-			TtftSumMs:      drained.ttftSumMs,
-			TtftCount:      drained.ttftCount,
-			OutputTokens:   drained.outputTokens,
-			GenerationMs:   drained.generationMs,
-		})
-		if err != nil {
-			bucket.addCounters(drained)
-			common.SysError(common.LogText("failed to flush perf metric bucket model=%s group=%s bucket=%d: %s", k.model, k.group, k.bucketTs, err.Error()))
-			return true
-		}
-
-		deleteOldEmptyBucket(k, key)
+		pending = append(pending, pendingBucket{key: k, bucket: bucket, drained: drained})
 		return true
 	})
+	for start := 0; start < len(pending); start += model.PerfMetricWriteBatchSize {
+		end := min(start+model.PerfMetricWriteBatchSize, len(pending))
+		rows := make([]model.PerfMetric, 0, end-start)
+		for _, item := range pending[start:end] {
+			rows = append(rows, model.PerfMetric{
+				ModelName:      item.key.model,
+				Group:          item.key.group,
+				BucketTs:       item.key.bucketTs,
+				RequestCount:   item.drained.requestCount,
+				SuccessCount:   item.drained.successCount,
+				TotalLatencyMs: item.drained.totalLatencyMs,
+				TtftSumMs:      item.drained.ttftSumMs,
+				TtftCount:      item.drained.ttftCount,
+				OutputTokens:   item.drained.outputTokens,
+				GenerationMs:   item.drained.generationMs,
+			})
+		}
+		if err := model.UpsertPerfMetricBatch(rows); err != nil {
+			for _, item := range pending[start:end] {
+				item.bucket.addCounters(item.drained)
+			}
+			common.SysError(common.LogText("failed to flush perf metric batch size=%d: %s", len(rows), err.Error()))
+			continue
+		}
+		for _, item := range pending[start:end] {
+			deleteOldEmptyBucket(item.key, item.key)
+		}
+	}
 }
 
 func deleteOldEmptyBucket(k bucketKey, rawKey any) {
@@ -74,24 +89,4 @@ func cleanupExpiredMetrics(retentionDays int) {
 	if err := model.DeletePerfMetricsBefore(cutoff); err != nil {
 		common.SysError(common.LogText("failed to cleanup expired perf metrics: %s", err.Error()))
 	}
-}
-
-func redisCounters(values map[string]string) counters {
-	return counters{
-		requestCount:   parseRedisInt(values["req"]),
-		successCount:   parseRedisInt(values["ok"]),
-		totalLatencyMs: parseRedisInt(values["lat"]),
-		ttftSumMs:      parseRedisInt(values["ttft"]),
-		ttftCount:      parseRedisInt(values["ttft_n"]),
-		outputTokens:   parseRedisInt(values["out"]),
-		generationMs:   parseRedisInt(values["gen_ms"]),
-	}
-}
-
-func parseRedisInt(value string) int64 {
-	if value == "" {
-		return 0
-	}
-	parsed, _ := strconv.ParseInt(value, 10, 64)
-	return parsed
 }
