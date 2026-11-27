@@ -130,20 +130,19 @@
 - 验证入口：`controller/pricing_test.go`；未来合并应追加普通用户、同名私有分组和
   管理员三类接口断言。
 
-### P-12 日志保留保护、错误日志权限与工具附加费标记
+### P-12 日志保留保护与工具附加费标记
 
 - 必须保留：日志异步清理不能删除保留期内的数据；`LogRetentionDays` 的上限校验同时
   在选项更新和实际系统任务中生效，不能只保留前端或管理接口校验。
-- 必须保留：错误日志（type 5）在自助日志视图一律不可见——自己的日志列表、自助导出
-  流和 Token 日志对所有角色（含管理员）都排除 type 5，管理员通过全局日志视图查看；
-  敏感词审计（type 8）仍只对非管理员排除。这不是删除错误日志数据，而是访问层过滤，
-  前端同时对非管理范围隐藏 Error 类型筛选项。
+- 必须保留：敏感词审计（type 8）在普通用户自助日志列表和导出中不可见，Token 最近
+  日志也排除该类型；管理员可在授权范围内查看审计记录。
 - 必须保留：工具调用附加费仍计入实际账务和日志数据，但当前用户界面不展示附加费
   标记。
 - 当前位置：`controller/option.go`、`model/option.go`、`model/log.go`、
   `service/system_task.go`、`web/src/features/usage-logs/components/log-cost-display.tsx`。
-- 验证入口：`controller/log_test.go`、`service/system_task_test.go`、
-  `model/log_format_test.go`、
+- 验证入口：`controller/log_test.go`、`controller/relay_error_log_test.go`、
+  `controller/log_export_test.go`、`service/system_task_test.go`、`model/log_format_test.go`、
+  `web/src/features/usage-logs/components/__tests__/log-type-filter.test.tsx`、
   `web/src/features/usage-logs/components/__tests__/cost-display.test.tsx`。
 
 ### P-13 Playground 多供应商图片能力与路由

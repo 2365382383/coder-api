@@ -127,16 +127,15 @@ func TestLogExportDatabaseMatrix(t *testing.T) {
 
 			listed := callLogHandler(t, GetUserLogs, 1, common.RoleCommonUser, query)[0]
 			require.Equal(t, true, listed["success"])
-			// P-12: the error row is not part of the user's own log view.
-			assert.EqualValues(t, 1, listed["data"].(map[string]any)["total"])
+			assert.EqualValues(t, 2, listed["data"].(map[string]any)["total"])
 			listed = callLogHandler(t, GetAllLogs, 3, common.RoleAdminUser, query+"&username=alice")[0]
 			require.Equal(t, true, listed["success"])
 			assert.EqualValues(t, 2, listed["data"].(map[string]any)["total"])
 
 			own := callLogHandler(t, ExportUserLogs, 1, common.RoleCommonUser, query)
-			require.Len(t, own, 2)
-			assert.Equal(t, []any{"a-1"}, exportedRequestIds(own))
-			assert.Equal(t, map[string]any{"success": true, "message": "", "data": map[string]any{"count": float64(1)}}, own[1])
+			require.Len(t, own, 3)
+			assert.Equal(t, []any{"a-2", "a-1"}, exportedRequestIds(own))
+			assert.Equal(t, map[string]any{"success": true, "message": "", "data": map[string]any{"count": float64(2)}}, own[2])
 			assert.Equal(t, float64(1), own[0]["id"], "user exports carry list positions, not row ids")
 			assert.Empty(t, own[0]["channel_name"])
 			assert.NotContains(t, own[0]["other"], "admin_info")

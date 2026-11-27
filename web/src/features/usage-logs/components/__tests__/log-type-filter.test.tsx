@@ -141,12 +141,10 @@ it('offers sensitive audit filters only to administrators', async () => {
   ).toBeVisible()
 })
 
-it('offers the error log filter only to administrators', async () => {
+it('offers the error log filter to ordinary users and administrators', async () => {
   await renderFilter(ROLE.USER)
   await userEvent.click(screen.getByRole('combobox', { name: 'Type' }))
-  expect(
-    screen.queryByRole('option', { name: 'Error' })
-  ).not.toBeInTheDocument()
+  expect(screen.getByRole('option', { name: 'Error' })).toBeVisible()
   cleanup()
 
   await renderFilter(ROLE.ADMIN)

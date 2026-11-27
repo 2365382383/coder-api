@@ -29,7 +29,7 @@ func TestSensitiveWordLogVisibilityIsEnforcedBeforePagination(t *testing.T) {
 	for _, entry := range []Log{
 		{UserId: 7, TokenId: 71, Type: LogTypeConsume, RequestId: "visible-consume"},
 		{UserId: 7, TokenId: 71, Type: LogTypeSensitiveWordBlock, RequestId: "private-audit", Other: `{"admin_info":{"keyword_filter":{"action":"blocked","audit_id":42}}}`},
-		{UserId: 7, TokenId: 71, Type: LogTypeError, RequestId: "hidden-error"},
+		{UserId: 7, TokenId: 71, Type: LogTypeError, RequestId: "visible-error"},
 		{UserId: 8, TokenId: 81, Type: LogTypeSensitiveWordBlock, RequestId: "other-user-audit"},
 	} {
 		require.NoError(t, db.Create(&entry).Error)
@@ -42,12 +42,13 @@ func TestSensitiveWordLogVisibilityIsEnforcedBeforePagination(t *testing.T) {
 		return logs, total
 	}
 
-	// The error row belongs to a different protection item (P-12) but is kept in
-	// the fixture so any self view that stops filtering restricted types fails here.
+	// Ordinary users can see their own errors, while sensitive-word audit remains private.
 	first, total := read(common.RoleCommonUser, LogTypeUnknown, 0, 10, "")
-	require.EqualValues(t, 1, total)
-	require.Len(t, first, 1)
-	require.Equal(t, "visible-consume", first[0].RequestId)
+	require.EqualValues(t, 2, total)
+	require.Len(t, first, 2)
+	requestIDs := []string{first[0].RequestId, first[1].RequestId}
+	require.Contains(t, requestIDs, "visible-consume")
+	require.Contains(t, requestIDs, "visible-error")
 	for _, filter := range []struct {
 		logType   int
 		requestID string
@@ -65,12 +66,12 @@ func TestSensitiveWordLogVisibilityIsEnforcedBeforePagination(t *testing.T) {
 	}
 	logs, total, err := GetUserLogs(7, LogFilter{}, 0, 10)
 	require.NoError(t, err)
-	require.EqualValues(t, 1, total)
-	require.Len(t, logs, 1)
+	require.EqualValues(t, 2, total)
+	require.Len(t, logs, 2)
 
 	tokenLogs, err := GetLogByTokenId(71)
 	require.NoError(t, err)
-	require.Len(t, tokenLogs, 1)
+	require.Len(t, tokenLogs, 2)
 	for _, entry := range tokenLogs {
 		require.NotEqual(t, LogTypeSensitiveWordBlock, entry.Type)
 	}
@@ -80,7 +81,7 @@ func TestSensitiveWordLogVisibilityIsEnforcedBeforePagination(t *testing.T) {
 		filter LogFilter
 		count  int
 	}{
-		{common.RoleCommonUser, LogFilter{}, 1},
+		{common.RoleCommonUser, LogFilter{}, 2},
 		{common.RoleCommonUser, LogFilter{Type: LogTypeSensitiveWordBlock}, 0},
 		{common.RoleAdminUser, LogFilter{Type: LogTypeSensitiveWordBlock}, 1},
 	} {

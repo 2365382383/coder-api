@@ -303,11 +303,9 @@ func TestLogFormattingPreservesLargeIntegerLexemes(t *testing.T) {
 	})
 }
 
-// TestUserLogViewsHideErrorLogs restores the P-12 contract lost in the rc.39
-// merge: error logs (type 5) are filtered out of every self log view — list,
-// export stream and token view, for every role — while the global log view used
-// by administrators still returns them with their diagnostics.
-func TestUserLogViewsHideErrorLogs(t *testing.T) {
+// TestUserLogViewsIncludeErrorLogs verifies that users can inspect their own
+// error logs in self views, exports and token history.
+func TestUserLogViewsIncludeErrorLogs(t *testing.T) {
 	previousLogDB, previousLogType := LOG_DB, common.LogDatabaseType()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
@@ -345,32 +343,34 @@ func TestUserLogViewsHideErrorLogs(t *testing.T) {
 	} {
 		logs, total, err := view.read()
 		require.NoError(t, err, view.name)
-		require.EqualValues(t, 1, total, view.name)
-		require.Len(t, logs, 1, view.name)
-		require.Equal(t, LogTypeConsume, logs[0].Type, view.name)
-		require.Equal(t, "consume-row", logs[0].RequestId, view.name)
+		require.EqualValues(t, 2, total, view.name)
+		require.Len(t, logs, 2, view.name)
+		requestIDs := []string{logs[0].RequestId, logs[1].RequestId}
+		require.Contains(t, requestIDs, "consume-row", view.name)
+		require.Contains(t, requestIDs, "error-row", view.name)
 	}
 
-	// An explicit error-type query inside a self view returns nothing.
-	for _, role := range []int{common.RoleCommonUser, common.RoleAdminUser} {
+	// Ordinary users and administrators can query their own error logs.
+	for _, role := range []int{common.RoleCommonUser, common.RoleAdminUser, common.RoleRootUser} {
 		logs, total, err := GetUserLogsForRole(7, role, LogFilter{Type: LogTypeError}, 0, 10)
 		require.NoError(t, err)
-		require.Zero(t, total)
-		require.Empty(t, logs)
+		require.EqualValues(t, 1, total)
+		require.Len(t, logs, 1)
+		require.Equal(t, "error-row", logs[0].RequestId)
 	}
 
 	tokenLogs, err := GetLogByTokenId(71)
 	require.NoError(t, err)
-	require.Len(t, tokenLogs, 1)
-	require.Equal(t, LogTypeConsume, tokenLogs[0].Type)
+	require.Len(t, tokenLogs, 2)
+	require.Contains(t, []string{tokenLogs[0].RequestId, tokenLogs[1].RequestId}, "error-row")
 
 	var exported []*Log
 	require.NoError(t, StreamUserLogsForRole(context.Background(), 7, common.RoleAdminUser, LogFilter{}, func(entry *Log) error {
 		exported = append(exported, entry)
 		return nil
 	}))
-	require.Len(t, exported, 1)
-	require.Equal(t, LogTypeConsume, exported[0].Type)
+	require.Len(t, exported, 2)
+	require.Contains(t, []string{exported[0].RequestId, exported[1].RequestId}, "error-row")
 
 	// The global log view keeps the error row with its admin diagnostics.
 	adminLogs, total, err := GetAllLogs(LogFilter{Type: LogTypeError, Username: "owner"}, 0, 10)

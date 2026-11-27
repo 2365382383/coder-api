@@ -79,13 +79,13 @@ function getLogTypeValue(
   value: unknown,
   canManageScope: boolean
 ): LogTypeValue {
-  // Error logs (type 5) and sensitive-word audit rows (type 8) are only
-  // queryable in the administrator-scoped view (P-12).
+  // Sensitive-word audit rows (type 8) are only queryable in the
+  // administrator-scoped view.
   return Array.isArray(value) &&
     value.length === 1 &&
     typeof value[0] === 'string' &&
     isLogTypeValue(value[0]) &&
-    (canManageScope || (value[0] !== '8' && value[0] !== '5'))
+    (canManageScope || value[0] !== '8')
     ? value[0]
     : LOG_TYPE_ALL_VALUE
 }
@@ -293,7 +293,7 @@ export function CommonLogsFilterBar<TData>(
   const logTypeItems = useMemo(
     () =>
       LOG_TYPE_FILTERS.filter(
-        (type) => canManageScope || (type.value !== '8' && type.value !== '5')
+        (type) => canManageScope || type.value !== '8'
       ).map((type) => ({
         value: type.value,
         label: t(type.label),
