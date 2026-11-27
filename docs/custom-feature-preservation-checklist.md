@@ -776,10 +776,21 @@
   `pkg/billing_metrics/metrics_test.go`；发布后检查容器 health、`/health`、`/api/status`、
   `/metrics`、Redis 命令延迟、批量更新错误和 MySQL `data_lock_waits`/handler commit。
 
+### P-44 Sub2API 请求 ID 日志关联
+
+- 必须保留：`Sub2API` 渠道从响应头 `X-Client-Request-ID` 捕获请求 ID，并写入
+  New-API 日志 `upstream_request_id` 时使用 `client:<id>` 格式，使其可直接关联
+  Sub2API `usage_logs.request_id`。其他渠道仍保留原有 `X-Oneapi-Request-Id` 捕获行为；
+  Sub2API 未返回该响应头时不伪造 ID，也不改变现有日志字段或数据库结构。
+- 当前位置：`relay/channel/api_request.go`、`model/log.go`、
+  `web/src/features/usage-logs/components/dialogs/details-dialog.tsx`。
+- 验证入口：在 `relay/channel/api_request_test.go` 增加 Sub2API 响应头捕获、直接关联格式和
+  非 Sub2API 渠道原有行为的回归覆盖。
+
 
 ## 5. 当前审查状态
 
-- 当前保护项数量：35。
+- 当前保护项数量：36。
 - 当前条目中的路径、配置、验证入口和行为描述是唯一维护对象。
 - P-01 的 GitHub Actions、P-05 的 390px/768px/桌面响应式 smoke、P-39 的 Canvas 真实浏览器验收由用户或发布流程执行。
 - 任何后续维护只更新当前功能状态，不追加提交历史或变更时间线。

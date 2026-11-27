@@ -592,8 +592,15 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 			resp.Proto)
 	}
 
-	if upID := resp.Header.Get(common2.RequestIdKey); upID != "" {
-		c.Set(common2.UpstreamRequestIdKey, upID)
+	upstreamRequestID := resp.Header.Get(common2.RequestIdKey)
+	if info.ChannelMeta != nil && info.ChannelMeta.ChannelType == constant.ChannelTypeSub2API {
+		if clientRequestID := strings.TrimSpace(resp.Header.Get("X-Client-Request-ID")); clientRequestID != "" {
+			// Sub2API stores usage logs as "client:<id>"; keep that exact join key.
+			upstreamRequestID = "client:" + clientRequestID
+		}
+	}
+	if upstreamRequestID != "" {
+		c.Set(common2.UpstreamRequestIdKey, upstreamRequestID)
 	}
 
 	// The transport closes req.Body once it has written it. Closing it here
